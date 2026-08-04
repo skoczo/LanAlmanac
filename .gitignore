@@ -1,0 +1,49 @@
+# --- Gradle ---
+.gradle/
+build/
+
+# --- Quarkus ---
+.quarkus/
+target/
+
+# --- Node / React Frontend ---
+frontend/node_modules/
+frontend/dist/
+frontend/.eslintcache
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# --- Java/JVM Tooling ---
+*.class
+*.bluej
+*.grp
+*.properties.local
+
+# --- Dynamic Keys (Security) ---
+# Never check in generated JWT signing private/public keys
+keys/
+
+# --- IDEs / Editors ---
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.classpath
+.project
+.settings/
+.nb-gradle/
+
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
+
+# --- Environment Configurations ---
+.env
+.env*.local
+*.log

@@ -1,0 +1,30 @@
+{
+  "name": "GreatNetworkManager Dev",
+  "image": "mcr.microsoft.com/devcontainers/java:21-bookworm",
+  "remoteUser": "vscode",
+  "containerUser": "root",
+  "updateRemoteUserUID": false,
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22",
+      "nodeGypDependencies": true
+    },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "version": "latest",
+      "moby": false
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "redhat.java",
+        "redhat.vscode-quarkus",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss"
+      ]
+    }
+  },
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y libpcap-dev"
+}
