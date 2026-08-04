@@ -51,15 +51,34 @@ export const Devices: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState('ALL')
 
   useEffect(() => {
-    apiClient<Device[]>('/api/devices')
-      .then((data) => {
-        setDevices(data)
-        setLoading(false)
-      })
-      .catch((err) => {
-        console.error(err)
-        setLoading(false)
-      })
+    const fetchDevices = () => {
+      apiClient<Device[]>('/api/devices')
+        .then((data) => {
+          setDevices(data)
+          setLoading(false)
+        })
+        .catch((err) => {
+          console.error(err)
+          setLoading(false)
+        })
+    }
+
+    // Initial fetch
+    fetchDevices()
+
+    // Establish WebSocket listener to refresh devices list in real-time
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = window.location.host
+    const ws = new WebSocket(`${protocol}//${host}/ws/events`)
+
+    ws.onmessage = () => {
+      console.log('Discovered Devices: Refreshing list due to real-time event...')
+      fetchDevices()
+    }
+
+    return () => {
+      ws.close()
+    }
   }, [])
 
   // Filter logic
@@ -67,10 +86,10 @@ export const Devices: React.FC = () => {
     const currentIdentity = d.identities?.find((id) => id.current)
     const matchesSearch =
       d.displayName.toLowerCase().includes(search.toLowerCase()) ||
-      d.manufacturer?.toLowerCase().includes(search.toLowerCase()) ||
-      d.model?.toLowerCase().includes(search.toLowerCase()) ||
-      currentIdentity?.ipAddress.includes(search) ||
-      currentIdentity?.macAddress.toLowerCase().includes(search.toLowerCase())
+      (d.manufacturer ? d.manufacturer.toLowerCase().includes(search.toLowerCase()) : false) ||
+      (d.model ? d.model.toLowerCase().includes(search.toLowerCase()) : false) ||
+      (currentIdentity?.ipAddress ? currentIdentity.ipAddress.includes(search) : false) ||
+      (currentIdentity?.macAddress ? currentIdentity.macAddress.toLowerCase().includes(search.toLowerCase()) : false)
 
     const matchesStatus = statusFilter === 'ALL' || d.status === statusFilter
     const matchesType = typeFilter === 'ALL' || d.deviceType === typeFilter
@@ -199,7 +218,8 @@ export const Devices: React.FC = () => {
             return (
               <Link
                 key={device.id}
-                to={`/devices/${device.id}`}
+                to="/devices/$id"
+                params={{ id: device.id }}
                 className="bg-bg-surface border border-border-subtle hover:border-accent-primary/20 rounded-2xl p-5 shadow-md flex flex-col justify-between h-[210px] group transition-all duration-300 hover:-translate-y-1 hover:shadow-accent-primary/5 glow-primary"
               >
                 <div>
@@ -222,8 +242,13 @@ export const Devices: React.FC = () => {
                     <h3 className="font-bold text-sm text-text-primary group-hover:text-accent-primary transition-colors truncate">
                       {device.displayName}
                     </h3>
-                    <p className="font-mono text-xs text-text-secondary truncate">
-                      {currentIdentity?.ipAddress || 'No IP'}
+                    <p className="font-mono text-xs text-text-secondary truncate flex items-center gap-1.5">
+                      <span>{currentIdentity?.ipAddress || 'No IP'}</span>
+                      {currentIdentity?.hostname && (
+                        <span className="text-[10px] text-text-muted font-sans truncate">
+                          ({currentIdentity.hostname})
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -282,7 +307,14 @@ export const Devices: React.FC = () => {
                         <div className="text-[10px] text-text-secondary mt-0.5">{device.manufacturer} {device.model}</div>
                       </td>
                       <td className="py-4 px-6">
-                        <div className="font-mono text-text-primary">{currentIdentity?.ipAddress || '-'}</div>
+                        <div className="font-mono text-text-primary flex items-center gap-1.5">
+                          <span>{currentIdentity?.ipAddress || '-'}</span>
+                          {currentIdentity?.hostname && (
+                            <span className="text-[10px] text-text-secondary font-sans">
+                              ({currentIdentity.hostname})
+                            </span>
+                          )}
+                        </div>
                         <div className="font-mono text-[10px] text-text-secondary mt-0.5">{currentIdentity?.macAddress || '-'}</div>
                       </td>
                       <td className="py-4 px-6">
@@ -312,7 +344,8 @@ export const Devices: React.FC = () => {
                       </td>
                       <td className="py-4 px-6 text-right">
                         <Link
-                          to={`/devices/${device.id}`}
+                          to="/devices/$id"
+                          params={{ id: device.id }}
                           className="inline-flex items-center justify-center p-2 rounded-xl bg-bg-surface-raised border border-border-subtle hover:bg-accent-primary/10 hover:border-accent-primary/30 text-text-secondary hover:text-accent-primary cursor-pointer transition-colors"
                         >
                           <ChevronRight className="w-4 h-4" />

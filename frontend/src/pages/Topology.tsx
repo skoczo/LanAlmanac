@@ -1,145 +1,27 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useAuth } from '../lib/auth/auth-context'
-import { Compass, Cpu, Database, Monitor, Network, Info } from 'lucide-react'
+import { Compass, Cpu, Database, Monitor, ServerCrash } from 'lucide-react'
+import ReactFlow, { 
+  MiniMap, 
+  Controls, 
+  Background, 
+  useNodesState, 
+  useEdgesState, 
+  MarkerType,
+  Node,
+  Edge
+} from 'reactflow'
+import 'reactflow/dist/style.css'
 
-interface Device {
-  id: string
-  displayName: string
-  deviceType: string
-  status: string
-  identities: Array<{ ipAddress: string; macAddress: string }>
-}
+// Custom Node Component to maintain our dark theme aesthetic
+const CustomDeviceNode = ({ data }: { data: any }) => {
+  const isOnline = data.status === 'ONLINE'
 
-interface Node {
-  id: string
-  label: string
-  ip: string
-  x: number
-  y: number
-  type: string
-  status: string
-  deviceId?: string
-}
-
-export const Topology: React.FC = () => {
-  const { apiClient } = useAuth()
-  const [devices, setDevices] = useState<Device[]>([])
-  const [hoveredNode, setHoveredNode] = useState<Node | null>(null)
-  const navigate = useNavigate()
-
-  useEffect(() => {
-    apiClient<Device[]>('/api/devices')
-      .then(setDevices)
-      .catch(console.error)
-  }, [])
-
-  // Setup static hierarchical positions for our mock devices
-  const getNodes = (): Node[] => {
-    const nodes: Node[] = []
-    
-    // Gateway
-    const gateway = devices.find((d) => d.deviceType === 'ROUTER')
-    nodes.push({
-      id: 'gateway',
-      label: gateway?.displayName || 'UniFi UDM-Pro',
-      ip: gateway?.identities?.[0]?.ipAddress || '192.168.1.1',
-      x: 250,
-      y: 40,
-      type: 'ROUTER',
-      status: gateway?.status || 'ONLINE',
-      deviceId: gateway?.id
-    })
-
-    // NAS Storage
-    const nas = devices.find((d) => d.deviceType === 'NAS')
-    nodes.push({
-      id: 'nas',
-      label: nas?.displayName || 'Storage-NAS',
-      ip: nas?.identities?.[0]?.ipAddress || '192.168.1.10',
-      x: 100,
-      y: 110,
-      type: 'NAS',
-      status: nas?.status || 'ONLINE',
-      deviceId: nas?.id
-    })
-
-    // Proxmox Server
-    const server = devices.find((d) => d.displayName.includes('Proxmox'))
-    nodes.push({
-      id: 'server',
-      label: server?.displayName || 'Proxmox-Node-01',
-      ip: server?.identities?.[0]?.ipAddress || '192.168.1.20',
-      x: 400,
-      y: 110,
-      type: 'SERVER',
-      status: server?.status || 'ONLINE',
-      deviceId: server?.id
-    })
-
-    // Endpoints
-    const tv = devices.find((d) => d.displayName.includes('TV'))
-    nodes.push({
-      id: 'tv',
-      label: tv?.displayName || 'Living Room TV',
-      ip: tv?.identities?.[0]?.ipAddress || '192.168.1.150',
-      x: 50,
-      y: 200,
-      type: 'IOT',
-      status: tv?.status || 'ONLINE',
-      deviceId: tv?.id
-    })
-
-    const iphone = devices.find((d) => d.displayName.includes('iPhone'))
-    nodes.push({
-      id: 'iphone',
-      label: iphone?.displayName || 'iPhone-Anna',
-      ip: iphone?.identities?.[0]?.ipAddress || '192.168.1.88',
-      x: 180,
-      y: 200,
-      type: 'IOT',
-      status: iphone?.status || 'ONLINE',
-      deviceId: iphone?.id
-    })
-
-    const workstation = devices.find((d) => d.displayName.includes('MacBook'))
-    nodes.push({
-      id: 'workstation',
-      label: workstation?.displayName || 'MacBook-Pro-16',
-      ip: workstation?.identities?.[0]?.ipAddress || '192.168.1.75',
-      x: 320,
-      y: 200,
-      type: 'WORKSTATION',
-      status: workstation?.status || 'ONLINE',
-      deviceId: workstation?.id
-    })
-
-    const printer = devices.find((d) => d.displayName.includes('Printer'))
-    nodes.push({
-      id: 'printer',
-      label: printer?.displayName || 'HP LaserJet Pro',
-      ip: printer?.identities?.[0]?.ipAddress || '192.168.1.200',
-      x: 450,
-      y: 200,
-      type: 'IOT',
-      status: printer?.status || 'OFFLINE',
-      deviceId: printer?.id
-    })
-
-    return nodes
-  }
-
-  const nodes = getNodes()
-
-  const handleNodeDoubleClick = (node: Node) => {
-    if (node.deviceId) {
-      navigate({ to: `/devices/${node.deviceId}` })
-    }
-  }
-
-  const renderNodeIcon = (type: string) => {
+  const renderIcon = (type: string) => {
     switch (type) {
       case 'ROUTER':
+      case 'SWITCH':
         return <Compass className="w-5 h-5 text-accent-primary" />
       case 'NAS':
         return <Database className="w-5 h-5 text-accent-success" />
@@ -151,119 +33,110 @@ export const Topology: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in select-none relative h-full">
-      {/* Title */}
-      <div>
+    <div className={`px-4 py-3 shadow-lg rounded-xl border-2 bg-bg-surface-raised flex items-center gap-3 w-48 ${isOnline ? 'border-accent-success/50 shadow-accent-success/10' : 'border-accent-danger/50 shadow-accent-danger/10'}`}>
+      <div className={`p-2 rounded-lg bg-bg-surface flex-shrink-0 ${isOnline ? 'animate-pulse-slow' : ''}`}>
+        {isOnline ? renderIcon(data.type) : <ServerCrash className="w-5 h-5 text-accent-danger" />}
+      </div>
+      <div className="flex flex-col overflow-hidden">
+        <span className="font-bold text-sm text-text-primary truncate" title={data.label}>{data.label}</span>
+        <span className="text-xs text-text-secondary">{data.type}</span>
+      </div>
+    </div>
+  )
+}
+
+const nodeTypes = {
+  customDevice: CustomDeviceNode,
+}
+
+export const Topology: React.FC = () => {
+  const { apiClient } = useAuth()
+  const navigate = useNavigate()
+  
+  const [nodes, setNodes, onNodesChange] = useNodesState([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    apiClient<{ nodes: any[], edges: any[] }>('/api/topology')
+      .then((data) => {
+        // We need to apply a basic layout since backend returns x:0, y:0
+        const formattedNodes: Node[] = data.nodes.map((n, i) => {
+          // Simple Grid Layout for now
+          const cols = 5;
+          const x = (i % cols) * 250;
+          const y = Math.floor(i / cols) * 150;
+          
+          return {
+            id: n.id,
+            type: 'customDevice',
+            position: { x, y },
+            data: { ...n.data, deviceId: n.id }
+          }
+        })
+        
+        const formattedEdges: Edge[] = data.edges.map((e) => ({
+          ...e,
+          animated: true,
+          style: { stroke: '#3b82f6', strokeWidth: 2 },
+          labelStyle: { fill: '#94a3b8', fontWeight: 700 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 20,
+            height: 20,
+            color: '#3b82f6',
+          },
+        }))
+
+        setNodes(formattedNodes)
+        setEdges(formattedEdges)
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [])
+
+  const onNodeDoubleClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      navigate({ to: '/devices/$id', params: { id: node.data.deviceId } })
+    },
+    [navigate]
+  )
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center select-none">
+        <div className="w-12 h-12 rounded-full border-4 border-accent-primary border-t-transparent animate-spin mb-4" />
+        <h3 className="font-bold text-text-primary">Loading Interactive Map...</h3>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col h-full animate-fade-in select-none">
+      <div className="mb-4">
         <h1 className="text-2xl font-bold tracking-tight">Interactive Network Map</h1>
-        <p className="text-text-secondary text-sm">Visual topology layout of connected systems on local subnets</p>
+        <p className="text-text-secondary text-sm">Visualizing active SNMP Layer 2/3 connections</p>
       </div>
 
-      <div className="relative w-full h-[450px] bg-bg-surface border border-border-subtle rounded-2xl p-6 overflow-hidden flex items-center justify-center shadow-lg">
-        {/* Connection paths */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 500 240" preserveAspectRatio="xMidYMid meet">
-          {/* Gateway to NAS and Proxmox */}
-          <line x1="250" y1="40" x2="100" y2="110" stroke="rgba(59,130,246,0.3)" strokeWidth="1.5" strokeDasharray="3 3" />
-          <line x1="250" y1="40" x2="400" y2="110" stroke="rgba(59,130,246,0.3)" strokeWidth="1.5" strokeDasharray="3 3" />
-
-          {/* NAS to Endpoints (TV, iPhone) */}
-          <line x1="100" y1="110" x2="50" y2="200" stroke="rgba(34,197,94,0.25)" strokeWidth="1" />
-          <line x1="100" y1="110" x2="180" y2="200" stroke="rgba(34,197,94,0.25)" strokeWidth="1" />
-
-          {/* Proxmox to Endpoints (workstation, printer) */}
-          <line x1="400" y1="110" x2="320" y2="200" stroke="rgba(6,182,212,0.25)" strokeWidth="1" />
-          <line x1="400" y1="110" x2="450" y2="200" stroke="rgba(239,68,68,0.2)" strokeWidth="1" strokeDasharray="2 2" />
-        </svg>
-
-        {/* Nodes */}
-        <div className="absolute inset-0 w-full h-full flex items-center justify-center" style={{ transform: 'scale(1)' }}>
-          <svg className="w-full h-full" viewBox="0 0 500 240" preserveAspectRatio="xMidYMid meet">
-            {nodes.map((node) => (
-              <g
-                key={node.id}
-                transform={`translate(${node.x}, ${node.y})`}
-                className="cursor-pointer"
-                onMouseEnter={() => setHoveredNode(node)}
-                onMouseLeave={() => setHoveredNode(null)}
-                onDoubleClick={() => handleNodeDoubleClick(node)}
-              >
-                {/* Glow ring */}
-                <circle
-                  r="18"
-                  fill="#0d1222"
-                  stroke={node.status === 'ONLINE' ? '#22c55e' : '#ef4444'}
-                  strokeWidth="1.5"
-                  className={node.status === 'ONLINE' ? 'animate-pulse-slow' : ''}
-                  style={{
-                    filter: node.status === 'ONLINE' ? 'drop-shadow(0 0 4px rgba(34,197,94,0.5))' : 'none',
-                  }}
-                />
-                
-                {/* Node center */}
-                <circle r="14" fill="#161d30" />
-
-                {/* Subnet Tag */}
-                <text
-                  y="30"
-                  textAnchor="middle"
-                  fill="#f1f5f9"
-                  fontSize="7.5"
-                  fontWeight="bold"
-                  className="font-sans fill-text-primary"
-                >
-                  {node.label}
-                </text>
-                <text
-                  y="40"
-                  textAnchor="middle"
-                  fill="#94a3b8"
-                  fontSize="6.5"
-                  className="font-mono fill-text-secondary"
-                >
-                  {node.ip}
-                </text>
-              </g>
-            ))}
-          </svg>
-        </div>
-
-        {/* Hover overlay popup */}
-        {hoveredNode && (
-          <div className="absolute top-4 left-4 bg-bg-surface-raised border border-border-subtle p-4 rounded-xl shadow-2xl space-y-2 z-30 w-52 animate-fade-in">
-            <div className="flex items-center gap-2 border-b border-border-subtle pb-1.5">
-              {renderNodeIcon(hoveredNode.type)}
-              <div>
-                <h4 className="text-xs font-bold text-text-primary truncate max-w-[140px]">{hoveredNode.label}</h4>
-                <span className={`text-[8px] font-bold uppercase tracking-wider ${
-                  hoveredNode.status === 'ONLINE' ? 'text-accent-success' : 'text-accent-danger'
-                }`}>
-                  {hoveredNode.status}
-                </span>
-              </div>
-            </div>
-            <div className="text-[10px] space-y-1 text-text-secondary">
-              <p>IP: <span className="font-mono text-text-primary">{hoveredNode.ip}</span></p>
-              <p>Type: <span className="text-text-primary">{hoveredNode.type}</span></p>
-            </div>
-            <div className="text-[8px] text-text-muted flex items-center gap-1 mt-2">
-              <Info className="w-3 h-3 text-accent-info" />
-              <span>Double-click to view profile</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="flex justify-between items-center text-xs text-text-muted border-t border-border-subtle pt-4">
-        <span>Topology inferred via Gateway Switch ARP database</span>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-accent-success" />
-            <span>Online Link</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-accent-danger" />
-            <span>Timeout Link</span>
-          </div>
-        </div>
+      <div className="flex-1 w-full bg-[#0a0f1c] rounded-2xl border border-border-subtle shadow-inner overflow-hidden">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeDoubleClick={onNodeDoubleClick}
+          nodeTypes={nodeTypes}
+          fitView
+          attributionPosition="bottom-right"
+        >
+          <Background color="#1e293b" gap={20} size={1} />
+          <Controls className="bg-bg-surface border-border-subtle fill-text-primary" />
+          <MiniMap 
+            nodeColor={(n) => n.data.status === 'ONLINE' ? '#22c55e' : '#ef4444'}
+            maskColor="rgba(10, 15, 28, 0.7)"
+            className="bg-bg-surface-raised border-border-subtle rounded-lg"
+          />
+        </ReactFlow>
       </div>
     </div>
   )

@@ -1,0 +1,2 @@
+ALTER TABLE physical_device 
+ADD COLUMN management_state VARCHAR(50) DEFAULT 'DISCOVERED' NOT NULL;

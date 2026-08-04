@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth/auth-context'
-import { KeyRound, Lock, Unlock, Eye, EyeOff, ShieldCheck, Key, ShieldAlert } from 'lucide-react'
+import { useVault } from '../lib/vault/vault-context'
+import { Lock, Unlock, Eye, EyeOff, ShieldCheck, Key, ShieldAlert } from 'lucide-react'
 
 interface Device {
   id: string
@@ -16,31 +17,69 @@ interface Device {
 
 export const Vault: React.FC = () => {
   const { apiClient } = useAuth()
+  const { initialized, sealed, setShowUnsealModal, refreshStatus } = useVault()
+  
   const [devices, setDevices] = useState<Device[]>([])
-  const [isUnlocked, setIsUnlocked] = useState(false)
-  const [passphrase, setPassphrase] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [revealedCreds, setRevealedCreds] = useState<Record<string, boolean>>({})
+  const [revealedCreds, setRevealedCreds] = useState<Record<string, string>>({})
+  
+  const [initPasscode, setInitPasscode] = useState('')
+  const [initError, setInitError] = useState<string | null>(null)
 
   useEffect(() => {
+    refreshStatus()
     apiClient<Device[]>('/api/devices')
       .then(setDevices)
       .catch(console.error)
   }, [])
 
-  const handleUnlock = (e: React.FormEvent) => {
+  const handleInit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError(null)
-    if (passphrase === 'admin') {
-      setIsUnlocked(true)
-      setPassphrase('')
-    } else {
-      setError('Invalid master passphrase key')
+    try {
+      await apiClient('/api/vault/init', {
+        method: 'POST',
+        body: JSON.stringify({ passcode: initPasscode })
+      })
+      await refreshStatus()
+      setInitPasscode('')
+      setInitError(null)
+    } catch (err: any) {
+      setInitError(err.message || 'Initialization failed')
     }
   }
 
-  const toggleRevealCred = (id: string) => {
-    setRevealedCreds((prev) => ({ ...prev, [id]: !prev[id] }))
+  const handleLock = async () => {
+    try {
+      await apiClient('/api/vault/lock', { method: 'POST' })
+      await refreshStatus()
+      setRevealedCreds({})
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const toggleRevealCred = async (id: string) => {
+    if (revealedCreds[id] !== undefined) {
+      // hide
+      const newCreds = { ...revealedCreds }
+      delete newCreds[id]
+      setRevealedCreds(newCreds)
+      return
+    }
+
+    if (sealed) {
+      setShowUnsealModal(true)
+      return
+    }
+
+    try {
+      const res = await apiClient<{secret: string}>(`/api/credentials/${id}/reveal`)
+      setRevealedCreds(prev => ({ ...prev, [id]: res.secret }))
+    } catch (e: any) {
+      console.error('Reveal failed', e)
+      if (e.message?.includes('sealed') || e.message?.includes('Unauthorized') || e.message?.includes('FORBIDDEN')) {
+        setShowUnsealModal(true)
+      }
+    }
   }
 
   // Get flat list of all credentials
@@ -52,42 +91,31 @@ export const Vault: React.FC = () => {
     }))
   )
 
-  if (!isUnlocked) {
+  if (!initialized) {
     return (
       <div className="min-h-[400px] flex items-center justify-center p-6 animate-fade-in select-none">
-        <div className="w-full max-w-md bg-bg-surface border border-border-subtle rounded-2xl p-8 shadow-2xl glow-primary">
+        <div className="w-full max-w-md bg-bg-surface border border-border-subtle rounded-2xl p-8 shadow-2xl">
           <div className="text-center space-y-3 mb-6">
-            <div className="inline-flex p-3.5 rounded-xl bg-accent-danger/10 border border-accent-danger/20 text-accent-danger mb-2">
-              <Lock className="w-6 h-6" />
-            </div>
-            <h2 className="text-lg font-bold text-text-primary">Credential Vault Sealed</h2>
-            <p className="text-xs text-text-secondary">
-              Enter your master passphrase to unseal key rings and load decrypted payloads.
-            </p>
+            <h2 className="text-lg font-bold text-text-primary">Initialize Vault</h2>
+            <p className="text-xs text-text-secondary">Set a strong master passcode. If you lose this, all encrypted data is lost forever.</p>
           </div>
-
-          {error && (
+          {initError && (
             <div className="mb-4 p-2.5 rounded-lg bg-accent-danger/10 border border-accent-danger/25 text-[11px] text-accent-danger flex items-center gap-2">
               <ShieldAlert className="w-3.5 h-3.5" />
-              {error}
+              {initError}
             </div>
           )}
-
-          <form onSubmit={handleUnlock} className="space-y-4">
+          <form onSubmit={handleInit} className="space-y-4">
             <input
               type="password"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-              placeholder="Enter Master Passphrase (admin)"
+              value={initPasscode}
+              onChange={(e) => setInitPasscode(e.target.value)}
+              placeholder="New Master Passcode"
               required
-              className="w-full bg-bg-surface-raised border border-border-subtle rounded-xl py-3 px-4 text-xs text-text-primary focus:outline-none focus:border-accent-primary transition-colors text-center font-mono"
+              className="w-full bg-bg-surface-raised border border-border-subtle rounded-xl py-3 px-4 text-xs font-mono text-center focus:outline-none focus:border-accent-primary"
             />
-            <button
-              type="submit"
-              className="w-full bg-accent-primary hover:bg-accent-primary/95 text-text-primary font-semibold py-3 rounded-xl shadow-lg transition-all text-xs flex justify-center items-center gap-2 cursor-pointer"
-            >
-              <Unlock className="w-4 h-4" />
-              Unseal Vault
+            <button type="submit" className="w-full bg-accent-primary hover:bg-accent-primary/95 text-text-primary font-semibold py-3 rounded-xl shadow-lg transition-all text-xs cursor-pointer">
+              Initialize Vault
             </button>
           </form>
         </div>
@@ -95,16 +123,36 @@ export const Vault: React.FC = () => {
     )
   }
 
+  if (sealed) {
+    return (
+      <div className="min-h-[400px] flex items-center justify-center p-6 animate-fade-in select-none">
+        <div className="w-full max-w-md bg-bg-surface border border-border-subtle rounded-2xl p-8 shadow-2xl glow-primary text-center">
+          <div className="inline-flex p-3.5 rounded-xl bg-accent-danger/10 border border-accent-danger/20 text-accent-danger mb-4">
+            <Lock className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg font-bold text-text-primary mb-2">Vault Sealed</h2>
+          <p className="text-xs text-text-secondary mb-6">Your credentials are cryptographically sealed.</p>
+          <button
+            onClick={() => setShowUnsealModal(true)}
+            className="w-full bg-accent-primary hover:bg-accent-primary/95 text-text-primary font-semibold py-3 rounded-xl shadow-lg transition-all text-xs flex justify-center items-center gap-2 cursor-pointer"
+          >
+            <Unlock className="w-4 h-4" />
+            Unseal Vault
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6 animate-fade-in select-none">
-      {/* Title */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Credential Vault</h1>
           <p className="text-text-secondary text-sm">Envelope-encrypted access keys and credentials</p>
         </div>
         <button
-          onClick={() => setIsUnlocked(false)}
+          onClick={handleLock}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-accent-danger/10 border border-accent-danger/25 text-accent-danger hover:bg-accent-danger/15 transition-all text-xs font-semibold cursor-pointer"
         >
           <Lock className="w-4 h-4" />
@@ -112,10 +160,9 @@ export const Vault: React.FC = () => {
         </button>
       </div>
 
-      {/* Audit notice */}
       <div className="p-4 rounded-xl bg-accent-success/5 border border-accent-success/20 text-accent-success text-xs flex items-center gap-2.5 glow-success">
         <ShieldCheck className="w-5 h-5 flex-shrink-0" />
-        <span>Vault decrypted successfully. All reads are audited in the append-only logs.</span>
+        <span>Vault decrypted successfully. Secret payloads can now be revealed.</span>
       </div>
 
       {credentials.length === 0 ? (
@@ -125,10 +172,7 @@ export const Vault: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {credentials.map((cred) => (
-            <div
-              key={cred.id}
-              className="bg-bg-surface border border-border-subtle rounded-2xl p-5 shadow-md flex flex-col justify-between hover:border-accent-primary/10 transition-all duration-300"
-            >
+            <div key={cred.id} className="bg-bg-surface border border-border-subtle rounded-2xl p-5 shadow-md flex flex-col justify-between hover:border-accent-primary/10 transition-all duration-300">
               <div className="flex justify-between items-start gap-4">
                 <div className="flex items-center gap-3">
                   <div className="p-2.5 rounded-xl bg-accent-primary/10 border border-accent-primary/20 text-accent-primary">
@@ -154,13 +198,13 @@ export const Vault: React.FC = () => {
 
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-xs text-text-muted">
-                    {revealedCreds[cred.id] ? 'secret_password_payload_123' : '••••••••••••••••'}
+                    {revealedCreds[cred.id] !== undefined ? revealedCreds[cred.id] : '••••••••••••••••'}
                   </span>
                   <button
                     onClick={() => toggleRevealCred(cred.id)}
                     className="p-1.5 rounded-lg border border-border-subtle hover:bg-bg-surface text-text-secondary hover:text-text-primary cursor-pointer transition-colors"
                   >
-                    {revealedCreds[cred.id] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {revealedCreds[cred.id] !== undefined ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               </div>

@@ -16,8 +16,13 @@ import {
   Terminal,
   Clock,
   Wifi,
-  HardDrive
+  HardDrive,
+  Plus,
+  Edit2,
+  Save,
+  X
 } from 'lucide-react'
+import { useVault } from '../lib/vault/vault-context'
 
 interface Identity {
   id: string
@@ -65,6 +70,8 @@ interface Device {
   locationNote: string
   confidenceScore: number
   status: string
+  managementState: string
+  labels: string[]
   firstSeen: string
   lastSeen: string
   identities: Identity[]
@@ -88,8 +95,23 @@ export const DeviceDetail: React.FC = () => {
   const [device, setDevice] = useState<Device | null>(null)
   const [telemetry, setTelemetry] = useState<TelemetryPoint[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'identities' | 'fingerprint' | 'credentials' | 'monitor'>('overview')
-  const [revealedCreds, setRevealedCreds] = useState<Record<string, boolean>>({})
+  const [activeTab, setActiveTab] = useState<'overview' | 'identities' | 'fingerprint' | 'credentials' | 'monitor' | 'settings'>('overview')
+  const [newLabel, setNewLabel] = useState('')
+  const [revealedCreds, setRevealedCreds] = useState<Record<string, string>>({})
+  const { sealed, setShowUnsealModal } = useVault()
+  const [showAddCred, setShowAddCred] = useState(false)
+  const [newCred, setNewCred] = useState({ label: '', type: 'SSH_KEY', username: '', port: '', secret: '' })
+  
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState({
+    displayName: '',
+    deviceType: '',
+    manufacturer: '',
+    model: '',
+    osFamily: '',
+    osVersion: '',
+    locationNote: ''
+  })
 
   useEffect(() => {
     if (!deviceId) return
@@ -109,8 +131,108 @@ export const DeviceDetail: React.FC = () => {
       })
   }, [deviceId])
 
-  const toggleRevealCred = (id: string) => {
-    setRevealedCreds((prev) => ({ ...prev, [id]: !prev[id] }))
+  const toggleRevealCred = async (id: string) => {
+    if (revealedCreds[id] !== undefined) {
+      const newCreds = { ...revealedCreds }
+      delete newCreds[id]
+      setRevealedCreds(newCreds)
+      return
+    }
+
+    if (sealed) {
+      setShowUnsealModal(true)
+      return
+    }
+
+    try {
+      const res = await apiClient<{secret: string}>(`/api/credentials/${id}/reveal`)
+      setRevealedCreds(prev => ({ ...prev, [id]: res.secret }))
+    } catch (e: any) {
+      if (e.message?.includes('sealed') || e.message?.includes('FORBIDDEN') || e.message?.includes('Unauthorized')) {
+        setShowUnsealModal(true)
+      }
+    }
+  }
+
+  const handleAddCredential = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (sealed) {
+      setShowUnsealModal(true)
+      return
+    }
+    try {
+      await apiClient(`/api/credentials/device/${deviceId}`, {
+        method: 'POST',
+        body: JSON.stringify({ ...newCred, port: newCred.port ? parseInt(newCred.port) : null })
+      })
+      setShowAddCred(false)
+      setNewCred({ label: '', type: 'SSH_KEY', username: '', port: '', secret: '' })
+      // reload device
+      const deviceData = await apiClient<Device>(`/api/devices/${deviceId}`)
+      setDevice(deviceData)
+    } catch (e: any) {
+      if (e.message?.includes('sealed') || e.message?.includes('FORBIDDEN') || e.message?.includes('Unauthorized')) {
+        setShowUnsealModal(true)
+      }
+    }
+  }
+
+  const handleSaveEdits = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!device) return
+    try {
+      await apiClient(`/api/devices/${deviceId}`, {
+        method: 'PUT',
+        body: JSON.stringify(editForm)
+      })
+      const deviceData = await apiClient<Device>(`/api/devices/${deviceId}`)
+      setDevice(deviceData)
+      setIsEditing(false)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const handleUpdateManagementState = async (state: string) => {
+    try {
+      const updatedDevice = await apiClient<Device>(`/api/devices/${deviceId}/state`, {
+        method: 'PUT',
+        body: JSON.stringify({ managementState: state })
+      })
+      setDevice(updatedDevice)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const handleAddLabel = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newLabel || !device) return
+    const updatedLabels = [...(device.labels || []), newLabel]
+    try {
+      const updatedDevice = await apiClient<Device>(`/api/devices/${deviceId}/labels`, {
+        method: 'PUT',
+        body: JSON.stringify(updatedLabels)
+      })
+      setDevice(updatedDevice)
+      setNewLabel('')
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const handleRemoveLabel = async (labelToRemove: string) => {
+    if (!device) return
+    const updatedLabels = (device.labels || []).filter(l => l !== labelToRemove)
+    try {
+      const updatedDevice = await apiClient<Device>(`/api/devices/${deviceId}/labels`, {
+        method: 'PUT',
+        body: JSON.stringify(updatedLabels)
+      })
+      setDevice(updatedDevice)
+    } catch (e) {
+      console.error(e)
+    }
   }
 
   if (loading) {
@@ -258,8 +380,8 @@ export const DeviceDetail: React.FC = () => {
       </div>
 
       {/* Navigation tabs */}
-      <div className="flex items-center border-b border-border-subtle gap-2">
-        {(['overview', 'identities', 'fingerprint', 'credentials', 'monitor'] as const).map((tab) => (
+      <div className="flex items-center border-b border-border-subtle gap-2 overflow-x-auto">
+        {(['overview', 'identities', 'fingerprint', 'credentials', 'monitor', 'settings'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -280,35 +402,114 @@ export const DeviceDetail: React.FC = () => {
         {activeTab === 'overview' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Specs card */}
-            <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-5 shadow-lg">
-              <h3 className="font-bold text-sm tracking-tight">System Specifications</h3>
-              <div className="space-y-3.5 text-xs">
-                <div className="flex justify-between border-b border-border-subtle/50 pb-2">
-                  <span className="text-text-secondary">Device Category</span>
-                  <span className="font-semibold text-text-primary uppercase">{device.deviceType}</span>
-                </div>
-                <div className="flex justify-between border-b border-border-subtle/50 pb-2">
-                  <span className="text-text-secondary">Manufacturer</span>
-                  <span className="font-semibold text-text-primary">{device.manufacturer || '-'}</span>
-                </div>
-                <div className="flex justify-between border-b border-border-subtle/50 pb-2">
-                  <span className="text-text-secondary">Model Number</span>
-                  <span className="font-semibold text-text-primary">{device.model || '-'}</span>
-                </div>
-                <div className="flex justify-between border-b border-border-subtle/50 pb-2">
-                  <span className="text-text-secondary">OS / Kernel</span>
-                  <span className="font-semibold text-text-primary">
-                    {device.osFamily} {device.osVersion}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center border-b border-border-subtle/50 pb-2">
-                  <span className="text-text-secondary">Physical Location</span>
-                  <span className="font-semibold text-text-primary flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-accent-danger" />
-                    {device.locationNote || 'Not configured'}
-                  </span>
-                </div>
+            <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 shadow-lg relative">
+              <div className="flex justify-between items-center mb-5">
+                <h3 className="font-bold text-sm tracking-tight">System Specifications</h3>
+                {!isEditing && (
+                  <button onClick={() => {
+                    setEditForm({
+                      displayName: device.displayName || '',
+                      deviceType: device.deviceType || 'UNKNOWN',
+                      manufacturer: device.manufacturer || '',
+                      model: device.model || '',
+                      osFamily: device.osFamily || '',
+                      osVersion: device.osVersion || '',
+                      locationNote: device.locationNote || ''
+                    })
+                    setIsEditing(true)
+                  }} className="text-text-secondary hover:text-accent-primary transition-colors cursor-pointer p-1 rounded-lg hover:bg-bg-surface-raised">
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
+              
+              {isEditing ? (
+                <form onSubmit={handleSaveEdits} className="space-y-4 text-xs">
+                  <div>
+                    <label className="text-text-secondary block mb-1">Display Name</label>
+                    <input type="text" value={editForm.displayName} onChange={e => setEditForm({...editForm, displayName: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" required />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-text-secondary block mb-1">Device Type</label>
+                      <select value={editForm.deviceType} onChange={e => setEditForm({...editForm, deviceType: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none">
+                        <option value="ROUTER">Router</option>
+                        <option value="SWITCH">Switch</option>
+                        <option value="FIREWALL">Firewall</option>
+                        <option value="SERVER">Server</option>
+                        <option value="NAS">NAS</option>
+                        <option value="PRINTER">Printer</option>
+                        <option value="IOT">IoT</option>
+                        <option value="WORKSTATION">Workstation</option>
+                        <option value="LAPTOP">Laptop</option>
+                        <option value="PHONE">Phone</option>
+                        <option value="TABLET">Tablet</option>
+                        <option value="UNKNOWN">Unknown</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-text-secondary block mb-1">Location</label>
+                      <input type="text" value={editForm.locationNote} onChange={e => setEditForm({...editForm, locationNote: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-text-secondary block mb-1">Manufacturer</label>
+                      <input type="text" value={editForm.manufacturer} onChange={e => setEditForm({...editForm, manufacturer: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-text-secondary block mb-1">Model</label>
+                      <input type="text" value={editForm.model} onChange={e => setEditForm({...editForm, model: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-text-secondary block mb-1">OS Family</label>
+                      <input type="text" value={editForm.osFamily} onChange={e => setEditForm({...editForm, osFamily: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-text-secondary block mb-1">OS Version</label>
+                      <input type="text" value={editForm.osVersion} onChange={e => setEditForm({...editForm, osVersion: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2 border-t border-border-subtle/50">
+                    <button type="button" onClick={() => setIsEditing(false)} className="px-3 py-1.5 rounded-lg border border-border-subtle hover:bg-bg-surface-raised cursor-pointer flex items-center gap-1 font-semibold">
+                      <X className="w-3 h-3" /> Cancel
+                    </button>
+                    <button type="submit" className="px-3 py-1.5 rounded-lg bg-accent-primary text-text-primary hover:bg-accent-primary/90 cursor-pointer flex items-center gap-1 font-semibold">
+                      <Save className="w-3 h-3" /> Save
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="space-y-3.5 text-xs">
+                  <div className="flex justify-between border-b border-border-subtle/50 pb-2">
+                    <span className="text-text-secondary">Device Category</span>
+                    <span className="font-semibold text-text-primary uppercase">{device.deviceType}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-border-subtle/50 pb-2">
+                    <span className="text-text-secondary">Manufacturer</span>
+                    <span className="font-semibold text-text-primary">{device.manufacturer || '-'}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-border-subtle/50 pb-2">
+                    <span className="text-text-secondary">Model Number</span>
+                    <span className="font-semibold text-text-primary">{device.model || '-'}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-border-subtle/50 pb-2">
+                    <span className="text-text-secondary">OS / Kernel</span>
+                    <span className="font-semibold text-text-primary">
+                      {device.osFamily} {device.osVersion}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center border-b border-border-subtle/50 pb-2">
+                    <span className="text-text-secondary">Physical Location</span>
+                    <span className="font-semibold text-text-primary flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-accent-danger" />
+                      {device.locationNote || 'Not configured'}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Timestamps & Fingerprint Match */}
@@ -500,7 +701,36 @@ export const DeviceDetail: React.FC = () => {
                 <h3 className="font-bold text-sm tracking-tight">Access Credentials</h3>
                 <p className="text-xs text-text-secondary">Sealed keys and credentials managed via envelope decryption</p>
               </div>
+              <button
+                onClick={() => setShowAddCred(!showAddCred)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-accent-primary hover:bg-accent-primary/90 text-text-primary rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                Add Credential
+              </button>
             </div>
+            
+            {showAddCred && (
+              <form onSubmit={handleAddCredential} className="p-5 rounded-xl border border-border-subtle bg-bg-surface-raised space-y-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-text-secondary">New Credential</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <input type="text" placeholder="Label (e.g. Root SSH)" required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newCred.label} onChange={e => setNewCred({...newCred, label: e.target.value})} />
+                  <select className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newCred.type} onChange={e => setNewCred({...newCred, type: e.target.value})}>
+                    <option value="SSH_KEY">SSH Key</option>
+                    <option value="BASIC_AUTH">Basic Auth</option>
+                    <option value="SNMP_V2">SNMP v2c</option>
+                    <option value="SNMP_V3">SNMP v3</option>
+                  </select>
+                  <input type="text" placeholder="Username (Optional)" className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newCred.username} onChange={e => setNewCred({...newCred, username: e.target.value})} />
+                  <input type="number" placeholder="Port (Optional)" className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newCred.port} onChange={e => setNewCred({...newCred, port: e.target.value})} />
+                </div>
+                <textarea placeholder="Secret Payload (Key, Password, etc)" required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full min-h-[80px] font-mono focus:outline-none focus:border-accent-primary" value={newCred.secret} onChange={e => setNewCred({...newCred, secret: e.target.value})} />
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setShowAddCred(false)} className="px-4 py-2 rounded-lg border border-border-subtle text-xs font-semibold hover:bg-bg-surface cursor-pointer">Cancel</button>
+                  <button type="submit" className="px-4 py-2 rounded-lg bg-accent-primary text-text-primary text-xs font-semibold hover:bg-accent-primary/90 cursor-pointer">Save Encrypted</button>
+                </div>
+              </form>
+            )}
 
             {(!device.credentials || device.credentials.length === 0) ? (
               <div className="p-8 text-center border border-dashed border-border-subtle rounded-xl text-text-secondary text-xs">
@@ -517,20 +747,20 @@ export const DeviceDetail: React.FC = () => {
                       <div>
                         <h4 className="font-bold text-xs text-text-primary">{cred.label}</h4>
                         <p className="text-[10px] text-text-secondary uppercase tracking-wider mt-0.5">
-                          {cred.credentialType} · Username: <span className="font-mono text-text-primary">{cred.username}</span>
+                          {cred.credentialType} · Username: <span className="font-mono text-text-primary">{cred.username || '-'}</span>
                         </p>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-3">
                       <span className="font-mono text-xs text-text-muted">
-                        {revealedCreds[cred.id] ? 'secret_password_payload_123' : '••••••••••••••••'}
+                        {revealedCreds[cred.id] !== undefined ? revealedCreds[cred.id] : '••••••••••••••••'}
                       </span>
                       <button
                         onClick={() => toggleRevealCred(cred.id)}
                         className="p-1.5 rounded-lg border border-border-subtle hover:bg-bg-surface text-text-secondary hover:text-text-primary cursor-pointer transition-colors"
                       >
-                        {revealedCreds[cred.id] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        {revealedCreds[cred.id] !== undefined ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
                   </div>
@@ -540,13 +770,72 @@ export const DeviceDetail: React.FC = () => {
           </div>
         )}
 
-        {/* MONITOR TAB */}
-        {activeTab === 'monitor' && (
+        {/* SETTINGS TAB */}
+        {activeTab === 'settings' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {renderSvgAreaChart(cpuData, 'CPU Usage History', '#3b82f6', '%')}
-            {renderSvgAreaChart(memData, 'RAM Usage History', '#22c55e', '%')}
-            <div className="md:col-span-2">
-              {renderSvgAreaChart(pingData, 'Ping Latency (Rountrip)', '#06b6d4', 'ms')}
+            <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg">
+              <div>
+                <h3 className="font-bold text-sm tracking-tight">Lifecycle Management</h3>
+                <p className="text-xs text-text-secondary mt-1">Control how the Discovery Engine interacts with this device.</p>
+              </div>
+              
+              <div className="space-y-3">
+                <label className="flex items-start gap-3 p-3 rounded-xl border border-border-subtle bg-bg-surface-raised cursor-pointer hover:border-accent-primary/50 transition-colors">
+                  <input type="radio" name="mgmtState" value="DISCOVERED" checked={device.managementState === 'DISCOVERED'} onChange={() => handleUpdateManagementState('DISCOVERED')} className="mt-1" />
+                  <div>
+                    <span className="block text-xs font-bold text-text-primary">Discovered (Auto-Merge)</span>
+                    <span className="text-[10px] text-text-secondary">The discovery engine will automatically update the hostname and device type as it learns more.</span>
+                  </div>
+                </label>
+                
+                <label className="flex items-start gap-3 p-3 rounded-xl border border-border-subtle bg-bg-surface-raised cursor-pointer hover:border-accent-primary/50 transition-colors">
+                  <input type="radio" name="mgmtState" value="MANAGED" checked={device.managementState === 'MANAGED'} onChange={() => handleUpdateManagementState('MANAGED')} className="mt-1" />
+                  <div>
+                    <span className="block text-xs font-bold text-text-primary">Managed (Locked)</span>
+                    <span className="text-[10px] text-text-secondary">Your custom edits are preserved. The discovery engine will NOT overwrite the display name or device type.</span>
+                  </div>
+                </label>
+                
+                <label className="flex items-start gap-3 p-3 rounded-xl border border-border-subtle bg-bg-surface-raised cursor-pointer hover:border-accent-primary/50 transition-colors">
+                  <input type="radio" name="mgmtState" value="IGNORED" checked={device.managementState === 'IGNORED'} onChange={() => handleUpdateManagementState('IGNORED')} className="mt-1" />
+                  <div>
+                    <span className="block text-xs font-bold text-text-primary">Ignored</span>
+                    <span className="text-[10px] text-text-secondary">Hide this device from topology maps and active scanning.</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg">
+              <div>
+                <h3 className="font-bold text-sm tracking-tight">Tags & Labels</h3>
+                <p className="text-xs text-text-secondary mt-1">Group devices with custom tags (e.g., 'esphome', 'office').</p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {(!device.labels || device.labels.length === 0) && (
+                  <span className="text-xs text-text-muted italic">No labels added yet.</span>
+                )}
+                {device.labels?.map(label => (
+                  <span key={label} className="px-3 py-1 rounded-lg bg-accent-primary/10 border border-accent-primary/20 text-accent-primary text-xs font-bold flex items-center gap-2">
+                    {label}
+                    <button onClick={() => handleRemoveLabel(label)} className="hover:text-text-primary">&times;</button>
+                  </span>
+                ))}
+              </div>
+
+              <form onSubmit={handleAddLabel} className="flex gap-2 pt-2">
+                <input 
+                  type="text" 
+                  value={newLabel}
+                  onChange={e => setNewLabel(e.target.value)}
+                  placeholder="New label..." 
+                  className="bg-bg-surface-raised border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" 
+                />
+                <button type="submit" className="px-4 py-2 rounded-lg bg-bg-surface border border-border-subtle text-text-primary text-xs font-semibold hover:bg-bg-surface-raised cursor-pointer whitespace-nowrap">
+                  Add Label
+                </button>
+              </form>
             </div>
           </div>
         )}

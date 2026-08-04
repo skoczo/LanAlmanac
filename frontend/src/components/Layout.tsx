@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useAuth } from '../lib/auth/auth-context'
 import {
@@ -6,22 +6,90 @@ import {
   Server,
   Network,
   KeyRound,
-  Settings,
   LogOut,
   Bell,
   Search,
-  User,
-  ShieldAlert,
   ChevronLeft,
   ChevronRight,
-  Wifi
+  Wifi,
+  X
 } from 'lucide-react'
+import { VaultUnsealModal } from './VaultUnsealModal'
+
+interface ToastMessage {
+  id: string
+  type: string
+  title: string
+  text: string
+}
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, logout } = useAuth()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [toasts, setToasts] = useState<ToastMessage[]>([])
   const navigate = useNavigate()
+
+  useEffect(() => {
+    // Determine WebSocket URL dynamically (using same hostname/port)
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = window.location.host
+    const wsUrl = `${protocol}//${host}/ws/events`
+    
+    LOG_ws_connect(wsUrl)
+    
+    let ws: WebSocket
+    let reconnectTimer: any
+
+    const connect = () => {
+      ws = new WebSocket(wsUrl)
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          const newToast: ToastMessage = {
+            id: Math.random().toString(),
+            type: data.type,
+            title: data.type === 'NEW_DEVICE' ? 'New Host Discovered' : 'Status Update',
+            text: `${data.displayName} (${data.ipAddress}) is now ${data.status}`
+          }
+          
+          setToasts((prev) => [...prev, newToast])
+
+          // Automatically dismiss toast after 4.5 seconds
+          setTimeout(() => {
+            setToasts((prev) => prev.filter((t) => t.id !== newToast.id))
+          }, 4500)
+        } catch (err) {
+          console.error('Failed to parse WebSocket message', err)
+        }
+      }
+
+      ws.onclose = () => {
+        // Attempt reconnect after 3 seconds if disconnected
+        reconnectTimer = setTimeout(connect, 3000)
+      }
+
+      ws.onerror = (err) => {
+        console.error('WebSocket error occurred', err)
+      }
+    }
+
+    connect()
+
+    return () => {
+      if (ws) ws.close()
+      clearTimeout(reconnectTimer)
+    }
+  }, [])
+
+  const LOG_ws_connect = (url: string) => {
+    console.log(`Connecting to events WebSocket stream: ${url}`)
+  }
+
+  const dismissToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }
 
   const handleLogout = () => {
     logout()
@@ -55,7 +123,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </div>
             {!isCollapsed && (
               <span className="font-bold text-base tracking-wide bg-gradient-to-r from-text-primary to-text-secondary bg-clip-text text-transparent truncate">
-                GNM Core
+                NetAlmanac
               </span>
             )}
           </div>
@@ -152,6 +220,42 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           {children}
         </main>
       </div>
+
+      {/* Floating Toast Notification Container */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3.5 max-w-sm w-full pointer-events-none">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`pointer-events-auto p-4 rounded-xl border bg-bg-surface/85 backdrop-blur-md shadow-2xl flex gap-3.5 items-start animate-fade-in transition-all duration-300 ${
+              toast.type === 'NEW_DEVICE'
+                ? 'border-accent-primary/20 hover:border-accent-primary/40 shadow-accent-primary/5'
+                : 'border-accent-info/20 hover:border-accent-info/40 shadow-accent-info/5'
+            }`}
+          >
+            <div
+              className={`w-2 h-2 rounded-full mt-1.5 animate-pulse ${
+                toast.type === 'NEW_DEVICE' ? 'bg-accent-primary' : 'bg-accent-info'
+              }`}
+            />
+            <div className="flex-1 min-w-0">
+              <h4 className="text-xs font-bold text-text-primary tracking-wide">
+                {toast.title}
+              </h4>
+              <p className="text-xs text-text-secondary mt-0.5 leading-relaxed">
+                {toast.text}
+              </p>
+            </div>
+            <button
+              onClick={() => dismissToast(toast.id)}
+              className="p-1 rounded-md hover:bg-bg-surface-raised text-text-muted hover:text-text-primary cursor-pointer transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+      
+      <VaultUnsealModal />
     </div>
   )
 }

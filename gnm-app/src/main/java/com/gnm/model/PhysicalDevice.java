@@ -5,9 +5,12 @@ import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.UUID;
 import com.gnm.model.enums.DeviceStatus;
 import com.gnm.model.enums.DeviceType;
+import com.gnm.model.enums.ManagementState;
 
 @Entity
 @Table(name = "physical_device")
@@ -52,14 +55,23 @@ public class PhysicalDevice extends PanacheEntityBase {
     public Instant lastSeen;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status")
-    public DeviceStatus status = DeviceStatus.UNKNOWN;
+    @Column(name = "status", nullable = false)
+    public DeviceStatus status = DeviceStatus.OFFLINE;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "management_state", nullable = false)
+    public ManagementState managementState = ManagementState.DISCOVERED;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "physical_device_labels", joinColumns = @JoinColumn(name = "physical_device_id"))
+    @Column(name = "label")
+    public Set<String> labels = new HashSet<>();
 
     @OneToMany(mappedBy = "physicalDevice", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    public List<NetworkIdentity> identities = new ArrayList<>();
+    public Set<NetworkIdentity> identities = new HashSet<>();
 
     @OneToMany(mappedBy = "physicalDevice", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    public List<FingerprintVector> fingerprints = new ArrayList<>();
+    public Set<FingerprintVector> fingerprints = new HashSet<>();
 
     @OneToMany(mappedBy = "physicalDevice", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     public List<Credential> credentials = new ArrayList<>();

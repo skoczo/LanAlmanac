@@ -46,4 +46,9 @@ Thumbs.db
 # --- Environment Configurations ---
 .env
 .env*.local
+
+
 *.log
+*.log.*
+
+*.txt

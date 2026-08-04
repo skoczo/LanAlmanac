@@ -35,6 +35,18 @@ dependencies {
     // Networking (pcap4j)
     implementation("org.pcap4j:pcap4j-core:1.8.2")
     implementation("org.pcap4j:pcap4j-packetfactory-static:1.8.2")
+    
+    // SNMP support for Network Topology Mapping
+    implementation("org.snmp4j:snmp4j:3.7.7")
+    
+    // Cryptography
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    
+    // Testing
+    testImplementation("io.quarkus:quarkus-junit5")
+    testImplementation("io.rest-assured:rest-assured")
+    testImplementation("io.quarkus:quarkus-test-security")
+    testImplementation("io.quarkus:quarkus-jacoco")
 }
 
 java {

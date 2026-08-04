@@ -1,0 +1,54 @@
+package com.gnm.discovery;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
+import jakarta.inject.Inject;
+import io.quarkus.runtime.StartupEvent;
+import io.quarkus.runtime.ShutdownEvent;
+import io.quarkus.scheduler.Scheduled;
+import org.jboss.logging.Logger;
+
+@ApplicationScoped
+public class DiscoveryScheduler {
+
+    private static final Logger LOG = Logger.getLogger(DiscoveryScheduler.class);
+
+    @Inject
+    PassivePacketListener passivePacketListener;
+
+    @Inject
+    IcmpSweeper icmpSweeper;
+
+    @Inject
+    ArpScanner arpScanner;
+
+    public void onStart(@Observes StartupEvent ev) {
+        if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) {
+            LOG.info("Test mode detected, disabling active and passive network discovery.");
+            return;
+        }
+        LOG.info("Application starting. Initializing passive packet capturing thread...");
+        Thread.startVirtualThread(() -> {
+            passivePacketListener.startCapture();
+        });
+    }
+
+    public void onStop(@Observes ShutdownEvent ev) {
+        LOG.info("Application stopping. Shutting down passive packet capturing...");
+        passivePacketListener.stop();
+    }
+
+    @Scheduled(every = "${gnm.scan.icmp-interval:60s}", identity = "icmp-sweep-job")
+    public void triggerIcmpSweep() {
+        if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) return;
+        LOG.debug("Scheduled trigger: running active ICMP sweep...");
+        icmpSweeper.sweep();
+    }
+
+    @Scheduled(every = "${gnm.scan.arp-interval:30s}", identity = "arp-scan-job")
+    public void triggerArpScan() {
+        if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) return;
+        LOG.debug("Scheduled trigger: running active ARP scan...");
+        arpScanner.scan();
+    }
+}

@@ -7,6 +7,7 @@ import {
   Outlet
 } from '@tanstack/react-router'
 import { AuthProvider, useAuth } from './lib/auth/auth-context'
+import { VaultProvider } from './lib/vault/vault-context'
 import { Layout } from './components/Layout'
 import { Login } from './pages/Login'
 import { Dashboard } from './pages/Dashboard'
@@ -24,9 +25,11 @@ const RootComponent = () => {
   }
 
   return (
-    <Layout>
-      <Outlet />
-    </Layout>
+    <VaultProvider>
+      <Layout>
+        <Outlet />
+      </Layout>
+    </VaultProvider>
   )
 }
 
