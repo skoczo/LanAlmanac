@@ -2,33 +2,37 @@ version: "3.8"
 services:
   db:
     image: timescale/timescaledb:latest-pg16
-    container_name: gnm_postgres
+    container_name: lanalmanac_postgres
     environment:
-      POSTGRES_USER: gnm
-      POSTGRES_PASSWORD: gnmpassword
-      POSTGRES_DB: gnm
+      POSTGRES_USER: lanalmanac
+      POSTGRES_PASSWORD: lanalmanacpassword
+      POSTGRES_DB: lanalmanac
     ports:
       - "5432:5432"
     volumes:
-      - gnm_pg_data:/var/lib/postgresql/data
+      - lanalmanac_pg_data:/var/lib/postgresql/data
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    container_name: gnm_redis
+    container_name: lanalmanac_redis
     ports:
       - "6379:6379"
     volumes:
-      - gnm_redis_data:/data
+      - lanalmanac_redis_data:/data
     restart: unless-stopped
 
-  gnm-app:
-    image: ghcr.io/${GITHUB_REPOSITORY:-your-username/lanalmanac}:latest
-    container_name: gnm_app
+  lanalmanac-app:
+    image: ghcr.io/skoczo/lanalmanac:latest
+    container_name: lanalmanac_app
+    # NOTE: When network_mode is 'host', port mapping below is ignored by Docker. 
+    # The application (Backend + Frontend GUI) will be available on http://localhost:8080
     ports:
-      - "8080:8080"
+      - "8787:8080"
     environment:
-      - QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://localhost:5432/gnm
+      - QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://localhost:5432/lanalmanac
+      - QUARKUS_DATASOURCE_USERNAME=lanalmanac
+      - QUARKUS_DATASOURCE_PASSWORD=lanalmanacpassword
       - QUARKUS_REDIS_HOSTS=redis://localhost:6379
       - GNM_AUTH_LOCAL_USERNAME=${ADMIN_USERNAME:-admin}
       - GNM_AUTH_LOCAL_PASSWORD=${ADMIN_PASSWORD:-admin}
@@ -39,5 +43,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  gnm_pg_data:
-  gnm_redis_data:
+  lanalmanac_pg_data:
+  lanalmanac_redis_data:
