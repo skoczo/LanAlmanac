@@ -42,6 +42,9 @@ dependencies {
     // Cryptography
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
     
+    // SSH (Remote Access)
+    implementation("org.apache.sshd:sshd-core:2.13.1")
+    
     // Testing
     testImplementation("io.quarkus:quarkus-junit5")
     testImplementation("io.rest-assured:rest-assured")

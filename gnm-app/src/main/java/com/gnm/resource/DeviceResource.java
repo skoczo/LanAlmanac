@@ -11,13 +11,24 @@ import java.util.UUID;
 import com.gnm.model.enums.ManagementState;
 
 import com.gnm.model.PhysicalDevice;
+import com.gnm.model.NetworkIdentity;
+import com.gnm.model.NetworkSighting;
 import com.gnm.model.Telemetry;
+import com.gnm.model.enums.DeviceStatus;
+import com.gnm.model.enums.DeviceType;
+import com.gnm.discovery.NetworkSightingQueue;
+import jakarta.inject.Inject;
+import java.net.InetAddress;
+import java.time.Instant;
 
 @Path("/api/devices")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @RolesAllowed("gnm-admin")
 public class DeviceResource {
+
+    @Inject
+    NetworkSightingQueue sightingQueue;
 
     @GET
     @Transactional
@@ -131,5 +142,97 @@ public class DeviceResource {
         device.persist();
         initializeLazyCollections(device);
         return Response.ok(device).build();
+    }
+
+    @POST
+    @Path("/discover")
+    public Response discoverDevice(Map<String, String> payload) {
+        String ip = payload.get("ipAddress");
+        if (ip == null || ip.isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("IP address is required").build();
+        }
+        
+        // Run ping in virtual thread to avoid blocking the REST worker
+        Thread.startVirtualThread(() -> {
+            try {
+                // Try system ping first
+                Process p = new ProcessBuilder("ping", "-c", "1", "-W", "1", ip).start();
+                boolean reachable = (p.waitFor() == 0);
+                
+                if (!reachable) {
+                    int[] ports = { 22, 80, 443, 137, 445 };
+                    for (int port : ports) {
+                        try (java.net.Socket socket = new java.net.Socket()) {
+                            socket.connect(new java.net.InetSocketAddress(ip, port), 500);
+                            reachable = true;
+                            break;
+                        } catch (java.io.IOException e) {
+                            if (e.getMessage() != null && e.getMessage().toLowerCase().contains("refused")) {
+                                reachable = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (reachable) {
+                    NetworkSighting sighting = new NetworkSighting();
+                    sighting.ipAddress = ip;
+                    sighting.macAddress = "00:00:00:00:00:00"; // Will be updated by fingerprinting
+                    sighting.source = "MANUAL_DISCOVERY";
+                    sighting.observedAt = Instant.now();
+                    sighting.rawMetadata = "{}";
+                    sightingQueue.offer(sighting);
+                }
+            } catch (Exception e) {
+                // Ignored
+            }
+        });
+        
+        return Response.accepted().entity(Map.of("message", "Discovery initiated for " + ip)).build();
+    }
+
+    @POST
+    @Path("/manual")
+    @Transactional
+    public Response addDeviceManually(Map<String, String> payload) {
+        String ip = payload.get("ipAddress");
+        String name = payload.get("displayName");
+        
+        if (ip == null || name == null || ip.isBlank() || name.isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("IP address and display name are required").build();
+        }
+
+        PhysicalDevice device = new PhysicalDevice();
+        device.displayName = name;
+        
+        String typeStr = payload.get("deviceType");
+        if (typeStr != null && !typeStr.isBlank()) {
+            try {
+                device.deviceType = DeviceType.valueOf(typeStr.toUpperCase());
+            } catch (Exception e) {
+                device.deviceType = DeviceType.UNKNOWN;
+            }
+        } else {
+            device.deviceType = DeviceType.UNKNOWN;
+        }
+        
+        device.locationNote = payload.get("locationNote");
+        device.managementState = ManagementState.MANAGED;
+        device.status = DeviceStatus.OFFLINE; // Initial state
+        device.firstSeen = Instant.now();
+        device.lastSeen = Instant.now();
+        device.persist();
+
+        NetworkIdentity identity = new NetworkIdentity();
+        identity.physicalDevice = device;
+        identity.ipAddress = ip;
+        identity.macAddress = payload.getOrDefault("macAddress", "00:00:00:00:00:00");
+        identity.firstSeen = Instant.now();
+        identity.lastSeen = Instant.now();
+        identity.current = true;
+        identity.persist();
+
+        return Response.status(Response.Status.CREATED).entity(device).build();
     }
 }

@@ -1754,3 +1754,21 @@ gnm.telemetry.poll-interval=60s
 
 > [!NOTE]
 > **Kotlin consideration:** Since you mentioned Kotlin as an option — Quarkus has first-class Kotlin support. You could write the domain/business logic in Kotlin (coroutines, null safety, data classes) while keeping the Quarkus CDI/JAX-RS annotations in Java. Worth considering for a hybrid approach, or do you prefer pure Java?
+
+---
+
+## 7. Backup & Backward Compatibility
+
+**Data Backup Strategy:**
+The system provides a mechanism to export the entire configuration (devices, identities, fingerprints, credentials, and links) to a portable JSON format. Time-series telemetry and raw network sightings are excluded to keep the backup lightweight.
+
+**Handling Secrets:**
+When generating a backup, the user can choose to include or exclude secrets (the encrypted payloads of the Vault). If included, they remain encrypted with their original DEK, meaning the exported JSON is useless without the Vault's Master Passphrase.
+
+**Agent Instructions for Backward Compatibility (CRITICAL):**
+> [!IMPORTANT]
+> Whenever a new Flyway DB migration is added (e.g., `V5__...sql`), the developer or AI agent MUST ensure backup backward compatibility.
+
+1. **Capture a Fixture:** Before changing the schema, capture a JSON backup of the current schema and place it in `src/test/resources/backups/v[VERSION].json`.
+2. **Update the Import Logic:** Ensure that `BackupService.java` can handle any missing fields gracefully if older versions lack new data columns.
+3. **Verify:** A test (e.g., `BackupCompatibilityTest`) must verify this old backup can still be imported into the new database schema without data loss or exceptions.

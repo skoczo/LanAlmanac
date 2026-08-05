@@ -1,0 +1,89 @@
+{
+  "version": "4",
+  "exportDate": "2026-08-05T12:00:00Z",
+  "devices": [
+    {
+      "id": "11111111-1111-1111-1111-111111111111",
+      "displayName": "Router",
+      "deviceType": "ROUTER",
+      "osFamily": "Linux",
+      "osVersion": "OpenWrt",
+      "manufacturer": "Netgear",
+      "model": "R7000",
+      "locationNote": "Living Room",
+      "confidenceScore": 0.95,
+      "manuallyVerified": true,
+      "firstSeen": "2026-08-01T10:00:00Z",
+      "lastSeen": "2026-08-05T10:00:00Z",
+      "status": "ONLINE",
+      "managementState": "MANAGED",
+      "labels": ["network", "core"],
+      "identities": [
+        {
+          "id": "22222222-2222-2222-2222-222222222222",
+          "ipAddress": "192.168.1.1",
+          "macAddress": "00:11:22:33:44:55",
+          "hostname": "gateway.lan",
+          "dhcpLeaseId": null,
+          "firstSeen": "2026-08-01T10:00:00Z",
+          "lastSeen": "2026-08-05T10:00:00Z",
+          "current": true
+        }
+      ],
+      "fingerprints": [
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "version": 1,
+          "dhcpOption55": "1,3,6,15",
+          "dhcpOption60": "udhcp",
+          "tcpFingerprint": "64:1460:1:xyz",
+          "mdnsServices": "_ssh._tcp,_http._tcp",
+          "ssdpUsn": "uuid:12345",
+          "sshBanner": "SSH-2.0-Dropbear",
+          "httpServerHeader": "lighttpd",
+          "tlsJa4": "t13d...",
+          "tlsCertSubject": "CN=gateway",
+          "openPorts": "22,80,443",
+          "macOui": "Netgear",
+          "capturedAt": "2026-08-05T10:00:00Z"
+        }
+      ],
+      "credentials": [
+        {
+          "id": "44444444-4444-4444-4444-444444444444",
+          "label": "SSH Login",
+          "credentialType": "PASSWORD",
+          "username": "root",
+          "port": 22,
+          "createdAt": "2026-08-01T10:00:00Z",
+          "updatedAt": "2026-08-01T10:00:00Z",
+          "encryptedPayload": "YmFzZTY0ZW5jb2RlZGV4YW1wbGU=",
+          "noncePayload": "bm9uY2VleGFtcGxl"
+        }
+      ]
+    },
+    {
+      "id": "55555555-5555-5555-5555-555555555555",
+      "displayName": "NAS",
+      "deviceType": "NAS",
+      "firstSeen": "2026-08-01T10:00:00Z",
+      "lastSeen": "2026-08-05T10:00:00Z",
+      "status": "OFFLINE",
+      "managementState": "DISCOVERED",
+      "identities": [],
+      "fingerprints": [],
+      "credentials": []
+    }
+  ],
+  "links": [
+    {
+      "id": "66666666-6666-6666-6666-666666666666",
+      "sourceDeviceId": "11111111-1111-1111-1111-111111111111",
+      "targetDeviceId": "55555555-5555-5555-5555-555555555555",
+      "sourceInterface": "eth1",
+      "targetInterface": "eth0",
+      "discoveryProtocol": "LLDP",
+      "lastVerified": "2026-08-05T10:00:00Z"
+    }
+  ]
+}

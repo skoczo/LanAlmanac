@@ -11,8 +11,10 @@ import {
   Compass,
   Cpu,
   Monitor,
-  Database
+  Database,
+  Plus
 } from 'lucide-react'
+import { AddDeviceModal } from '../components/AddDeviceModal'
 
 interface Identity {
   ipAddress: string
@@ -49,20 +51,21 @@ export const Devices: React.FC = () => {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [typeFilter, setTypeFilter] = useState('ALL')
+  const [showAddModal, setShowAddModal] = useState(false)
+
+  const fetchDevices = () => {
+    apiClient<Device[]>('/api/devices')
+      .then((data) => {
+        setDevices(data)
+        setLoading(false)
+      })
+      .catch((err) => {
+        console.error(err)
+        setLoading(false)
+      })
+  }
 
   useEffect(() => {
-    const fetchDevices = () => {
-      apiClient<Device[]>('/api/devices')
-        .then((data) => {
-          setDevices(data)
-          setLoading(false)
-        })
-        .catch((err) => {
-          console.error(err)
-          setLoading(false)
-        })
-    }
-
     // Initial fetch
     fetchDevices()
 
@@ -126,6 +129,13 @@ export const Devices: React.FC = () => {
           <h1 className="text-2xl font-bold tracking-tight">Discovered Devices</h1>
           <p className="text-text-secondary text-sm">Review identified systems on your local subnets</p>
         </div>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-accent-primary hover:bg-accent-primary/90 text-text-primary text-xs font-bold uppercase tracking-wider cursor-pointer transition-colors shadow-lg"
+        >
+          <Plus className="w-4 h-4" />
+          Add Device
+        </button>
       </div>
 
       {/* Filter and Search Bar */}
@@ -358,6 +368,13 @@ export const Devices: React.FC = () => {
             </table>
           </div>
         </div>
+      )}
+
+      {showAddModal && (
+        <AddDeviceModal 
+          onClose={() => setShowAddModal(false)} 
+          onDeviceAdded={() => fetchDevices()} 
+        />
       )}
     </div>
   )

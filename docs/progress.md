@@ -38,10 +38,10 @@ This document tracks the completion of developmental phases for the NetAlmanac p
 
 ---
 
-## ⬜ Phase 3: Credential Vault & Vault UI (Planned)
-- [ ] Write secure envelope encryption engine (AES-256-GCM using derived Argon2id master key).
-- [ ] Implement backend unseal endpoint & credentials CRUD.
-- [ ] Connect frontend credential creation form dialog and secure reveal triggers.
+## ✅ Phase 3: Credential Vault & Vault UI (Completed)
+- [x] Write secure envelope encryption engine (AES-256-GCM using derived Argon2id master key).
+- [x] Implement backend unseal endpoint & credentials CRUD.
+- [x] Connect frontend credential creation form dialog and secure reveal triggers.
 
 ---
 

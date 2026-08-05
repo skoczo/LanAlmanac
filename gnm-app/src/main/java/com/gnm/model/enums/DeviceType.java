@@ -8,5 +8,6 @@ public enum DeviceType {
     NAS,
     PHONE,
     IOT,
-    WORKSTATION
+    WORKSTATION,
+    UNKNOWN
 }

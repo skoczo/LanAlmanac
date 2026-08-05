@@ -15,9 +15,11 @@ import {
   Plus,
   Edit2,
   Save,
-  X
+  X,
+  Terminal as TerminalIcon
 } from 'lucide-react'
 import { useVault } from '../lib/vault/vault-context'
+import { Terminal } from '../components/Terminal'
 
 interface Identity {
   id: string
@@ -96,6 +98,7 @@ export const DeviceDetail: React.FC = () => {
   const { sealed, setShowUnsealModal } = useVault()
   const [showAddCred, setShowAddCred] = useState(false)
   const [newCred, setNewCred] = useState({ label: '', type: 'SSH_KEY', username: '', port: '', secret: '' })
+  const [activeTerminalCredId, setActiveTerminalCredId] = useState<string | null>(null)
   
   const [isEditing, setIsEditing] = useState(false)
   const [editForm, setEditForm] = useState({
@@ -292,6 +295,18 @@ export const DeviceDetail: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in select-none">
+      {activeTerminalCredId && (
+        <div className="fixed inset-0 z-50 bg-bg-base/90 backdrop-blur-sm flex items-center justify-center p-8 animate-fade-in">
+          <div className="w-full h-full max-w-6xl max-h-[800px]">
+            <Terminal 
+              deviceId={device.id} 
+              credentialId={activeTerminalCredId} 
+              onClose={() => setActiveTerminalCredId(null)} 
+            />
+          </div>
+        </div>
+      )}
+
       {/* Header back button */}
       <div className="flex items-center gap-4">
         <Link
@@ -690,7 +705,15 @@ export const DeviceDetail: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <span className="font-mono text-xs text-text-muted">
+                      {(cred.credentialType === 'SSH_KEY' || cred.credentialType === 'PASSWORD') && (
+                        <button
+                          onClick={() => setActiveTerminalCredId(cred.id)}
+                          className="px-3 py-1.5 rounded-lg bg-accent-primary hover:bg-accent-primary/90 text-text-primary text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center gap-1.5"
+                        >
+                          <TerminalIcon className="w-3 h-3" /> Connect
+                        </button>
+                      )}
+                      <span className="font-mono text-xs text-text-muted border-l border-border-subtle pl-3">
                         {revealedCreds[cred.id] !== undefined ? revealedCreds[cred.id] : '••••••••••••••••'}
                       </span>
                       <button
