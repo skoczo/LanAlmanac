@@ -762,7 +762,7 @@ The app uses a persistent **sidebar + header + content** layout via a React layo
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ┌──────┐  GreatNetworkManager          🔔 3   👤 admin ▼  │ ← Header (56px)
+│  ┌──────┐  LanAlmanac                   🔔 3   👤 admin ▼  │ ← Header (56px)
 ├──┤      ├──────────────────────────────────────────────────┤
 │  │ SIDE │                                                  │
 │  │ BAR  │              MAIN CONTENT AREA                   │
@@ -1311,7 +1311,7 @@ gnm.auth.local.password=${GNM_ADMIN_PASSWORD}
 ## 8. Project Directory Structure (Gradle Multi-Project)
 
 ```
-GreatNetworkManager/
+LanAlmanac/
 ├── build.gradle.kts                        # Root project build file
 ├── settings.gradle.kts                     # Gradle settings and module inclusion
 ├── gradle.properties                       # Gradle properties
@@ -1516,7 +1516,7 @@ version: "3.9"
 services:
   gnm:
     build: .
-    image: greatnetworkmanager:latest
+    image: lanalmanac:latest
     container_name: gnm-core
     restart: unless-stopped
     network_mode: host              # REQUIRED for passive packet capture

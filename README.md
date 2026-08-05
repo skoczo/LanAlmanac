@@ -56,17 +56,27 @@ Authenticate using the default local credentials:
 
 ## 📦 Production Deployment (Docker Compose)
 
-To build and run the entire application bundle as a single multi-container production stack:
+The project includes an automated GitHub Actions CI/CD pipeline (`.github/workflows/build-and-push.yml`) that builds the Docker image and publishes it to the GitHub Container Registry (`ghcr.io`).
 
-1. Create a `.env` file from the environment template (if configured).
-2. Start the stack with build instructions:
+To run the production-ready stack (with PostgreSQL, Redis, and the LanAlmanac backend/frontend):
+
+1. Clone this repository or copy the `docker-compose.prod.yml` file to your server.
+2. Set optional environment variables (e.g. `ADMIN_USERNAME`, `ADMIN_PASSWORD`) in your `.env` file or export them.
+3. Start the stack using the published GitHub image:
 ```bash
-docker compose -f docker-compose.yml up --build -d
+docker compose -f docker-compose.prod.yml up -d
+```
+
+### Local Build Deployment
+
+If you prefer to build the image locally yourself:
+```bash
+docker build -t lanalmanac:latest .
 ```
 The multi-stage `Dockerfile` will:
 1. Compile the React frontend SPA into static assets.
-2. Compile and package the Quarkus backend in JVM mode, embedding the static frontend files inside the JAR resource folder (`META-INF/resources`).
-3. Deploy the final container using the Eclipse Temurin JRE runtime alongside the TimescaleDB and Redis containers.
+2. Compile and package the Quarkus backend in JVM fast-jar mode, embedding the static frontend files inside the JAR resource folder (`META-INF/resources`).
+3. Deploy the final container using the Eclipse Temurin JRE runtime.
 
 ---
 
