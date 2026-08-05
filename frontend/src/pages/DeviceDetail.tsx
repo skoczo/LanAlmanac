@@ -5,17 +5,12 @@ import {
   ArrowLeft,
   Calendar,
   Cpu,
-  Database,
   Eye,
   EyeOff,
   KeyRound,
   MapPin,
-  Monitor,
-  RefreshCw,
   ShieldCheck,
-  Terminal,
   Clock,
-  Wifi,
   HardDrive,
   Plus,
   Edit2,
@@ -291,64 +286,6 @@ export const DeviceDetail: React.FC = () => {
     )
   }
 
-  const renderSvgAreaChart = (data: number[], title: string, color: string, suffix: string) => {
-    if (data.length === 0) {
-      return (
-        <div className="h-44 bg-bg-surface-raised border border-border-subtle rounded-xl flex items-center justify-center text-text-muted text-xs">
-          No historical monitoring telemetry recorded
-        </div>
-      )
-    }
-
-    const max = Math.max(...data, 1)
-    const min = Math.min(...data, 0)
-    const range = max - min
-    const width = 500
-    const height = 150
-
-    const points = data
-      .map((val, index) => {
-        const x = (index / (data.length - 1)) * width
-        const y = height - ((val - min) / range) * (height - 20) - 10
-        return `${x},${y}`
-      })
-      .join(' ')
-
-    const areaPoints = `0,${height} ${points} ${width},${height}`
-
-    return (
-      <div className="bg-bg-surface border border-border-subtle rounded-2xl p-5 space-y-4 shadow-md">
-        <div className="flex justify-between items-start">
-          <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">{title}</h4>
-          <span className="text-sm font-extrabold text-text-primary font-mono">
-            {Math.round(data[data.length - 1])}{suffix}
-          </span>
-        </div>
-
-        <div className="relative w-full h-[150px]">
-          <svg className="w-full h-full" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-            <defs>
-              <linearGradient id={`grad-${title}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={color} stopOpacity="0.25" />
-                <stop offset="100%" stopColor={color} stopOpacity="0.0" />
-              </linearGradient>
-            </defs>
-            <polygon fill={`url(#grad-${title})`} points={areaPoints} />
-            <polyline fill="none" stroke={color} strokeWidth="2" points={points} />
-            {/* Draw current value point */}
-            <circle
-              cx={width}
-              cy={height - ((data[data.length - 1] - min) / range) * (height - 20) - 10}
-              r="4"
-              fill={color}
-              stroke="#0d1222"
-              strokeWidth="1.5"
-            />
-          </svg>
-        </div>
-      </div>
-    )
-  }
 
   const currentIdentity = device.identities?.find((id) => id.current)
   const latestFingerprint = device.fingerprints?.[0]

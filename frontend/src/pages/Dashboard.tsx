@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth/auth-context'
-import { Server, ShieldAlert, Wifi, WifiOff, Activity, ArrowUpRight, TrendingUp } from 'lucide-react'
+import { Server, ShieldAlert, Wifi, WifiOff, Activity, TrendingUp } from 'lucide-react'
 
 interface Device {
   id: string

@@ -52,3 +52,5 @@ Thumbs.db
 *.log.*
 
 *.txt
+
+logs
