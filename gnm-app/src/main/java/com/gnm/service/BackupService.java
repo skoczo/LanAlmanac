@@ -6,6 +6,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.Map;
+import java.util.HashMap;
 
 import com.gnm.dto.backup.*;
 import com.gnm.model.*;
@@ -35,18 +37,35 @@ public class BackupService {
         // Wipe existing data
         NetworkLink.deleteAll();
         PhysicalDevice.deleteAll(); // Cascade will delete credentials, identities, fingerprints
+        PhysicalDevice.getEntityManager().flush();
+        
+        Map<UUID, PhysicalDevice> deviceMap = new HashMap<>();
 
         // Insert new data
         if (backup.devices != null) {
             for (PhysicalDeviceBackup db : backup.devices) {
+                UUID oldId = db.id;
+                db.id = null; // Clear ID so Hibernate treats it as new
                 PhysicalDevice device = mapFromBackup(db);
                 device.persist();
+                deviceMap.put(oldId, device);
             }
         }
 
         if (backup.links != null) {
             for (NetworkLinkBackup lb : backup.links) {
+                lb.id = null;
                 NetworkLink link = mapFromBackup(lb);
+                if (lb.sourceDeviceId != null && deviceMap.containsKey(lb.sourceDeviceId)) {
+                    link.sourceDevice = deviceMap.get(lb.sourceDeviceId);
+                } else {
+                    link.sourceDevice = null;
+                }
+                if (lb.targetDeviceId != null && deviceMap.containsKey(lb.targetDeviceId)) {
+                    link.targetDevice = deviceMap.get(lb.targetDeviceId);
+                } else {
+                    link.targetDevice = null;
+                }
                 link.persist();
             }
         }
@@ -150,7 +169,7 @@ public class BackupService {
 
     private PhysicalDevice mapFromBackup(PhysicalDeviceBackup dto) {
         PhysicalDevice device = new PhysicalDevice();
-        device.id = dto.id != null ? dto.id : UUID.randomUUID();
+        // Skip setting ID manually so @GeneratedValue works
         device.displayName = dto.displayName;
         device.deviceType = dto.deviceType;
         device.osFamily = dto.osFamily;
@@ -192,7 +211,7 @@ public class BackupService {
 
     private NetworkIdentity mapFromBackup(NetworkIdentityBackup dto) {
         NetworkIdentity id = new NetworkIdentity();
-        id.id = dto.id != null ? dto.id : UUID.randomUUID();
+        // Skip setting ID manually
         id.ipAddress = dto.ipAddress;
         id.macAddress = dto.macAddress;
         id.hostname = dto.hostname;
@@ -205,7 +224,7 @@ public class BackupService {
 
     private FingerprintVector mapFromBackup(FingerprintVectorBackup dto) {
         FingerprintVector fp = new FingerprintVector();
-        fp.id = dto.id != null ? dto.id : UUID.randomUUID();
+        // Skip setting ID manually
         fp.version = dto.version;
         fp.dhcpOption55 = dto.dhcpOption55;
         fp.dhcpOption60 = dto.dhcpOption60;
@@ -230,7 +249,7 @@ public class BackupService {
 
     private Credential mapFromBackup(CredentialBackup dto) {
         Credential c = new Credential();
-        c.id = dto.id != null ? dto.id : UUID.randomUUID();
+        // Skip setting ID manually
         c.label = dto.label;
         c.credentialType = dto.credentialType;
         c.username = dto.username;
@@ -244,7 +263,7 @@ public class BackupService {
 
     private NetworkLink mapFromBackup(NetworkLinkBackup dto) {
         NetworkLink link = new NetworkLink();
-        link.id = dto.id != null ? dto.id : UUID.randomUUID();
+        // Skip setting ID manually
         
         if (dto.sourceDeviceId != null) {
             link.sourceDevice = PhysicalDevice.findById(dto.sourceDeviceId);
