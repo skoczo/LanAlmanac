@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { X, Search, PlusCircle, MonitorSmartphone, Server, Router, Target } from 'lucide-react'
+import { X, Search, PlusCircle, Server, Target } from 'lucide-react'
 import { useAuth } from '../lib/auth/auth-context'
 
 interface AddDeviceModalProps {
