@@ -44,6 +44,12 @@ public class NetworkService extends PanacheEntityBase {
     @Column(name = "last_seen", nullable = false)
     public Instant lastSeen;
 
+    @Column(name = "ssh_host_key")
+    public String sshHostKey;
+
+    @Column(name = "ssh_host_key_trusted")
+    public Boolean sshHostKeyTrusted = false;
+
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "credential_id")
     public Credential credential;

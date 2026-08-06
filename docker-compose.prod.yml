@@ -37,6 +37,7 @@ services:
       - QUARKUS_REDIS_HOSTS=redis://localhost:6379
       - GNM_AUTH_LOCAL_USERNAME=${ADMIN_USERNAME:-admin}
       - GNM_AUTH_LOCAL_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - GNM_VAULT_PASSWORD=${GNM_VAULT_PASSWORD}
     depends_on:
       - db
       - redis

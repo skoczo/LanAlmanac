@@ -27,8 +27,9 @@ docker compose up -d
 ### Step 2: Run Quarkus Backend in Dev Mode
 Start the Quarkus development server. Dev mode automatically recompiles Java classes on code changes, runs Flyway migrations, and hot-swaps resources:
 ```bash
-./gradlew :gnm-app:quarkusDev
+GNM_VAULT_PASSWORD=my_secure_passcode ./gradlew :gnm-app:quarkusDev
 ```
+* **Vault Password**: Required for Vault initialization and unsealing. Can also be set in `gnm-app/.env` or `gnm-app/src/main/resources/application.properties` (`%dev.gnm.vault.password`).
 * **JWT Signing Keys**: On the first start, GNM will automatically generate a secure 2048-bit RSA keypair in the `./keys` folder.
 * **Database migrations**: Flyway automatically creates the tables at startup.
 * **Mock Data**: A mock data service detects an empty database and automatically seeds 7 devices, history, credentials, and 24 hours of telemetry metrics for dashboard visualization.
@@ -61,7 +62,7 @@ The project includes an automated GitHub Actions CI/CD pipeline (`.github/workfl
 To run the production-ready stack (with PostgreSQL, Redis, and the LanAlmanac backend/frontend):
 
 1. Clone this repository or copy the `docker-compose.prod.yml` file to your server.
-2. Set optional environment variables (e.g. `ADMIN_USERNAME`, `ADMIN_PASSWORD`) in your `.env` file or export them.
+2. Set environment variables (e.g. `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `GNM_VAULT_PASSWORD`) in your `.env` file or export them. It is highly recommended to secure the vault using `GNM_VAULT_PASSWORD`.
 3. Start the stack using the published GitHub image:
 ```bash
 docker compose -f docker-compose.prod.yml up -d

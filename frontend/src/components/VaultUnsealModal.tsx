@@ -6,7 +6,6 @@ import { Lock, Unlock, ShieldAlert } from 'lucide-react'
 export const VaultUnsealModal = () => {
   const { sealed, showUnsealModal, setShowUnsealModal, refreshStatus } = useVault()
   const { apiClient } = useAuth()
-  const [passcode, setPasscode] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   if (!showUnsealModal || !sealed) return null
@@ -15,12 +14,10 @@ export const VaultUnsealModal = () => {
     e.preventDefault()
     try {
       await apiClient('/api/vault/unseal', {
-        method: 'POST',
-        body: JSON.stringify({ passcode })
+        method: 'POST'
       })
       await refreshStatus()
       setShowUnsealModal(false)
-      setPasscode('')
       setError(null)
     } catch (err: any) {
       setError(err.message || 'Invalid passcode')
@@ -36,7 +33,7 @@ export const VaultUnsealModal = () => {
           </div>
           <h2 className="text-lg font-bold text-text-primary">Vault Sealed</h2>
           <p className="text-xs text-text-secondary">
-            Enter your master passcode to access encrypted credentials.
+            Click Unseal to unlock the Vault using the server's configured master password.
           </p>
         </div>
 
@@ -48,15 +45,7 @@ export const VaultUnsealModal = () => {
         )}
 
         <form onSubmit={handleUnseal} className="space-y-4">
-          <input
-            type="password"
-            value={passcode}
-            onChange={e => setPasscode(e.target.value)}
-            placeholder="Master Passcode"
-            required
-            className="w-full bg-bg-surface-raised border border-border-subtle rounded-xl py-3 px-4 text-xs focus:outline-none focus:border-accent-primary"
-          />
-          <div className="flex gap-3">
+          <div className="flex gap-3 mt-6">
             <button
               type="button"
               onClick={() => setShowUnsealModal(false)}
@@ -69,7 +58,7 @@ export const VaultUnsealModal = () => {
               className="flex-1 bg-accent-primary hover:bg-accent-primary/95 text-text-primary font-semibold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 cursor-pointer"
             >
               <Unlock className="w-4 h-4" />
-              Unseal
+              Unseal Vault
             </button>
           </div>
         </form>

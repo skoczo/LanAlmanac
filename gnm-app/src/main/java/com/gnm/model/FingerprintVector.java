@@ -4,6 +4,7 @@ import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -41,11 +42,13 @@ public class FingerprintVector extends PanacheEntityBase {
     @Column(name = "ssdp_usn")
     public String ssdpUsn;
 
-    @Column(name = "ssh_banner")
-    public String sshBanner;
-
     @Column(name = "http_server_header")
     public String httpServerHeader;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "fingerprint_vector_ssh_keys", joinColumns = @JoinColumn(name = "fingerprint_vector_id"))
+    @Column(name = "ssh_host_key")
+    public List<String> sshHostKeys = new ArrayList<>();
 
     @Column(name = "tls_ja4")
     public String tlsJa4;

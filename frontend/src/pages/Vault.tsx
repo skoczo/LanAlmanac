@@ -22,7 +22,6 @@ export const Vault: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([])
   const [revealedCreds, setRevealedCreds] = useState<Record<string, string>>({})
   
-  const [initPasscode, setInitPasscode] = useState('')
   const [initError, setInitError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -36,11 +35,9 @@ export const Vault: React.FC = () => {
     e.preventDefault()
     try {
       await apiClient('/api/vault/init', {
-        method: 'POST',
-        body: JSON.stringify({ passcode: initPasscode })
+        method: 'POST'
       })
       await refreshStatus()
-      setInitPasscode('')
       setInitError(null)
     } catch (err: any) {
       setInitError(err.message || 'Initialization failed')
@@ -97,7 +94,7 @@ export const Vault: React.FC = () => {
         <div className="w-full max-w-md bg-bg-surface border border-border-subtle rounded-2xl p-8 shadow-2xl">
           <div className="text-center space-y-3 mb-6">
             <h2 className="text-lg font-bold text-text-primary">Initialize Vault</h2>
-            <p className="text-xs text-text-secondary">Set a strong master passcode. If you lose this, all encrypted data is lost forever.</p>
+            <p className="text-xs text-text-secondary">Click below to initialize the Vault using the server's configured master password (GNM_VAULT_PASSWORD).</p>
           </div>
           {initError && (
             <div className="mb-4 p-2.5 rounded-lg bg-accent-danger/10 border border-accent-danger/25 text-[11px] text-accent-danger flex items-center gap-2">
@@ -106,14 +103,6 @@ export const Vault: React.FC = () => {
             </div>
           )}
           <form onSubmit={handleInit} className="space-y-4">
-            <input
-              type="password"
-              value={initPasscode}
-              onChange={(e) => setInitPasscode(e.target.value)}
-              placeholder="New Master Passcode"
-              required
-              className="w-full bg-bg-surface-raised border border-border-subtle rounded-xl py-3 px-4 text-xs font-mono text-center focus:outline-none focus:border-accent-primary"
-            />
             <button type="submit" className="w-full bg-accent-primary hover:bg-accent-primary/95 text-text-primary font-semibold py-3 rounded-xl shadow-lg transition-all text-xs cursor-pointer">
               Initialize Vault
             </button>

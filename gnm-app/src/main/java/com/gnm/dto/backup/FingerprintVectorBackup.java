@@ -1,5 +1,7 @@
 package com.gnm.dto.backup;
 
+import java.util.List;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -11,8 +13,8 @@ public class FingerprintVectorBackup {
     public String tcpFingerprint;
     public String mdnsServices;
     public String ssdpUsn;
-    public String sshBanner;
     public String httpServerHeader;
+    public List<String> sshHostKeys;
     public String tlsJa4;
     public String tlsCertSubject;
     public String openPorts;

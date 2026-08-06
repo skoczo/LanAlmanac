@@ -40,8 +40,8 @@ interface Fingerprint {
   tcpFingerprint: string
   mdnsServices: string[]
   ssdpUsn: string
-  sshBanner: string
   httpServerHeader: string
+  sshHostKeys: string[]
   tlsJa4: string
   tlsCertSubject: string
   openPorts: number[]
@@ -67,6 +67,8 @@ interface NetworkService {
   discovered: boolean
   firstSeen: string
   lastSeen: string
+  sshHostKey: string | null
+  sshHostKeyTrusted: boolean
   credential?: Credential
 }
 
@@ -171,6 +173,17 @@ export const DeviceDetail: React.FC = () => {
       const updatedDevice = await apiClient<Device>(`/api/devices/${deviceId}/state`, {
         method: 'PUT',
         body: JSON.stringify({ managementState: state })
+      })
+      setDevice(updatedDevice)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const handleTrustSshKey = async (serviceId: string) => {
+    try {
+      const updatedDevice = await apiClient<Device>(`/api/devices/${deviceId}/services/${serviceId}/trust-ssh-key`, {
+        method: 'PUT'
       })
       setDevice(updatedDevice)
     } catch (e) {
@@ -642,16 +655,22 @@ export const DeviceDetail: React.FC = () => {
                   <p className="text-[10px] text-text-muted uppercase font-bold tracking-wider">TLS Client JA4 Hash</p>
                   <p className="font-mono text-xs text-text-primary mt-1">{latestFingerprint.tlsJa4 || '-'}</p>
                 </div>
+                <div>
+                  <p className="text-[10px] text-text-muted uppercase font-bold tracking-wider">SSH Host Keys (SHA256)</p>
+                  <div className="flex flex-col gap-1.5 mt-1">
+                    {latestFingerprint.sshHostKeys?.map((key) => (
+                      <p key={key} className="font-mono text-[9px] text-text-primary break-all bg-bg-base p-1.5 rounded border border-border-subtle">
+                        {key}
+                      </p>
+                    )) || <p className="font-mono text-xs text-text-primary">-</p>}
+                  </div>
+                </div>
               </div>
             </div>
 
             <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-4 shadow-lg">
               <h3 className="font-bold text-sm tracking-tight">Service Banners & Ports</h3>
               <div className="space-y-3.5 text-xs">
-                <div className="border-b border-border-subtle/50 pb-2.5">
-                  <p className="text-[10px] text-text-muted uppercase font-bold tracking-wider">SSH Banner</p>
-                  <p className="font-mono text-xs text-text-primary mt-1">{latestFingerprint.sshBanner || '-'}</p>
-                </div>
                 <div className="border-b border-border-subtle/50 pb-2.5">
                   <p className="text-[10px] text-text-muted uppercase font-bold tracking-wider">HTTP Server Header</p>
                   <p className="font-mono text-xs text-text-primary mt-1">{latestFingerprint.httpServerHeader || '-'}</p>
@@ -1001,6 +1020,38 @@ export const DeviceDetail: React.FC = () => {
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
+
+                      {svc.serviceType === 'SSH' && (
+                        <div className="flex flex-col gap-1.5 mr-4 border-r border-border-subtle pr-4 w-64">
+                            <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider">Host Key (SHA256)</span>
+                            {svc.sshHostKey ? (
+                                <div className="space-y-1.5">
+                                    <p className="font-mono text-[10px] text-text-primary break-all bg-bg-base p-1.5 rounded border border-border-subtle">
+                                        {svc.sshHostKey}
+                                    </p>
+                                    {svc.sshHostKeyTrusted ? (
+                                        <span className="px-2 py-0.5 rounded bg-accent-success/15 text-accent-success text-[9px] font-bold border border-accent-success/20 flex items-center gap-1 w-fit">
+                                            <ShieldCheck className="w-2.5 h-2.5" /> Trusted
+                                        </span>
+                                    ) : (
+                                        <div className="flex items-center gap-2 justify-between">
+                                            <span className="px-2 py-0.5 rounded bg-accent-danger/15 text-accent-danger text-[9px] font-bold border border-accent-danger/20">
+                                                Untrusted
+                                            </span>
+                                            <button
+                                                onClick={() => handleTrustSshKey(svc.id)}
+                                                className="px-2 py-0.5 bg-accent-primary hover:bg-accent-primary/90 text-text-primary font-bold rounded text-[9px] cursor-pointer transition-colors"
+                                            >
+                                                Trust
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <span className="text-[9px] text-text-muted italic mt-1">Connect to capture</span>
+                            )}
+                        </div>
+                      )}
 
                       {svc.serviceType === 'SSH' && (
                         <button

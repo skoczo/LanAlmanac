@@ -4,6 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import java.time.Instant;
 import java.util.List;
+import java.util.ArrayList; 
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.Map;
@@ -125,7 +126,7 @@ public class BackupService {
         dto.tcpFingerprint = f.tcpFingerprint;
         if (f.mdnsServices != null) dto.mdnsServices = String.join(",", f.mdnsServices);
         dto.ssdpUsn = f.ssdpUsn;
-        dto.sshBanner = f.sshBanner;
+        dto.sshHostKeys = f.sshHostKeys != null ? new ArrayList<>(f.sshHostKeys) : new ArrayList<>();
         dto.httpServerHeader = f.httpServerHeader;
         dto.tlsJa4 = f.tlsJa4;
         dto.tlsCertSubject = f.tlsCertSubject;
@@ -233,7 +234,7 @@ public class BackupService {
             fp.mdnsServices = List.of(dto.mdnsServices.split(","));
         }
         fp.ssdpUsn = dto.ssdpUsn;
-        fp.sshBanner = dto.sshBanner;
+        fp.sshHostKeys = dto.sshHostKeys != null ? new ArrayList<>(dto.sshHostKeys) : new ArrayList<>();
         fp.httpServerHeader = dto.httpServerHeader;
         fp.tlsJa4 = dto.tlsJa4;
         fp.tlsCertSubject = dto.tlsCertSubject;

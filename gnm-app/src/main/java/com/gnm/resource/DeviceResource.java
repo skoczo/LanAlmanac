@@ -204,6 +204,26 @@ public class DeviceResource {
     }
 
     @PUT
+    @Path("/{id}/services/{serviceId}/trust-ssh-key")
+    @Transactional
+    public Response trustSshKey(@PathParam("id") UUID id, @PathParam("serviceId") UUID serviceId) {
+        NetworkService service = NetworkService.findById(serviceId);
+        if (service == null || !service.physicalDevice.id.equals(id)) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        if (service.sshHostKey != null && !service.sshHostKey.isEmpty()) {
+            service.sshHostKeyTrusted = true;
+            service.persist();
+            
+            // Reload the device to return it
+            PhysicalDevice device = PhysicalDevice.findById(id);
+            initializeLazyCollections(device);
+            return Response.ok(device).build();
+        }
+        return Response.status(Response.Status.BAD_REQUEST).entity("No SSH key to trust").build();
+    }
+
+    @PUT
     @Path("/{id}/labels")
     @Transactional
     public Response updateDeviceLabels(@PathParam("id") UUID id, List<String> labels) {

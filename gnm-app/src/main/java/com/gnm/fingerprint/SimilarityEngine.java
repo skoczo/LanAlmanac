@@ -17,7 +17,7 @@ public class SimilarityEngine {
     private static final double W_MDNS = 0.30;
     private static final double W_OPEN_PORTS = 0.10;
     private static final double W_MAC_OUI = 0.05;
-    private static final double W_SSH = 0.40;
+    private static final double W_SSH_KEY = 0.80;
     private static final double W_HTTP = 0.25;
     private static final double W_TLS_JA4 = 0.35;
     private static final double W_TLS_CERT = 0.35;
@@ -72,11 +72,11 @@ public class SimilarityEngine {
             weightSum += W_MAC_OUI;
         }
 
-        // 7. SSH Banner
-        if (hasValue(candidate.sshBanner) || hasValue(historical.sshBanner)) {
-            double score = compareStringsContains(candidate.sshBanner, historical.sshBanner);
-            weightedScoreSum += score * W_SSH;
-            weightSum += W_SSH;
+        // 7. SSH Host Keys (High signal)
+        if (hasList(candidate.sshHostKeys) || hasList(historical.sshHostKeys)) {
+            double score = compareLists(candidate.sshHostKeys, historical.sshHostKeys);
+            weightedScoreSum += score * W_SSH_KEY;
+            weightSum += W_SSH_KEY;
         }
 
         // 8. HTTP Server Header

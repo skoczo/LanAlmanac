@@ -20,6 +20,12 @@ import com.gnm.discovery.NetworkSightingQueue;
 import com.gnm.model.*;
 import com.gnm.model.enums.*;
 
+import org.apache.sshd.client.SshClient;
+import org.apache.sshd.client.session.ClientSession;
+import org.apache.sshd.common.config.keys.KeyUtils;
+import org.apache.sshd.common.digest.BuiltinDigests;
+import java.util.concurrent.atomic.AtomicReference;
+
 @ApplicationScoped
 public class FingerprintEngine {
 
@@ -98,6 +104,17 @@ public class FingerprintEngine {
         List<Integer> openPorts = scanOpenPorts(sighting.ipAddress);
         if (!openPorts.isEmpty()) {
             candidate.openPorts = openPorts;
+            
+            // Actively fetch SSH host keys for any open port that is commonly SSH
+            for (Integer port : openPorts) {
+                if (port == 22 || port == 2222 || port == 2223 || port == 2224) {
+                    String sshKey = fetchSshHostKey(sighting.ipAddress, port);
+                    if (sshKey != null && !sshKey.isEmpty()) {
+                        candidate.sshHostKeys.add(sshKey);
+                        LOG.info("Automatically fetched SSH Host Key on port " + port + ": " + sshKey);
+                    }
+                }
+            }
         }
         
         // Resolve hostname outside of transaction to avoid timeout
@@ -841,10 +858,16 @@ public class FingerprintEngine {
         if (source.tcpFingerprint != null) dest.tcpFingerprint = source.tcpFingerprint;
         if (source.mdnsServices != null && !source.mdnsServices.isEmpty()) dest.mdnsServices = source.mdnsServices;
         if (source.openPorts != null && !source.openPorts.isEmpty()) dest.openPorts = source.openPorts;
-        if (source.sshBanner != null) dest.sshBanner = source.sshBanner;
         if (source.httpServerHeader != null) dest.httpServerHeader = source.httpServerHeader;
         if (source.tlsJa4 != null) dest.tlsJa4 = source.tlsJa4;
         if (source.tlsCertSubject != null) dest.tlsCertSubject = source.tlsCertSubject;
+        if (source.sshHostKeys != null && !source.sshHostKeys.isEmpty()) {
+            for (String key : source.sshHostKeys) {
+                if (!dest.sshHostKeys.contains(key)) {
+                    dest.sshHostKeys.add(key);
+                }
+            }
+        }
         dest.capturedAt = Instant.now();
         dest.persist();
     }
@@ -902,5 +925,25 @@ public class FingerprintEngine {
             }
         }
         return openPorts;
+    }
+
+    private String fetchSshHostKey(String ip, int port) {
+        AtomicReference<String> hostKeyRef = new AtomicReference<>();
+        try (SshClient client = SshClient.setUpDefaultClient()) {
+            client.setServerKeyVerifier((clientSession, remoteAddress, serverKey) -> {
+                String fingerprint = KeyUtils.getFingerPrint(BuiltinDigests.sha256, serverKey);
+                hostKeyRef.set(fingerprint);
+                return false; // Reject key to immediately abort handshake
+            });
+            client.start();
+            try (ClientSession session = client.connect("fakeuser", ip, port).verify(2000).getSession()) {
+                session.auth().verify(2000); 
+            } catch (Exception e) {
+                // Expected to fail because we reject the server key, or auth fails
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+        return hostKeyRef.get();
     }
 }

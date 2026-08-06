@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.gnm.model.Credential;
 import com.gnm.model.NetworkIdentity;
+import com.gnm.model.NetworkService;
 import com.gnm.model.PhysicalDevice;
 import com.gnm.model.enums.CredentialType;
 import com.gnm.service.VaultEngine;
@@ -20,12 +21,16 @@ import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.channel.ChannelShell;
 import org.apache.sshd.client.channel.ClientChannelEvent;
 import org.apache.sshd.client.session.ClientSession;
+import org.apache.sshd.common.config.keys.KeyUtils;
+import org.apache.sshd.common.digest.BuiltinDigests;
 import org.jboss.logging.Logger;
+import io.quarkus.narayana.jta.QuarkusTransaction;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.UUID;
@@ -84,14 +89,77 @@ public class TerminalWebSocket {
             return;
         }
 
+        int port = cred.port != null ? cred.port : 22;
+        NetworkService targetService = null;
+        for (NetworkService svc : device.services) {
+            if (svc.port != null && svc.port == port && "SSH".equalsIgnoreCase(svc.serviceType)) {
+                targetService = svc;
+                break;
+            }
+        }
+        if (targetService == null) {
+            targetService = new NetworkService();
+            targetService.physicalDevice = device;
+            targetService.serviceType = "SSH";
+            targetService.protocol = "TCP";
+            targetService.port = port;
+            targetService.label = "SSH (" + port + ")";
+            targetService.firstSeen = Instant.now();
+            targetService.lastSeen = Instant.now();
+            targetService.persist();
+            device.services.add(targetService);
+        }
+
+        final NetworkService finalService = targetService;
+
         // Start SSH connection in a virtual thread
         log.infof("Starting SSH virtual thread for device %s (IP: %s)", deviceIdStr, ipAddress);
-        Thread.startVirtualThread(() -> connectSsh(connection, ipAddress, cred));
+        Thread.startVirtualThread(() -> connectSsh(connection, ipAddress, cred, finalService));
     }
 
-    private void connectSsh(WebSocketConnection connection, String ip, Credential cred) {
+    private void connectSsh(WebSocketConnection connection, String ip, Credential cred, NetworkService service) {
         log.infof("Setting up SSH client for %s@%s", cred.username, ip);
         SshClient client = SshClient.setUpDefaultClient();
+        
+        // Trust On First Use (TOFU) logic
+        client.setServerKeyVerifier((clientSession, remoteAddress, serverKey) -> {
+            String fingerprint = KeyUtils.getFingerPrint(BuiltinDigests.sha256, serverKey);
+            log.infof("Received server key fingerprint: %s", fingerprint);
+
+            if (service.sshHostKey == null || service.sshHostKey.isEmpty()) {
+                // First use: store it but reject until trusted
+                QuarkusTransaction.requiringNew().run(() -> {
+                    NetworkService s = NetworkService.findById(service.id);
+                    s.sshHostKey = fingerprint;
+                    s.sshHostKeyTrusted = false;
+                    s.persist();
+                });
+                
+                connection.sendTextAndAwait("\r\n[Security] First time connecting to this host.\r\n");
+                connection.sendTextAndAwait("[Security] Host Key Fingerprint: " + fingerprint + "\r\n");
+                connection.sendTextAndAwait("[Security] Please explicitly trust this key in the UI before connecting.\r\n");
+                return false;
+            }
+
+            if (!service.sshHostKey.equals(fingerprint)) {
+                // Key changed! MITM or host re-installed
+                connection.sendTextAndAwait("\r\n[CRITICAL WARNING] REMOTE HOST IDENTIFICATION HAS CHANGED!\r\n");
+                connection.sendTextAndAwait("IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!\r\n");
+                connection.sendTextAndAwait("Someone could be eavesdropping on you right now (man-in-the-middle attack)!\r\n");
+                connection.sendTextAndAwait("Expected: " + service.sshHostKey + "\r\n");
+                connection.sendTextAndAwait("Received: " + fingerprint + "\r\n");
+                return false;
+            }
+
+            if (service.sshHostKeyTrusted == null || !service.sshHostKeyTrusted) {
+                connection.sendTextAndAwait("\r\n[Security] Host key is known but NOT TRUSTED.\r\n");
+                connection.sendTextAndAwait("[Security] Please explicitly trust this key in the UI before connecting.\r\n");
+                return false;
+            }
+
+            return true;
+        });
+
         client.start();
 
         try {
