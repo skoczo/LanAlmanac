@@ -786,13 +786,29 @@ public class FingerprintEngine {
         GlobalSetting modeSetting = GlobalSetting.findById("APP_MODE");
         String appMode = modeSetting != null ? modeSetting.value : "DISCOVERY";
 
-        if ("DETECTION".equals(appMode)) {
+        boolean isManaged = historical.physicalDevice != null && historical.physicalDevice.managementState == com.gnm.model.enums.ManagementState.MANAGED;
+
+        if ("DETECTION".equals(appMode) || isManaged) {
             if (candidate.openPorts != null && !candidate.openPorts.isEmpty()) {
                 for (Integer port : candidate.openPorts) {
                     if (historical.openPorts == null || !historical.openPorts.contains(port)) {
                         ThreatEvent threat = new ThreatEvent();
                         threat.severity = "MEDIUM";
                         threat.description = "New unexpected open port detected: " + port;
+                        threat.physicalDeviceId = historical.physicalDevice.id;
+                        threat.ipAddress = sighting.ipAddress;
+                        threat.macAddress = sighting.macAddress;
+                        threat.detectedAt = Instant.now();
+                        threat.persist();
+                    }
+                }
+            }
+            if (candidate.sshHostKeys != null && !candidate.sshHostKeys.isEmpty()) {
+                for (String key : candidate.sshHostKeys) {
+                    if (historical.sshHostKeys != null && !historical.sshHostKeys.isEmpty() && !historical.sshHostKeys.contains(key)) {
+                        ThreatEvent threat = new ThreatEvent();
+                        threat.severity = "HIGH";
+                        threat.description = "SSH Host Key mutation detected! Remote host identification has changed. Key: " + key;
                         threat.physicalDeviceId = historical.physicalDevice.id;
                         threat.ipAddress = sighting.ipAddress;
                         threat.macAddress = sighting.macAddress;

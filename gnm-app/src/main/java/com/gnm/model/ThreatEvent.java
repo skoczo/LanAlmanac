@@ -34,4 +34,6 @@ public class ThreatEvent extends PanacheEntityBase {
     @Column(name = "resolved")
     public boolean resolved = false;
 
+    @Column(name = "notes", columnDefinition = "TEXT")
+    public String notes;
 }

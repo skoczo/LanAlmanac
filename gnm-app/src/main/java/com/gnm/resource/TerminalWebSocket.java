@@ -7,6 +7,7 @@ import com.gnm.model.Credential;
 import com.gnm.model.NetworkIdentity;
 import com.gnm.model.NetworkService;
 import com.gnm.model.PhysicalDevice;
+import com.gnm.model.ThreatEvent;
 import com.gnm.model.enums.CredentialType;
 import com.gnm.service.VaultEngine;
 import io.quarkus.websockets.next.OnClose;
@@ -148,6 +149,17 @@ public class TerminalWebSocket {
                 connection.sendTextAndAwait("Someone could be eavesdropping on you right now (man-in-the-middle attack)!\r\n");
                 connection.sendTextAndAwait("Expected: " + service.sshHostKey + "\r\n");
                 connection.sendTextAndAwait("Received: " + fingerprint + "\r\n");
+                
+                QuarkusTransaction.requiringNew().run(() -> {
+                    ThreatEvent threat = new ThreatEvent();
+                    threat.severity = "HIGH";
+                    threat.description = "SSH Host Key mutation detected! Remote host identification has changed. Key: " + fingerprint;
+                    threat.physicalDeviceId = service.physicalDevice.id;
+                    threat.ipAddress = ip;
+                    threat.detectedAt = Instant.now();
+                    threat.persist();
+                });
+
                 return false;
             }
 

@@ -12,7 +12,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Wifi,
-  X
+  X,
+  ShieldAlert
 } from 'lucide-react'
 import { VaultUnsealModal } from './VaultUnsealModal'
 
@@ -101,6 +102,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     { name: 'Devices', icon: Server, path: '/devices' },
     { name: 'Network Map', icon: Network, path: '/topology' },
     { name: 'Vault', icon: KeyRound, path: '/vault' },
+    { name: 'Alerts', icon: ShieldAlert, path: '/alerts' },
   ]
 
   return (

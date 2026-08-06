@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import { useAuth } from '../lib/auth/auth-context'
 import { Server, ShieldAlert, Wifi, WifiOff, Activity, TrendingUp } from 'lucide-react'
 
@@ -237,11 +238,19 @@ export const Dashboard: React.FC = () => {
 
         {/* Recent Activity Feed */}
         <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 shadow-lg flex flex-col space-y-5">
-          <div>
-            <h3 className="font-bold text-sm tracking-tight text-accent-danger flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4" /> Threat Log (IDS)
-            </h3>
-            <p className="text-xs text-text-secondary">Security anomalies and unverified mutations</p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="font-bold text-sm tracking-tight text-accent-danger flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4" /> Threat Log (IDS)
+              </h3>
+              <p className="text-xs text-text-secondary">Security anomalies and unverified mutations</p>
+            </div>
+            <Link 
+              to="/alerts" 
+              className="px-3 py-1.5 rounded-lg bg-bg-surface-raised border border-border-subtle hover:border-accent-primary text-[10px] font-bold uppercase tracking-wider text-text-secondary hover:text-accent-primary transition-colors cursor-pointer"
+            >
+              View All Alerts
+            </Link>
           </div>
           <div className="flex-1 space-y-4 overflow-y-auto pr-1">
             {threats.length === 0 && (

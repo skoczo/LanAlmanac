@@ -39,6 +39,7 @@ interface Device {
   model: string
   confidenceScore: number
   status: string
+  managementState: string
   identities: Identity[]
   fingerprints: Fingerprint[]
 }
@@ -51,6 +52,7 @@ export const Devices: React.FC = () => {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [typeFilter, setTypeFilter] = useState('ALL')
+  const [mgmtStateFilter, setMgmtStateFilter] = useState('ALL')
   const [showAddModal, setShowAddModal] = useState(false)
 
   const fetchDevices = () => {
@@ -102,8 +104,9 @@ export const Devices: React.FC = () => {
 
     const matchesStatus = statusFilter === 'ALL' || d.status === statusFilter
     const matchesType = typeFilter === 'ALL' || d.deviceType === typeFilter
+    const matchesMgmtState = mgmtStateFilter === 'ALL' || d.managementState === mgmtStateFilter
 
-    return matchesSearch && matchesStatus && matchesType
+    return matchesSearch && matchesStatus && matchesType && matchesMgmtState
   })
 
   const getDeviceIcon = (type: string) => {
@@ -192,6 +195,21 @@ export const Devices: React.FC = () => {
             </select>
             <SlidersHorizontal className="w-3.5 h-3.5 absolute right-3.5 top-1/2 -translate-y-1/2 text-text-secondary pointer-events-none" />
           </div>
+
+          {/* Mgmt State Filter */}
+          <div className="relative">
+            <select
+              value={mgmtStateFilter}
+              onChange={(e) => setMgmtStateFilter(e.target.value)}
+              className="bg-bg-surface-raised border border-border-subtle rounded-xl py-2 px-4 pr-8 text-xs text-text-primary focus:outline-none focus:border-accent-primary appearance-none cursor-pointer"
+            >
+              <option value="ALL">All States</option>
+              <option value="MANAGED">Managed (Locked)</option>
+              <option value="DISCOVERED">Unmanaged</option>
+              <option value="IGNORED">Ignored</option>
+            </select>
+            <SlidersHorizontal className="w-3.5 h-3.5 absolute right-3.5 top-1/2 -translate-y-1/2 text-text-secondary pointer-events-none" />
+          </div>
         </div>
 
         {/* View Toggle */}
@@ -244,13 +262,18 @@ export const Devices: React.FC = () => {
                       {getDeviceIcon(device.deviceType)}
                     </div>
                     {/* Status badge */}
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className={`w-2 h-2 rounded-full ${
                         device.status === 'ONLINE' ? 'bg-accent-success animate-pulse' : 'bg-accent-danger'
                       }`} />
                       <span className="text-[10px] uppercase font-bold tracking-wider text-text-secondary">
                         {device.status}
                       </span>
+                      {device.managementState !== 'MANAGED' && (
+                        <span className="px-1.5 py-0.5 rounded-md bg-accent-warning/20 border border-accent-warning/30 text-accent-warning text-[9px] font-bold uppercase tracking-wider ml-1">
+                          Unmanaged
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -317,6 +340,13 @@ export const Devices: React.FC = () => {
                             {device.status}
                           </span>
                         </div>
+                        {device.managementState !== 'MANAGED' && (
+                          <div className="mt-1.5">
+                            <span className="px-1.5 py-0.5 rounded-md bg-accent-warning/20 border border-accent-warning/30 text-accent-warning text-[9px] font-bold uppercase tracking-wider">
+                              Unmanaged
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="py-4 px-6">
                         <div className="font-semibold text-text-primary">{device.displayName}</div>
