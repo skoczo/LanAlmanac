@@ -29,6 +29,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const savedRoles = localStorage.getItem('gnm_roles')
 
     if (savedToken && savedUsername && savedRoles) {
+      document.cookie = `jwt=${savedToken}; path=/; SameSite=Lax;`
       setToken(savedToken)
       setUser({
         username: savedUsername,
@@ -42,6 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('gnm_token', newToken)
     localStorage.setItem('gnm_username', username)
     localStorage.setItem('gnm_roles', JSON.stringify(roles))
+    document.cookie = `jwt=${newToken}; path=/; SameSite=Lax;`
     setToken(newToken)
     setUser({ username, roles })
   }
@@ -50,6 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('gnm_token')
     localStorage.removeItem('gnm_username')
     localStorage.removeItem('gnm_roles')
+    document.cookie = `jwt=; Max-Age=0; path=/; SameSite=Lax;`
     setToken(null)
     setUser(null)
   }

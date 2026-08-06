@@ -116,4 +116,45 @@ public class CredentialResource {
         }
         return Response.noContent().build();
     }
+    
+    @PUT
+    @Path("/{id}")
+    @Transactional
+    public Response updateCredential(@PathParam("id") UUID id, Map<String, Object> payload) {
+        if (!vaultEngine.isUnsealed()) {
+            return Response.status(Response.Status.FORBIDDEN).entity(Map.of("error", "Vault is sealed")).build();
+        }
+        
+        Credential cred = Credential.findById(id);
+        if (cred == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        
+        if (payload.containsKey("label")) cred.label = (String) payload.get("label");
+        if (payload.containsKey("type")) cred.credentialType = CredentialType.valueOf((String) payload.get("type"));
+        if (payload.containsKey("username")) cred.username = (String) payload.get("username");
+        
+        if (payload.containsKey("port")) {
+            Object portObj = payload.get("port");
+            if (portObj != null && !portObj.toString().isBlank()) {
+                cred.port = Integer.parseInt(portObj.toString());
+            } else {
+                cred.port = null;
+            }
+        }
+        
+        if (payload.containsKey("secret")) {
+            String secret = (String) payload.get("secret");
+            if (secret != null && !secret.isEmpty()) {
+                VaultEngine.EncryptedRecord encrypted = vaultEngine.encrypt(secret.getBytes(StandardCharsets.UTF_8));
+                cred.encryptedPayload = encrypted.ciphertext;
+                cred.noncePayload = encrypted.iv;
+            }
+        }
+        
+        cred.updatedAt = Instant.now();
+        cred.persist();
+        
+        return Response.ok(Map.of("id", cred.id)).build();
+    }
 }

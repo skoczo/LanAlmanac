@@ -70,17 +70,23 @@ export const Devices: React.FC = () => {
     fetchDevices()
 
     // Establish WebSocket listener to refresh devices list in real-time
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.host
-    const ws = new WebSocket(`${protocol}//${host}/ws/events`)
+    let ws: WebSocket
+    const timeoutId = setTimeout(() => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const host = window.location.host
+      ws = new WebSocket(`${protocol}//${host}/ws/events`)
 
-    ws.onmessage = () => {
-      console.log('Discovered Devices: Refreshing list due to real-time event...')
-      fetchDevices()
-    }
+      ws.onmessage = () => {
+        console.log('Discovered Devices: Refreshing list due to real-time event...')
+        fetchDevices()
+      }
+    }, 50)
 
     return () => {
-      ws.close()
+      clearTimeout(timeoutId)
+      if (ws) {
+        ws.close()
+      }
     }
   }, [])
 

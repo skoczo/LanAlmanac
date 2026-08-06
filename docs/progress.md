@@ -8,10 +8,10 @@ This document tracks the completion of developmental phases for the NetAlmanac p
 
 *   **Phase 1: Foundation, Auth & GUI Shell** — 🟩 **100% Completed**
 *   **Phase 2: Discovery, Fingerprinting & Device UI** — 🟩 **100% Completed**
-*   **Phase 3: Credential Vault & Vault UI** — ⬜ 0% Planned
-*   **Phase 4: Remote Access & Terminal UI** — ⬜ 0% Planned
-*   **Phase 5: Monitoring, Charts & Updates UI** — ⬜ 0% Planned
-*   **Phase 6: Network Map, Polish & Hardening** — ⬜ 0% Planned
+*   **Phase 3: Credential Vault & Vault UI** — ✅ **100% Completed**
+*   **Phase 4: Remote Access & Terminal UI** — ✅ **100% Completed**
+*   **Phase 5: Monitoring, Charts & Updates UI** — ✅ **100% Completed**
+*   **Phase 6: IDS Detection Mode, Polish & Hardening** — 🟨 **In Progress**
 
 ---
 
@@ -45,22 +45,23 @@ This document tracks the completion of developmental phases for the NetAlmanac p
 
 ---
 
-## ⬜ Phase 4: Remote Access & Terminal UI (Planned)
-- [ ] Create WebSocket SSH bridge server (Apache MINA SSHD + WebSocket Next).
-- [ ] Build React browser terminal panel (`xterm.js` with WebGL rendering and split-pane resizers).
-- [ ] Set up HTTP reverse proxy for iframe embedding of local web consoles.
+## ✅ Phase 4: Remote Access & Terminal UI (Completed)
+- [x] Create WebSocket SSH bridge server (Apache MINA SSHD + WebSocket Next).
+- [x] Build React browser terminal panel (`xterm.js` with WebGL rendering and split-pane resizers).
+- [x] Set up HTTP reverse proxy for iframe embedding of local web consoles.
 
 ---
 
-## ⬜ Phase 5: Monitoring, Charts & Updates UI (Planned)
-- [ ] Connect SNMP v2c/v3 poller and remote SSH command executors.
-- [ ] Create TimescaleDB telemetry ingestion pipeline and log rotation triggers.
-- [ ] Connect frontend Recharts area graphs to active backend metrics databases.
-- [ ] Implement one-click remote package update scripts with live stream console output.
+## ✅ Phase 5: Monitoring, Charts & Updates UI (Completed)
+- [x] Connect SNMP v2c/v3 poller and remote SSH command executors.
+- [x] Create TimescaleDB telemetry ingestion pipeline and log rotation triggers.
+- [x] Connect frontend Recharts area graphs to active backend metrics databases.
+- [x] Implement one-click remote package update scripts with live stream console output.
 
 ---
 
-## ⬜ Phase 6: Network Map, Polish & Hardening (Planned)
-- [ ] Render advanced interactive graph layout (`react-cytoscapejs`).
-- [ ] Implement advanced active fingerprinting (JA4, TLS handshakes, HTTP banners).
+## 🟨 Phase 6: IDS Detection Mode, Polish & Hardening (In Progress)
+- [x] Global Mode Toggle (Discovery vs Detection/Lockdown).
+- [x] ThreatEvent alerting engine for unverified new hardware and signature mutations.
+- [x] Implement advanced active fingerprinting (JA4, TLS handshakes, HTTP banners).
 - [ ] Harden Docker Compose production parameters and compile GraalVM native images.

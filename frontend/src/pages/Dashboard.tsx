@@ -15,10 +15,20 @@ export const Dashboard: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([])
   const [loading, setLoading] = useState(true)
 
+  const [appMode, setAppMode] = useState<string>('DISCOVERY')
+  const [threats, setThreats] = useState<any[]>([])
+
   useEffect(() => {
-    apiClient<Device[]>('/api/devices')
-      .then((data) => {
-        setDevices(data)
+    Promise.all([
+      apiClient<Device[]>('/api/devices'),
+      apiClient<any[]>('/api/settings').catch(() => []),
+      apiClient<any[]>('/api/threats').catch(() => [])
+    ])
+      .then(([devRes, setRes, threatRes]) => {
+        setDevices(devRes)
+        const modeSetting = setRes.find((s: any) => s.key === 'APP_MODE')
+        if (modeSetting) setAppMode(modeSetting.value)
+        setThreats(threatRes)
         setLoading(false)
       })
       .catch((err) => {
@@ -26,6 +36,28 @@ export const Dashboard: React.FC = () => {
         setLoading(false)
       })
   }, [])
+
+  const toggleAppMode = async () => {
+    const newMode = appMode === 'DISCOVERY' ? 'DETECTION' : 'DISCOVERY'
+    try {
+      await apiClient(`/api/settings/APP_MODE`, {
+        method: 'PUT',
+        body: JSON.stringify({ key: 'APP_MODE', value: newMode })
+      })
+      setAppMode(newMode)
+    } catch (err) {
+      console.error('Failed to change mode', err)
+    }
+  }
+
+  const resolveThreat = async (id: string) => {
+    try {
+      await apiClient(`/api/threats/${id}/resolve`, { method: 'PUT' })
+      setThreats(threats.map(t => t.id === id ? { ...t, resolved: true } : t))
+    } catch (err) {
+      console.error('Failed to resolve threat', err)
+    }
+  }
 
   const totalCount = devices.length
   const onlineCount = devices.filter((d) => d.status === 'ONLINE').length
@@ -38,13 +70,6 @@ export const Dashboard: React.FC = () => {
     return acc
   }, {})
 
-  const recentActivities = [
-    { text: 'New identity matched for iPhone-Anna', time: '12 min ago', type: 'info' },
-    { text: 'Device Storage-NAS CPU usage spiked above 85%', time: '28 min ago', type: 'warning' },
-    { text: 'HP LaserJet Pro reported OFFLINE', time: '1 hour ago', type: 'error' },
-    { text: 'Scheduled passive network sweep completed', time: '2 hours ago', type: 'success' },
-  ]
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -56,10 +81,28 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="space-y-8 animate-fade-in select-none">
       {/* Page Title */}
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center bg-bg-surface border border-border-subtle rounded-2xl p-5 shadow-lg">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">LAN Command Center</h1>
           <p className="text-text-secondary text-sm">Real-time status of your home lab and network devices</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <h3 className="text-xs font-bold text-text-primary uppercase tracking-wider">Engine Mode</h3>
+            <p className="text-[10px] text-text-secondary">{appMode === 'DISCOVERY' ? 'Learning Network Baseline' : 'Locked Baseline (IDS Active)'}</p>
+          </div>
+          <button 
+            onClick={toggleAppMode}
+            className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent-primary focus:ring-offset-2 focus:ring-offset-bg-base ${
+              appMode === 'DETECTION' ? 'bg-accent-danger' : 'bg-accent-primary'
+            }`}
+          >
+            <span
+              className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                appMode === 'DETECTION' ? 'translate-x-7' : 'translate-x-1'
+              }`}
+            />
+          </button>
         </div>
       </div>
 
@@ -195,20 +238,30 @@ export const Dashboard: React.FC = () => {
         {/* Recent Activity Feed */}
         <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 shadow-lg flex flex-col space-y-5">
           <div>
-            <h3 className="font-bold text-sm tracking-tight">Recent Discovery Log</h3>
-            <p className="text-xs text-text-secondary">Audit feed of network scanner sightings</p>
+            <h3 className="font-bold text-sm tracking-tight text-accent-danger flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4" /> Threat Log (IDS)
+            </h3>
+            <p className="text-xs text-text-secondary">Security anomalies and unverified mutations</p>
           </div>
           <div className="flex-1 space-y-4 overflow-y-auto pr-1">
-            {recentActivities.map((act, index) => (
-              <div key={index} className="flex gap-3.5 items-start p-2 rounded-xl bg-bg-surface-raised/35 border border-border-subtle/50 hover:bg-bg-surface-raised/60 transition-colors">
-                <span className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
-                  act.type === 'error' ? 'bg-accent-danger' :
-                  act.type === 'warning' ? 'bg-accent-warning' :
-                  act.type === 'success' ? 'bg-accent-success' : 'bg-accent-primary'
-                }`} />
+            {threats.length === 0 && (
+              <div className="text-xs text-text-muted italic text-center p-4">No threats detected.</div>
+            )}
+            {threats.map((threat, index) => (
+              <div key={index} className={`flex gap-3.5 items-start p-3 rounded-xl border transition-colors ${
+                threat.resolved ? 'bg-bg-surface border-border-subtle/50 opacity-50' : 'bg-accent-danger/5 border-accent-danger/20'
+              }`}>
+                <span className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${threat.resolved ? 'bg-text-muted' : 'bg-accent-danger animate-pulse'}`} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-text-primary leading-relaxed">{act.text}</p>
-                  <span className="text-[10px] text-text-muted mt-1 block">{act.time}</span>
+                  <p className={`text-xs font-bold leading-relaxed ${threat.resolved ? 'text-text-secondary' : 'text-text-primary'}`}>{threat.description}</p>
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-[10px] text-text-muted font-mono">{threat.ipAddress} | {threat.macAddress}</span>
+                    {!threat.resolved && (
+                      <button onClick={() => resolveThreat(threat.id)} className="text-[9px] font-bold uppercase tracking-wider text-accent-primary hover:text-accent-primary/80 transition-colors">
+                        Mark Resolved
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

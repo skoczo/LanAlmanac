@@ -798,6 +798,9 @@ The app uses a persistent **sidebar + header + content** layout via a React layo
 
 ### 6.4 Page Designs
 
+#### Dashboard
+The LAN Command Center now includes a Global Mode Toggle to switch between **DISCOVERY** and **DETECTION** modes, alongside a **Threat Log (IDS)** feed for tracking anomalies and signature mutations.
+
 #### 🏠 Dashboard (`/`)
 
 Bento-grid layout — the command center overview.

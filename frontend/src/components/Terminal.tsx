@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Terminal as XTerm } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
-import { WebglAddon } from 'xterm-addon-webgl'
 import 'xterm/css/xterm.css'
 
 interface TerminalProps {
@@ -20,6 +19,9 @@ export const Terminal: React.FC<TerminalProps> = ({ deviceId, credentialId, onCl
   useEffect(() => {
     if (!terminalRef.current) return
 
+    let isDisposed = false;
+    let ws: WebSocket | null = null
+
     // Initialize xterm.js
     const term = new XTerm({
       cursorBlink: true,
@@ -36,67 +38,82 @@ export const Terminal: React.FC<TerminalProps> = ({ deviceId, credentialId, onCl
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
     
-    term.open(terminalRef.current)
-    
-    try {
-      const webglAddon = new WebglAddon()
-      webglAddon.onContextLoss(e => {
-        webglAddon.dispose()
-      })
-      term.loadAddon(webglAddon)
-    } catch (e) {
-      console.warn('WebGL addon could not be loaded, falling back to canvas', e)
-    }
-    
-    fitAddon.fit()
-
     xtermRef.current = term
     fitAddonRef.current = fitAddon
 
-    // Connect WebSocket
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.host // In dev, we might need proxy or direct
-    const wsUrl = `${protocol}//${host}/ws/terminal/${deviceId}/${credentialId}`
-    
-    const ws = new WebSocket(wsUrl)
-    wsRef.current = ws
+    // Defer open to prevent xterm React 18 Strict Mode crash
+    const timeoutId = setTimeout(() => {
+      if (isDisposed || !terminalRef.current) return
+      term.open(terminalRef.current)
+      
+      // Use ResizeObserver to reliably fit when dimensions are available
+      const resizeObserver = new ResizeObserver(() => {
+        if (!isDisposed && terminalRef.current && terminalRef.current.offsetWidth > 0) {
+          try {
+            fitAddon.fit()
+          } catch (e) {
+            // Ignore fit errors during transitions
+          }
+        }
+      })
+      resizeObserver.observe(terminalRef.current)
+      
+      // Save observer to clean it up
+      ;(term as any)._resizeObserver = resizeObserver
 
-    ws.onopen = () => {
-      term.focus()
-    }
+      // Connect WebSocket inside the timeout to avoid Strict Mode double-connections
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const host = window.location.host
+      const wsUrl = `${protocol}//${host}/ws/terminal/${deviceId}/${credentialId}`
+      
+      ws = new WebSocket(wsUrl)
+      wsRef.current = ws
 
-    ws.onmessage = (event) => {
-      term.write(event.data)
-    }
-
-    ws.onerror = () => {
-      setError('WebSocket connection error')
-    }
-
-    ws.onclose = () => {
-      term.write('\r\n\x1b[31m[Connection Closed]\x1b[0m\r\n')
-    }
-
-    // Bridge user input to WebSocket
-    term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data)
+      ws.onopen = () => {
+        if (!isDisposed) term.focus()
       }
-    })
+
+      ws.onmessage = (event) => {
+        term.write(event.data)
+      }
+
+      ws.onerror = () => {
+        setError('WebSocket connection error')
+      }
+
+      ws.onclose = () => {
+        term.write('\r\n\x1b[31m[Connection Closed]\x1b[0m\r\n')
+      }
+
+      // Bridge user input to WebSocket
+      term.onData((data) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'input', data }))
+        }
+      })
+    }, 50)
 
     const handleResize = () => {
       if (fitAddonRef.current) {
         fitAddonRef.current.fit()
-        // In a full implementation, we'd also send the resize event to the SSH server
-        // e.g., ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
+        }
       }
     }
 
     window.addEventListener('resize', handleResize)
 
     return () => {
+      isDisposed = true
+      clearTimeout(timeoutId)
       window.removeEventListener('resize', handleResize)
-      ws.close()
+      if ((term as any)._resizeObserver) {
+        (term as any)._resizeObserver.disconnect()
+      }
+      if (ws) {
+        ws.close()
+      }
       term.dispose()
     }
   }, [deviceId, credentialId])

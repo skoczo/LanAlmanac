@@ -11,6 +11,8 @@ services:
       - "5432:5432"
     volumes:
       - gnm_pg_data:/var/lib/postgresql/data
+    networks:
+      - ne_lab
 
   redis:
     image: redis:7-alpine
@@ -19,7 +21,58 @@ services:
       - "6379:6379"
     volumes:
       - gnm_redis_data:/data
+    networks:
+      - ne_lab
+
+  ubuntu_ne:
+    image: ubuntu:latest
+    container_name: ubuntu_ne
+    networks:
+      ne_lab:
+        ipv4_address: 172.28.0.10
+    command: >
+      bash -c "apt-get update && apt-get install -y openssh-server sudo && 
+      mkdir /var/run/sshd &&
+      echo 'root:rootpass' | chpasswd &&
+      sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config &&
+      useradd -m -s /bin/bash user && echo 'user:userpass' | chpasswd &&
+      /usr/sbin/sshd -D"
+
+  centos_ne:
+    image: quay.io/centos/centos:stream9
+    container_name: centos_ne
+    networks:
+      ne_lab:
+        ipv4_address: 172.28.0.11
+    command: >
+      bash -c "dnf install -y openssh-server sudo &&
+      ssh-keygen -A &&
+      echo 'root:rootpass' | chpasswd &&
+      sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config &&
+      useradd -m -s /bin/bash user && echo 'user:userpass' | chpasswd &&
+      /usr/sbin/sshd -D"
+
+  alpine_ne:
+    image: alpine:latest
+    container_name: alpine_ne
+    networks:
+      ne_lab:
+        ipv4_address: 172.28.0.12
+    command: >
+      sh -c "apk add --no-cache openssh sudo bash &&
+      ssh-keygen -A &&
+      echo 'root:rootpass' | chpasswd &&
+      sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config &&
+      adduser -D -s /bin/bash user && echo 'user:userpass' | chpasswd &&
+      /usr/sbin/sshd -D"
 
 volumes:
   gnm_pg_data:
   gnm_redis_data:
+
+networks:
+  ne_lab:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24

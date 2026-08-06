@@ -10,9 +10,11 @@ import java.util.List;
 import java.util.UUID;
 import com.gnm.model.enums.ManagementState;
 
+import com.gnm.model.Credential;
 import com.gnm.model.PhysicalDevice;
 import com.gnm.model.NetworkIdentity;
 import com.gnm.model.NetworkSighting;
+import com.gnm.model.NetworkService;
 import com.gnm.model.Telemetry;
 import com.gnm.model.enums.DeviceStatus;
 import com.gnm.model.enums.DeviceType;
@@ -37,11 +39,12 @@ public class DeviceResource {
         List<PhysicalDevice> devices = PhysicalDevice.list("select distinct d from PhysicalDevice d " +
                 "left join fetch d.identities " +
                 "left join fetch d.fingerprints " +
+                "left join fetch d.services " +
                 "order by d.displayName");
         
-        // Force load lazy credentials within the active transaction
+        // Force load lazy collections within the active transaction
         for (PhysicalDevice d : devices) {
-            d.credentials.size();
+            initializeLazyCollections(d);
         }
         
         return devices;
@@ -68,8 +71,81 @@ public class DeviceResource {
             if (device.identities != null) device.identities.size();
             if (device.fingerprints != null) device.fingerprints.size();
             if (device.credentials != null) device.credentials.size();
+            if (device.services != null) device.services.size();
             if (device.labels != null) device.labels.size();
         }
+    }
+
+    @GET
+    @Path("/{id}/services")
+    @Transactional
+    public List<NetworkService> getDeviceServices(@PathParam("id") UUID id) {
+        return NetworkService.list("physicalDevice.id", id);
+    }
+
+    @POST
+    @Path("/{id}/services")
+    @Transactional
+    public Response addService(@PathParam("id") UUID id, NetworkService service) {
+        PhysicalDevice device = PhysicalDevice.findById(id);
+        if (device == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        
+        if (service.credential != null && service.credential.id != null) {
+            Credential cred = Credential.findById(service.credential.id);
+            if (cred != null && cred.physicalDevice.id.equals(id)) {
+                service.credential = cred;
+            } else {
+                service.credential = null;
+            }
+        }
+        
+        service.physicalDevice = device;
+        service.firstSeen = Instant.now();
+        service.lastSeen = Instant.now();
+        service.persist();
+        return Response.ok(service).build();
+    }
+
+    @PUT
+    @Path("/{id}/services/{serviceId}")
+    @Transactional
+    public Response updateService(@PathParam("id") UUID id, @PathParam("serviceId") UUID serviceId, NetworkService payload) {
+        NetworkService service = NetworkService.findById(serviceId);
+        if (service == null || !service.physicalDevice.id.equals(id)) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        
+        if (payload.label != null) service.label = payload.label;
+        if (payload.serviceType != null) service.serviceType = payload.serviceType;
+        if (payload.protocol != null) service.protocol = payload.protocol;
+        if (payload.port != null) service.port = payload.port;
+        if (payload.manageable != null) service.manageable = payload.manageable;
+        
+        if (payload.credential != null && payload.credential.id != null) {
+            Credential cred = Credential.findById(payload.credential.id);
+            if (cred != null && cred.physicalDevice.id.equals(id)) {
+                service.credential = cred;
+            }
+        } else if (payload.credential == null) {
+            service.credential = null;
+        }
+
+        service.lastSeen = Instant.now();
+        service.persist();
+        return Response.ok(service).build();
+    }
+
+    @DELETE
+    @Path("/services/{serviceId}")
+    @Transactional
+    public Response deleteService(@PathParam("serviceId") UUID serviceId) {
+        NetworkService service = NetworkService.findById(serviceId);
+        if (service != null) {
+            service.delete();
+        }
+        return Response.noContent().build();
     }
     @GET
     @Path("/{id}/telemetry")

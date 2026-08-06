@@ -175,8 +175,10 @@ public class FingerprintEngine {
             }
             
             // Merge matching candidate signals to historical vector
+            // Merge matching candidate signals to historical vector
             FingerprintVector historical = FingerprintVector.find("physicalDevice.id = ?1", device.id).firstResult();
             if (historical != null) {
+                checkSignatureMutations(candidate, historical, sighting);
                 mergeVectors(candidate, historical);
             }
             
@@ -246,12 +248,31 @@ public class FingerprintEngine {
             
             FingerprintVector historical = FingerprintVector.find("physicalDevice.id = ?1", bestMatch.id).firstResult();
             if (historical != null) {
+                checkSignatureMutations(candidate, historical, sighting);
                 mergeVectors(candidate, historical);
             }
             bestMatch.persist();
+            if (candidate.openPorts != null) {
+                syncNetworkServices(bestMatch, candidate.openPorts);
+            }
 
             eventBroadcaster.fire(new DeviceEvent("STATUS_CHANGE", bestMatch.id.toString(), bestMatch.displayName, "ONLINE", sighting.ipAddress));
         } else {
+            GlobalSetting modeSetting = GlobalSetting.findById("APP_MODE");
+            String appMode = modeSetting != null ? modeSetting.value : "DISCOVERY";
+
+            if ("DETECTION".equals(appMode)) {
+                LOG.warn("IDS DETECTION MODE: Unknown device detected on network! Generating ThreatEvent.");
+                ThreatEvent threat = new ThreatEvent();
+                threat.severity = "HIGH";
+                threat.description = "Unknown Device Detected on Network. Hostname: " + (resolvedHostname != null ? resolvedHostname : "Unknown");
+                threat.ipAddress = sighting.ipAddress;
+                threat.macAddress = sighting.macAddress;
+                threat.detectedAt = Instant.now();
+                threat.persist();
+                return; // Do NOT create device in detection mode!
+            }
+
             // No match -> Create new device
             LOG.info("No matching fingerprint found for sighting (" + sighting.ipAddress + " / " + sighting.macAddress + 
                      "). Creating new physical device.");
@@ -283,6 +304,10 @@ public class FingerprintEngine {
             historical.openPorts = candidate.openPorts;
             historical.capturedAt = Instant.now();
             historical.persist();
+
+            if (candidate.openPorts != null) {
+                syncNetworkServices(newDevice, candidate.openPorts);
+            }
 
             eventBroadcaster.fire(new DeviceEvent("NEW_DEVICE", newDevice.id.toString(), newDevice.displayName, "ONLINE", sighting.ipAddress));
         }
@@ -738,6 +763,76 @@ public class FingerprintEngine {
             }
         }
         return v;
+    }
+
+    private void checkSignatureMutations(FingerprintVector candidate, FingerprintVector historical, NetworkSighting sighting) {
+        GlobalSetting modeSetting = GlobalSetting.findById("APP_MODE");
+        String appMode = modeSetting != null ? modeSetting.value : "DISCOVERY";
+
+        if ("DETECTION".equals(appMode)) {
+            if (candidate.openPorts != null && !candidate.openPorts.isEmpty()) {
+                for (Integer port : candidate.openPorts) {
+                    if (historical.openPorts == null || !historical.openPorts.contains(port)) {
+                        ThreatEvent threat = new ThreatEvent();
+                        threat.severity = "MEDIUM";
+                        threat.description = "New unexpected open port detected: " + port;
+                        threat.physicalDeviceId = historical.physicalDevice.id;
+                        threat.ipAddress = sighting.ipAddress;
+                        threat.macAddress = sighting.macAddress;
+                        threat.detectedAt = Instant.now();
+                        threat.persist();
+                    }
+                }
+            }
+        }
+    }
+
+
+    private void syncNetworkServices(PhysicalDevice device, List<Integer> openPorts) {
+        if (openPorts == null || openPorts.isEmpty()) return;
+
+        List<NetworkService> existingServices = NetworkService.list("physicalDevice.id", device.id);
+        List<Integer> existingPorts = existingServices.stream().map(s -> s.port).toList();
+
+        for (Integer port : openPorts) {
+            if (!existingPorts.contains(port)) {
+                NetworkService ns = new NetworkService();
+                ns.physicalDevice = device;
+                ns.port = port;
+                ns.protocol = "TCP";
+                ns.manageable = true;
+                ns.discovered = true;
+                ns.firstSeen = Instant.now();
+                ns.lastSeen = Instant.now();
+                
+                if (port == 22 || port == 2222 || port == 2223 || port == 2224) {
+                    ns.serviceType = "SSH";
+                    ns.label = "SSH Service";
+                } else if (port == 80 || port == 8080 || port == 9000 || port == 8123) {
+                    ns.serviceType = "HTTP";
+                    ns.label = "Web UI";
+                } else if (port == 443 || port == 8443 || port == 8006) {
+                    ns.serviceType = "HTTPS";
+                    ns.label = "Secure Web UI";
+                } else if (port == 161) {
+                    ns.serviceType = "SNMP";
+                    ns.label = "SNMP Agent";
+                    ns.protocol = "UDP";
+                } else {
+                    ns.serviceType = "UNKNOWN";
+                    ns.label = "Discovered Port " + port;
+                    ns.manageable = false;
+                }
+                
+                ns.persist();
+                LOG.info("Auto-created NetworkService for port " + port + " on device " + device.id);
+            } else {
+                existingServices.stream().filter(s -> s.port.equals(port)).findFirst().ifPresent(ns -> {
+                    ns.lastSeen = Instant.now();
+                    ns.persist();
+                });
+            }
+        }
     }
 
     private void mergeVectors(FingerprintVector source, FingerprintVector dest) {

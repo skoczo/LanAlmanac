@@ -75,4 +75,7 @@ public class PhysicalDevice extends PanacheEntityBase {
 
     @OneToMany(mappedBy = "physicalDevice", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     public List<Credential> credentials = new ArrayList<>();
+
+    @OneToMany(mappedBy = "physicalDevice", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    public Set<NetworkService> services = new HashSet<>();
 }

@@ -25,9 +25,16 @@ public class IcmpSweeper {
     NetworkSightingQueue sightingQueue;
 
     @ConfigProperty(name = "gnm.subnet", defaultValue = "192.168.1.0/24")
-    String subnet;
+    String subnetConfig;
 
     public void sweep() {
+        String[] subnets = subnetConfig.split(",");
+        for (String subnet : subnets) {
+            sweepSubnet(subnet.trim());
+        }
+    }
+
+    private void sweepSubnet(String subnet) {
         LOG.info("Starting active ICMP sweep on subnet: " + subnet);
         
         String[] parts = subnet.split("/");

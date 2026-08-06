@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 import { useAuth } from '../lib/auth/auth-context'
+import { useVault } from '../lib/vault/vault-context'
 import {
   ArrowLeft,
   Calendar,
@@ -18,8 +19,8 @@ import {
   X,
   Terminal as TerminalIcon
 } from 'lucide-react'
-import { useVault } from '../lib/vault/vault-context'
 import { Terminal } from '../components/Terminal'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface Identity {
   id: string
@@ -56,6 +57,19 @@ interface Credential {
   port: number
 }
 
+interface NetworkService {
+  id: string
+  label: string
+  serviceType: string
+  protocol: string
+  port: number
+  manageable: boolean
+  discovered: boolean
+  firstSeen: string
+  lastSeen: string
+  credential?: Credential
+}
+
 interface Device {
   id: string
   displayName: string
@@ -74,6 +88,7 @@ interface Device {
   identities: Identity[]
   fingerprints: Fingerprint[]
   credentials: Credential[]
+  services: NetworkService[]
 }
 
 interface TelemetryPoint {
@@ -85,19 +100,25 @@ interface TelemetryPoint {
 }
 
 export const DeviceDetail: React.FC = () => {
-  const params = useParams({ strict: false }) as { id?: string }
-  const deviceId = params.id
+  const { id: deviceId } = useParams({ strict: false }) as { id: string }
   const { apiClient } = useAuth()
   
   const [device, setDevice] = useState<Device | null>(null)
   const [telemetry, setTelemetry] = useState<TelemetryPoint[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'identities' | 'fingerprint' | 'credentials' | 'monitor' | 'settings'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'identities' | 'fingerprint' | 'services' | 'credentials' | 'monitor' | 'settings' | 'web console'>('overview')
   const [newLabel, setNewLabel] = useState('')
-  const [revealedCreds, setRevealedCreds] = useState<Record<string, string>>({})
+  
   const { sealed, setShowUnsealModal } = useVault()
+  
   const [showAddCred, setShowAddCred] = useState(false)
-  const [newCred, setNewCred] = useState({ label: '', type: 'SSH_KEY', username: '', port: '', secret: '' })
+  const [editingCredId, setEditingCredId] = useState<string | null>(null)
+  const [newCred, setNewCred] = useState({ label: '', type: 'SSH_KEY', username: '', secret: '', port: '' })
+  const [revealedCreds, setRevealedCreds] = useState<Record<string, string>>({})
+  
+  const [showAddService, setShowAddService] = useState(false)
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null)
+  const [newService, setNewService] = useState({ label: '', type: 'SSH', protocol: 'TCP', port: '22', credentialId: '' })
   const [activeTerminalCredId, setActiveTerminalCredId] = useState<string | null>(null)
   
   const [isEditing, setIsEditing] = useState(false)
@@ -128,52 +149,6 @@ export const DeviceDetail: React.FC = () => {
         setLoading(false)
       })
   }, [deviceId])
-
-  const toggleRevealCred = async (id: string) => {
-    if (revealedCreds[id] !== undefined) {
-      const newCreds = { ...revealedCreds }
-      delete newCreds[id]
-      setRevealedCreds(newCreds)
-      return
-    }
-
-    if (sealed) {
-      setShowUnsealModal(true)
-      return
-    }
-
-    try {
-      const res = await apiClient<{secret: string}>(`/api/credentials/${id}/reveal`)
-      setRevealedCreds(prev => ({ ...prev, [id]: res.secret }))
-    } catch (e: any) {
-      if (e.message?.includes('sealed') || e.message?.includes('FORBIDDEN') || e.message?.includes('Unauthorized')) {
-        setShowUnsealModal(true)
-      }
-    }
-  }
-
-  const handleAddCredential = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (sealed) {
-      setShowUnsealModal(true)
-      return
-    }
-    try {
-      await apiClient(`/api/credentials/device/${deviceId}`, {
-        method: 'POST',
-        body: JSON.stringify({ ...newCred, port: newCred.port ? parseInt(newCred.port) : null })
-      })
-      setShowAddCred(false)
-      setNewCred({ label: '', type: 'SSH_KEY', username: '', port: '', secret: '' })
-      // reload device
-      const deviceData = await apiClient<Device>(`/api/devices/${deviceId}`)
-      setDevice(deviceData)
-    } catch (e: any) {
-      if (e.message?.includes('sealed') || e.message?.includes('FORBIDDEN') || e.message?.includes('Unauthorized')) {
-        setShowUnsealModal(true)
-      }
-    }
-  }
 
   const handleSaveEdits = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -230,6 +205,61 @@ export const DeviceDetail: React.FC = () => {
       setDevice(updatedDevice)
     } catch (e) {
       console.error(e)
+    }
+  }
+
+
+
+  const handleSaveCredential = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      if (editingCredId) {
+        await apiClient(`/api/credentials/${editingCredId}`, {
+          method: 'PUT',
+          body: JSON.stringify(newCred)
+        })
+      } else {
+        await apiClient(`/api/credentials/device/${deviceId}`, {
+          method: 'POST',
+          body: JSON.stringify(newCred)
+        })
+      }
+      const deviceData = await apiClient<Device>(`/api/devices/${deviceId}`)
+      setDevice(deviceData)
+      setShowAddCred(false)
+      setEditingCredId(null)
+      setNewCred({ label: '', type: 'SSH_KEY', username: '', secret: '', port: '' })
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const toggleRevealCred = async (credId: string) => {
+    if (revealedCreds[credId]) {
+      const newRevealed = { ...revealedCreds }
+      delete newRevealed[credId]
+      setRevealedCreds(newRevealed)
+    } else {
+      if (sealed) {
+        setShowUnsealModal(true)
+        return
+      }
+      try {
+        const res = await apiClient<{secret: string}>(`/api/credentials/${credId}/reveal`)
+        setRevealedCreds(prev => ({ ...prev, [credId]: res.secret }))
+      } catch (err) {
+        console.error(err)
+      }
+    }
+  }
+
+  const handleDeleteCred = async (credId: string) => {
+    try {
+      await apiClient(`/api/credentials/${credId}`, { method: 'DELETE' })
+      const deviceData = await apiClient<Device>(`/api/devices/${deviceId}`)
+      setDevice(deviceData)
+    } catch (err) {
+      console.error(err)
     }
   }
 
@@ -333,7 +363,7 @@ export const DeviceDetail: React.FC = () => {
 
       {/* Navigation tabs */}
       <div className="flex items-center border-b border-border-subtle gap-2 overflow-x-auto">
-        {(['overview', 'identities', 'fingerprint', 'credentials', 'monitor', 'settings'] as const).map((tab) => (
+        {(['overview', 'identities', 'fingerprint', 'services', 'credentials', 'monitor', 'settings', 'web console'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -648,83 +678,411 @@ export const DeviceDetail: React.FC = () => {
         {/* CREDENTIALS TAB */}
         {activeTab === 'credentials' && (
           <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg">
+            <div className="flex justify-between items-center pb-4 border-b border-border-subtle">
+              <h3 className="font-bold text-lg tracking-tight">Access Credentials</h3>
+              <button
+                onClick={() => {
+                  setEditingCredId(null)
+                  setNewCred({ label: '', type: 'SSH_KEY', username: '', secret: '', port: '' })
+                  setShowAddCred(true)
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-primary text-white rounded-lg text-sm font-semibold hover:bg-accent-primary-hover transition-colors"
+              >
+                <Plus className="w-4 h-4" /> Add Credential
+              </button>
+            </div>
+
+            {device.credentials && device.credentials.length > 0 ? (
+              <div className="space-y-4">
+                {device.credentials.map((cred) => (
+                  <div key={cred.id} className="flex justify-between items-center p-4 rounded-xl bg-bg-surface-raised border border-border-subtle hover:border-accent-primary/50 transition-colors">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <KeyRound className="w-4 h-4 text-text-secondary" />
+                        <span className="font-bold text-text-primary">{cred.label}</span>
+                        <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-border-subtle/50 text-text-secondary">
+                          {cred.credentialType.replace('_', ' ')}
+                        </span>
+                      </div>
+                      <div className="text-sm text-text-secondary mt-1 ml-6">
+                        {cred.username ? <span className="font-mono">{cred.username}</span> : 'No Username'}
+                        {cred.port ? <span className="ml-2 font-mono text-xs">Port: {cred.port}</span> : null}
+                      </div>
+                      {revealedCreds[cred.id] && (
+                        <div className="mt-3 ml-6 p-3 bg-bg-base rounded border border-border-subtle font-mono text-xs text-text-primary overflow-x-auto whitespace-pre-wrap">
+                          {revealedCreds[cred.id]}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => toggleRevealCred(cred.id)}
+                        className={`p-2 rounded-lg transition-colors border ${
+                          revealedCreds[cred.id] 
+                            ? 'bg-accent-primary/10 text-accent-primary border-accent-primary/20 hover:bg-accent-primary/20' 
+                            : 'bg-bg-surface border-border-subtle text-text-secondary hover:text-text-primary hover:border-text-primary/30'
+                        }`}
+                        title={sealed ? "Unlock Vault to Reveal" : (revealedCreds[cred.id] ? "Hide Secret" : "Reveal Secret")}
+                      >
+                        {sealed ? <ShieldCheck className="w-4 h-4 text-accent-warning" /> : (revealedCreds[cred.id] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />)}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setNewCred({
+                            label: cred.label,
+                            type: cred.credentialType,
+                            username: cred.username || '',
+                            port: cred.port ? String(cred.port) : '',
+                            secret: ''
+                          })
+                          setEditingCredId(cred.id)
+                          setShowAddCred(true)
+                        }}
+                        className="p-2 bg-bg-surface border border-border-subtle text-text-secondary rounded-lg hover:text-accent-primary hover:border-accent-primary/30 transition-colors"
+                        title="Edit Credential"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteCred(cred.id)}
+                        className="p-2 bg-bg-surface border border-border-subtle text-accent-danger rounded-lg hover:bg-accent-danger/10 hover:border-accent-danger/30 transition-colors"
+                        title="Delete Credential"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-text-secondary">
+                <KeyRound className="w-12 h-12 mx-auto text-border-subtle mb-3" />
+                <p>No credentials stored for this device.</p>
+              </div>
+            )}
+            
+            {showAddCred && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                <div className="bg-bg-surface rounded-2xl w-full max-w-md shadow-2xl border border-border-subtle flex flex-col max-h-[90vh]">
+                  <div className="p-6 border-b border-border-subtle flex justify-between items-center sticky top-0 bg-bg-surface z-10 rounded-t-2xl">
+                    <h3 className="font-bold text-xl">{editingCredId ? 'Edit Credential' : 'Add Credential'}</h3>
+                    <button onClick={() => { setShowAddCred(false); setEditingCredId(null); }} className="text-text-muted hover:text-text-primary transition-colors p-1">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  
+                  <div className="p-6 overflow-y-auto">
+                    {sealed && (
+                      <div className="mb-6 p-4 rounded-xl bg-accent-warning/10 border border-accent-warning/20 flex gap-3 items-start">
+                        <ShieldCheck className="w-5 h-5 text-accent-warning shrink-0 mt-0.5" />
+                        <div className="text-sm">
+                          <p className="font-bold text-accent-warning mb-1">Vault is Sealed</p>
+                          <p className="text-accent-warning/80">You must unlock the secure vault before you can add credentials.</p>
+                          <button
+                            onClick={(e) => { e.preventDefault(); setShowUnsealModal(true); }}
+                            className="mt-3 px-3 py-1.5 bg-accent-warning text-black rounded text-xs font-bold hover:bg-yellow-400 transition-colors"
+                          >
+                            Unlock Vault
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    
+                    <form id="add-cred-form" onSubmit={handleSaveCredential} className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Label</label>
+                        <input
+                          autoFocus
+                          type="text"
+                          required
+                          value={newCred.label}
+                          onChange={e => setNewCred({...newCred, label: e.target.value})}
+                          placeholder="e.g. Root SSH Key"
+                          className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-primary"
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Type</label>
+                          <select
+                            value={newCred.type}
+                            onChange={e => setNewCred({...newCred, type: e.target.value})}
+                            className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-primary appearance-none"
+                          >
+                            <option value="SSH_KEY">SSH Key</option>
+                            <option value="PASSWORD">Password</option>
+                            <option value="SNMP">SNMP Community</option>
+                            <option value="API_TOKEN">API Token</option>
+                            <option value="CERTIFICATE">Certificate</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Port (Optional)</label>
+                          <input
+                            type="number"
+                            value={newCred.port}
+                            onChange={e => setNewCred({...newCred, port: e.target.value})}
+                            placeholder="e.g. 22"
+                            className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-primary"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Username</label>
+                        <input
+                          type="text"
+                          value={newCred.username}
+                          onChange={e => setNewCred({...newCred, username: e.target.value})}
+                          placeholder="e.g. root"
+                          className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-primary"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Secret / Key</label>
+                        <textarea
+                          required={!editingCredId}
+                          value={newCred.secret}
+                          onChange={e => setNewCred({...newCred, secret: e.target.value})}
+                          placeholder={editingCredId ? "Leave blank to keep existing secret..." : "Enter password, token, or paste private key here..."}
+                          rows={4}
+                          className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary font-mono focus:outline-none focus:border-accent-primary"
+                        />
+                      </div>
+                    </form>
+                  </div>
+                  
+                  <div className="p-6 border-t border-border-subtle bg-bg-surface-raised rounded-b-2xl flex justify-end gap-3 sticky bottom-0">
+                    <button
+                      type="button"
+                      onClick={() => { setShowAddCred(false); setEditingCredId(null); }}
+                      className="px-4 py-2 bg-transparent border border-border-subtle text-text-primary rounded-lg text-sm font-semibold hover:bg-bg-base transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      form="add-cred-form"
+                      disabled={sealed}
+                      className="px-4 py-2 bg-accent-primary text-white rounded-lg text-sm font-semibold hover:bg-accent-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {editingCredId ? 'Update Credential' : 'Save Credential'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* SERVICES TAB */}
+        {activeTab === 'services' && (
+          <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg">
             <div className="flex justify-between items-center">
               <div>
-                <h3 className="font-bold text-sm tracking-tight">Access Credentials</h3>
-                <p className="text-xs text-text-secondary">Sealed keys and credentials managed via envelope decryption</p>
+                <h3 className="font-bold text-sm tracking-tight">Network Services & Connections</h3>
+                <p className="text-xs text-text-secondary">Manage discovered and manually added services (SSH, Web UI, etc)</p>
               </div>
               <button
-                onClick={() => setShowAddCred(!showAddCred)}
+                onClick={() => {
+                  setNewService({ label: '', type: 'SSH', protocol: 'TCP', port: '22', credentialId: '' })
+                  setEditingServiceId(null)
+                  setShowAddService(true)
+                }}
                 className="flex items-center gap-1.5 px-3 py-2 bg-accent-primary hover:bg-accent-primary/90 text-text-primary rounded-xl text-xs font-semibold transition-colors cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                Add Credential
+                Add Service
               </button>
             </div>
             
-            {showAddCred && (
-              <form onSubmit={handleAddCredential} className="p-5 rounded-xl border border-border-subtle bg-bg-surface-raised space-y-4">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-text-secondary">New Credential</h4>
+            {showAddService && (
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const payload = {
+                    label: newService.label,
+                    serviceType: newService.type,
+                    protocol: newService.protocol,
+                    port: parseInt(newService.port),
+                    credential: newService.credentialId ? { id: newService.credentialId } : null
+                };
+                
+                if (editingServiceId) {
+                  await apiClient(`/api/devices/${deviceId}/services/${editingServiceId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(payload)
+                  });
+                } else {
+                  await apiClient(`/api/devices/${deviceId}/services`, {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                  });
+                }
+                
+                setShowAddService(false);
+                setEditingServiceId(null);
+                // Refresh device
+                const updatedDevice = await apiClient<Device>(`/api/devices/${deviceId}`);
+                setDevice(updatedDevice);
+              }} className="p-5 rounded-xl border border-border-subtle bg-bg-surface-raised space-y-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-text-secondary">{editingServiceId ? 'Edit Service' : 'New Service'}</h4>
                 <div className="grid grid-cols-2 gap-4">
-                  <input type="text" placeholder="Label (e.g. Root SSH)" required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newCred.label} onChange={e => setNewCred({...newCred, label: e.target.value})} />
-                  <select className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newCred.type} onChange={e => setNewCred({...newCred, type: e.target.value})}>
-                    <option value="SSH_KEY">SSH Key</option>
-                    <option value="BASIC_AUTH">Basic Auth</option>
-                    <option value="SNMP_V2">SNMP v2c</option>
-                    <option value="SNMP_V3">SNMP v3</option>
-                  </select>
-                  <input type="text" placeholder="Username (Optional)" className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newCred.username} onChange={e => setNewCred({...newCred, username: e.target.value})} />
-                  <input type="number" placeholder="Port (Optional)" className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newCred.port} onChange={e => setNewCred({...newCred, port: e.target.value})} />
+                  <div>
+                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Label</label>
+                    <input type="text" placeholder="e.g. Ubuntu SSH" required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newService.label} onChange={e => setNewService({...newService, label: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Type</label>
+                    <select className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newService.type} onChange={e => setNewService({...newService, type: e.target.value})}>
+                      <option value="SSH">SSH</option>
+                      <option value="HTTP">HTTP</option>
+                      <option value="HTTPS">HTTPS</option>
+                      <option value="SNMP">SNMP</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Port</label>
+                    <input type="number" placeholder="Port" required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newService.port} onChange={e => setNewService({...newService, port: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Credential (Optional)</label>
+                    <select className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newService.credentialId} onChange={e => setNewService({...newService, credentialId: e.target.value})}>
+                      <option value="">-- None --</option>
+                      {device.credentials?.map(c => (
+                        <option key={c.id} value={c.id}>{c.label} ({c.username})</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                <textarea placeholder="Secret Payload (Key, Password, etc)" required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full min-h-[80px] font-mono focus:outline-none focus:border-accent-primary" value={newCred.secret} onChange={e => setNewCred({...newCred, secret: e.target.value})} />
-                <div className="flex justify-end gap-2">
-                  <button type="button" onClick={() => setShowAddCred(false)} className="px-4 py-2 rounded-lg border border-border-subtle text-xs font-semibold hover:bg-bg-surface cursor-pointer">Cancel</button>
-                  <button type="submit" className="px-4 py-2 rounded-lg bg-accent-primary text-text-primary text-xs font-semibold hover:bg-accent-primary/90 cursor-pointer">Save Encrypted</button>
+                <div className="flex justify-end gap-2 mt-4">
+                  <button type="button" onClick={() => { setShowAddService(false); setEditingServiceId(null); }} className="px-4 py-2 rounded-lg border border-border-subtle text-xs font-semibold hover:bg-bg-surface cursor-pointer">Cancel</button>
+                  <button type="submit" className="px-4 py-2 rounded-lg bg-accent-primary text-text-primary text-xs font-semibold hover:bg-accent-primary/90 cursor-pointer">Save Service</button>
                 </div>
               </form>
             )}
 
-            {(!device.credentials || device.credentials.length === 0) ? (
+            {(!device.services || device.services.length === 0) ? (
               <div className="p-8 text-center border border-dashed border-border-subtle rounded-xl text-text-secondary text-xs">
-                No credentials stored for this system.
+                No network services discovered or added for this system.
               </div>
             ) : (
               <div className="space-y-4">
-                {device.credentials.map((cred) => (
-                  <div key={cred.id} className="p-4 rounded-xl bg-bg-surface-raised border border-border-subtle flex items-center justify-between gap-4">
+                {device.services.map((svc) => (
+                  <div key={svc.id} className="p-4 rounded-xl bg-bg-surface-raised border border-border-subtle flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3.5">
                       <div className="p-2.5 rounded-xl bg-accent-primary/10 border border-accent-primary/20 text-accent-primary">
-                        <KeyRound className="w-4 h-4" />
+                        <TerminalIcon className="w-4 h-4" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-xs text-text-primary">{cred.label}</h4>
+                        <h4 className="font-bold text-xs text-text-primary">{svc.label}</h4>
                         <p className="text-[10px] text-text-secondary uppercase tracking-wider mt-0.5">
-                          {cred.credentialType} · Username: <span className="font-mono text-text-primary">{cred.username || '-'}</span>
+                          {svc.serviceType} · Port: <span className="font-mono text-text-primary">{svc.port}</span>
                         </p>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-3">
-                      {(cred.credentialType === 'SSH_KEY' || cred.credentialType === 'PASSWORD') && (
+                      <button
+                        onClick={() => {
+                          setNewService({
+                            label: svc.label || '',
+                            type: svc.serviceType || 'SSH',
+                            protocol: svc.protocol || 'TCP',
+                            port: svc.port?.toString() || '22',
+                            credentialId: svc.credential?.id || ''
+                          });
+                          setEditingServiceId(svc.id);
+                          setShowAddService(true);
+                        }}
+                        className="p-1.5 rounded-lg border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-surface transition-colors cursor-pointer"
+                        title="Edit Service"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+
+                      {svc.serviceType === 'SSH' && (
                         <button
-                          onClick={() => setActiveTerminalCredId(cred.id)}
+                          onClick={() => {
+                            if (svc.credential) {
+                                setActiveTerminalCredId(svc.credential.id);
+                                return;
+                            }
+                            // Find matching credential (exact port match, or one without a specific port)
+                            const matchingCred = device.credentials?.find(c => c.port === svc.port) 
+                                              || device.credentials?.find(c => !c.port || c.port === 0);
+                            
+                            if (matchingCred) {
+                                setActiveTerminalCredId(matchingCred.id);
+                            } else {
+                                alert("No credential found for this SSH service port. Add a credential first.");
+                            }
+                          }}
                           className="px-3 py-1.5 rounded-lg bg-accent-primary hover:bg-accent-primary/90 text-text-primary text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors flex items-center gap-1.5"
                         >
-                          <TerminalIcon className="w-3 h-3" /> Connect
+                          <TerminalIcon className="w-3 h-3" /> Connect SSH
                         </button>
                       )}
-                      <span className="font-mono text-xs text-text-muted border-l border-border-subtle pl-3">
-                        {revealedCreds[cred.id] !== undefined ? revealedCreds[cred.id] : '••••••••••••••••'}
-                      </span>
-                      <button
-                        onClick={() => toggleRevealCred(cred.id)}
-                        className="p-1.5 rounded-lg border border-border-subtle hover:bg-bg-surface text-text-secondary hover:text-text-primary cursor-pointer transition-colors"
-                      >
-                        {revealedCreds[cred.id] !== undefined ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* MONITOR TAB */}
+        {activeTab === 'monitor' && (
+          <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg">
+            <div>
+              <h3 className="font-bold text-sm tracking-tight">System Telemetry</h3>
+              <p className="text-xs text-text-secondary">Real-time metrics polled via SNMP & SSH</p>
+            </div>
+            
+            {telemetry.length === 0 ? (
+              <div className="p-8 text-center border border-dashed border-border-subtle rounded-xl text-text-secondary text-xs">
+                No telemetry data available yet. Waiting for next polling cycle.
+              </div>
+            ) : (
+              <div className="space-y-8">
+                <div className="h-64">
+                  <h4 className="text-xs font-bold text-text-primary mb-4">CPU Load (1m Average)</h4>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={telemetry.filter(t => t.id.metricName === 'cpu_load_1m')}>
+                      <defs>
+                        <linearGradient id="colorCpu" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                      <XAxis dataKey="id.time" tickFormatter={(timeStr: string) => new Date(timeStr).toLocaleTimeString()} stroke="#64748b" fontSize={10} />
+                      <YAxis stroke="#64748b" fontSize={10} />
+                      <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem' }} />
+                      <Area type="monotone" dataKey="value" stroke="#3b82f6" fillOpacity={1} fill="url(#colorCpu)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="h-64">
+                  <h4 className="text-xs font-bold text-text-primary mb-4">Memory Usage (%)</h4>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={telemetry.filter(t => t.id.metricName === 'ram_usage_percent')}>
+                      <defs>
+                        <linearGradient id="colorRam" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                      <XAxis dataKey="id.time" tickFormatter={(timeStr: string) => new Date(timeStr).toLocaleTimeString()} stroke="#64748b" fontSize={10} />
+                      <YAxis stroke="#64748b" fontSize={10} domain={[0, 100]} />
+                      <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem' }} />
+                      <Area type="monotone" dataKey="value" stroke="#10b981" fillOpacity={1} fill="url(#colorRam)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             )}
           </div>
@@ -768,6 +1126,32 @@ export const DeviceDetail: React.FC = () => {
 
             <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg">
               <div>
+                <h3 className="font-bold text-sm tracking-tight text-accent-danger">System Operations</h3>
+                <p className="text-xs text-text-secondary mt-1">Execute high-privilege remote commands.</p>
+              </div>
+              <div className="p-4 rounded-xl border border-accent-danger/20 bg-accent-danger/5">
+                <h4 className="text-xs font-bold text-text-primary">Remote Package Update</h4>
+                <p className="text-[10px] text-text-secondary mt-1 mb-3">Execute apt-get update & upgrade over SSH using the default saved credential.</p>
+                <button 
+                  onClick={async () => {
+                    const evtSource = new EventSource(`/api/devices/${device.id}/update`);
+                    evtSource.onmessage = function(event) {
+                      console.log("Update output: ", event.data);
+                      if (event.data.includes("Update Complete") || event.data.includes("Update Failed") || event.data.includes("Error:")) {
+                        evtSource.close();
+                        alert(event.data);
+                      }
+                    };
+                  }}
+                  className="px-4 py-2 bg-accent-danger hover:bg-accent-danger/90 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Apply System Updates
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg">
+              <div>
                 <h3 className="font-bold text-sm tracking-tight">Tags & Labels</h3>
                 <p className="text-xs text-text-secondary mt-1">Group devices with custom tags (e.g., 'esphome', 'office').</p>
               </div>
@@ -797,6 +1181,18 @@ export const DeviceDetail: React.FC = () => {
                 </button>
               </form>
             </div>
+          </div>
+        )}
+        {/* WEB CONSOLE TAB */}
+        {activeTab === 'web console' && (
+          <div className="bg-bg-surface border border-border-subtle rounded-2xl overflow-hidden shadow-lg h-[600px] flex flex-col">
+            <div className="bg-bg-surface-raised border-b border-border-subtle p-3 flex justify-between items-center">
+              <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Web Administration Console</span>
+              <a href={`/api/proxy/${deviceId}/`} target="_blank" rel="noreferrer" className="text-xs text-accent-primary hover:underline">
+                Open in new tab
+              </a>
+            </div>
+            <iframe src={`/api/proxy/${deviceId}/`} className="w-full flex-1 border-none bg-white" title="Web Console" />
           </div>
         )}
       </div>
