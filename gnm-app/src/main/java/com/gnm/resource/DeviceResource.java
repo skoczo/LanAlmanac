@@ -147,6 +147,18 @@ public class DeviceResource {
         }
         return Response.noContent().build();
     }
+
+    @DELETE
+    @Path("/{id}")
+    @Transactional
+    public Response deleteDevice(@PathParam("id") UUID id) {
+        PhysicalDevice device = PhysicalDevice.findById(id);
+        if (device != null) {
+            device.delete();
+            return Response.noContent().build();
+        }
+        return Response.status(Response.Status.NOT_FOUND).build();
+    }
     @GET
     @Path("/{id}/telemetry")
     @Transactional

@@ -30,6 +30,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [toasts, setToasts] = useState<ToastMessage[]>([])
+  const [notificationHistory, setNotificationHistory] = useState<ToastMessage[]>([])
+  const [showNotifications, setShowNotifications] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -49,19 +51,33 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data)
+          const isAlarm = data.type === 'ALARM';
           const newToast: ToastMessage = {
             id: Math.random().toString(),
             type: data.type,
-            title: data.type === 'NEW_DEVICE' ? 'New Host Discovered' : 'Status Update',
-            text: `${data.displayName} (${data.ipAddress}) is now ${data.status}`
+            title: isAlarm ? 'Security Alert' : (data.type === 'NEW_DEVICE' ? 'New Host Discovered' : 'Status Update'),
+            text: isAlarm ? data.message : `${data.displayName} (${data.ipAddress}) is now ${data.status}`
           }
           
-          setToasts((prev) => [...prev, newToast])
+          setToasts((prev) => {
+            // Deduplicate identical toasts (e.g. from React Strict Mode double-connections)
+            if (prev.some(t => t.text === newToast.text && t.type === newToast.type)) {
+              return prev;
+            }
+            return [...prev, newToast];
+          })
+          setNotificationHistory((prev) => {
+            if (prev.some(t => t.text === newToast.text && t.type === newToast.type)) {
+              return prev;
+            }
+            return [newToast, ...prev].slice(0, 50); // Keep last 50
+          })
 
-          // Automatically dismiss toast after 4.5 seconds
+          // Configurable timeout: 15 seconds for alarms, 4.5 seconds for status updates
+          const timeoutDuration = isAlarm ? 15000 : 4500;
           setTimeout(() => {
             setToasts((prev) => prev.filter((t) => t.id !== newToast.id))
-          }, 4500)
+          }, timeoutDuration)
         } catch (err) {
           console.error('Failed to parse WebSocket message', err)
         }
@@ -212,10 +228,52 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </div>
 
             {/* Notification Bell */}
-            <button className="p-2 rounded-xl bg-bg-surface border border-border-subtle hover:bg-bg-surface-raised text-text-secondary hover:text-text-primary transition-all relative cursor-pointer group">
-              <Bell className="w-4.5 h-4.5 group-hover:rotate-12 transition-transform" />
-              <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-accent-warning animate-pulse" />
-            </button>
+            <div className="relative">
+              <button 
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="p-2 rounded-xl bg-bg-surface border border-border-subtle hover:bg-bg-surface-raised text-text-secondary hover:text-text-primary transition-all relative cursor-pointer group"
+              >
+                <Bell className="w-4.5 h-4.5 group-hover:rotate-12 transition-transform" />
+                {notificationHistory.length > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-accent-warning animate-pulse" />
+                )}
+              </button>
+
+              {/* Notifications Dropdown */}
+              {showNotifications && (
+                <div className="absolute top-full right-0 mt-3 w-80 bg-bg-surface/95 backdrop-blur-md border border-border-subtle rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[400px] animate-fade-in">
+                  <div className="p-3 border-b border-border-subtle flex justify-between items-center bg-bg-surface-raised">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-text-primary">Notifications</h3>
+                    <button 
+                      onClick={() => setNotificationHistory([])}
+                      className="text-[10px] font-semibold text-text-muted hover:text-accent-danger transition-colors cursor-pointer"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                  <div className="overflow-y-auto flex-1 p-2 space-y-2">
+                    {notificationHistory.length === 0 ? (
+                      <p className="text-xs text-text-muted text-center py-6">No notifications</p>
+                    ) : (
+                      notificationHistory.map(notif => (
+                        <div key={notif.id} className="p-3 rounded-xl bg-bg-base border border-border-subtle hover:border-accent-primary/30 transition-colors">
+                          <div className="flex gap-3 items-start">
+                            <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
+                              notif.type === 'ALARM' ? 'bg-accent-danger' : 
+                              notif.type === 'NEW_DEVICE' ? 'bg-accent-primary' : 'bg-accent-info'
+                            }`} />
+                            <div>
+                              <h4 className="text-xs font-bold text-text-primary">{notif.title}</h4>
+                              <p className="text-xs text-text-secondary mt-1">{notif.text}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -231,23 +289,31 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           <div
             key={toast.id}
             className={`pointer-events-auto p-4 rounded-xl border bg-bg-surface/85 backdrop-blur-md shadow-2xl flex gap-3.5 items-start animate-fade-in transition-all duration-300 ${
-              toast.type === 'NEW_DEVICE'
+              toast.type === 'ALARM'
+                ? 'border-accent-danger/30 hover:border-accent-danger/50 shadow-accent-danger/10'
+                : toast.type === 'NEW_DEVICE'
                 ? 'border-accent-primary/20 hover:border-accent-primary/40 shadow-accent-primary/5'
                 : 'border-accent-info/20 hover:border-accent-info/40 shadow-accent-info/5'
             }`}
           >
             <div
-              className={`w-2 h-2 rounded-full mt-1.5 animate-pulse ${
-                toast.type === 'NEW_DEVICE' ? 'bg-accent-primary' : 'bg-accent-info'
+              className={`w-2 h-2 rounded-full mt-1.5 animate-pulse flex-shrink-0 ${
+                toast.type === 'ALARM' ? 'bg-accent-danger'
+                : toast.type === 'NEW_DEVICE' ? 'bg-accent-primary' : 'bg-accent-info'
               }`}
             />
             <div className="flex-1 min-w-0">
               <h4 className="text-xs font-bold text-text-primary tracking-wide">
                 {toast.title}
               </h4>
-              <p className="text-xs text-text-secondary mt-0.5 leading-relaxed">
+              <p className="text-sm text-text-secondary mt-1 leading-snug line-clamp-2 break-all">
                 {toast.text}
               </p>
+              {toast.type === 'ALARM' && (
+                <Link to="/alerts" className="text-accent-danger text-xs font-bold mt-2 inline-block hover:underline cursor-pointer">
+                  View Alert Details &rarr;
+                </Link>
+              )}
             </div>
             <button
               onClick={() => dismissToast(toast.id)}

@@ -30,7 +30,8 @@ import java.util.concurrent.atomic.AtomicReference;
 public class FingerprintEngine {
 
     private static final Logger LOG = Logger.getLogger(FingerprintEngine.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private final ObjectMapper MAPPER = new ObjectMapper();
+    private final java.util.concurrent.ConcurrentHashMap<String, Object> ipLocks = new java.util.concurrent.ConcurrentHashMap<>();
 
     private volatile boolean running = true;
 
@@ -42,6 +43,9 @@ public class FingerprintEngine {
 
     @Inject
     Event<DeviceEvent> eventBroadcaster;
+
+    @Inject
+    Event<ThreatEvent> threatBroadcaster;
 
     @Inject
     FingerprintEngine self;
@@ -84,13 +88,21 @@ public class FingerprintEngine {
         while (running) {
             try {
                 NetworkSighting sighting = sightingQueue.take();
-                processSighting(sighting);
+                Thread.startVirtualThread(() -> {
+                    try {
+                        processSighting(sighting);
+                    } catch (Exception e) {
+                        if (running) {
+                            LOG.error("Error processing network sighting event in virtual thread", e);
+                        }
+                    }
+                });
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
                 if (running) {
-                    LOG.error("Error processing network sighting event", e);
+                    LOG.error("Error taking sighting from queue", e);
                 }
             }
         }
@@ -132,7 +144,10 @@ public class FingerprintEngine {
             }
         }
 
-        self.saveSightingInTransaction(sighting, candidate, hostname);
+        Object lock = ipLocks.computeIfAbsent(sighting.ipAddress, k -> new Object());
+        synchronized (lock) {
+            self.saveSightingInTransaction(sighting, candidate, hostname);
+        }
     }
 
     @Transactional
@@ -280,13 +295,22 @@ public class FingerprintEngine {
 
             if ("DETECTION".equals(appMode)) {
                 LOG.warn("IDS DETECTION MODE: Unknown device detected on network! Generating ThreatEvent.");
-                ThreatEvent threat = new ThreatEvent();
-                threat.severity = "HIGH";
-                threat.description = "Unknown Device Detected on Network. Hostname: " + (resolvedHostname != null ? resolvedHostname : "Unknown");
-                threat.ipAddress = sighting.ipAddress;
-                threat.macAddress = sighting.macAddress;
-                threat.detectedAt = Instant.now();
-                threat.persist();
+                String desc = "Rogue Device Detected: Unauthorized access attempt from " + (resolvedHostname != null ? resolvedHostname : "Unknown");
+                ThreatEvent existing = ThreatEvent.find("ipAddress = ?1 and macAddress = ?2 and description = ?3 and resolved = false", sighting.ipAddress, sighting.macAddress, desc).firstResult();
+                if (existing != null) {
+                    existing.detectedAt = Instant.now();
+                    existing.persist();
+                    threatBroadcaster.fire(existing);
+                } else {
+                    ThreatEvent threat = new ThreatEvent();
+                    threat.severity = "CRITICAL";
+                    threat.description = desc;
+                    threat.ipAddress = sighting.ipAddress;
+                    threat.macAddress = sighting.macAddress;
+                    threat.detectedAt = Instant.now();
+                    threat.persist();
+                    threatBroadcaster.fire(threat);
+                }
                 return; // Do NOT create device in detection mode!
             }
 
@@ -791,29 +815,47 @@ public class FingerprintEngine {
         if ("DETECTION".equals(appMode) || isManaged) {
             if (candidate.openPorts != null && !candidate.openPorts.isEmpty()) {
                 for (Integer port : candidate.openPorts) {
-                    if (historical.openPorts == null || !historical.openPorts.contains(port)) {
-                        ThreatEvent threat = new ThreatEvent();
-                        threat.severity = "MEDIUM";
-                        threat.description = "New unexpected open port detected: " + port;
-                        threat.physicalDeviceId = historical.physicalDevice.id;
-                        threat.ipAddress = sighting.ipAddress;
-                        threat.macAddress = sighting.macAddress;
-                        threat.detectedAt = Instant.now();
-                        threat.persist();
+                    if (historical.openPorts != null && !historical.openPorts.contains(port)) {
+                        String desc = "New unexpected open port detected: " + port;
+                        ThreatEvent existing = ThreatEvent.find("physicalDeviceId = ?1 and description = ?2 and resolved = false", historical.physicalDevice.id, desc).firstResult();
+                        if (existing != null) {
+                            existing.detectedAt = Instant.now();
+                            existing.persist();
+                            threatBroadcaster.fire(existing);
+                        } else {
+                            ThreatEvent threat = new ThreatEvent();
+                            threat.severity = "MEDIUM";
+                            threat.description = desc;
+                            threat.physicalDeviceId = historical.physicalDevice.id;
+                            threat.ipAddress = sighting.ipAddress;
+                            threat.macAddress = sighting.macAddress;
+                            threat.detectedAt = Instant.now();
+                            threat.persist();
+                            threatBroadcaster.fire(threat);
+                        }
                     }
                 }
             }
             if (candidate.sshHostKeys != null && !candidate.sshHostKeys.isEmpty()) {
                 for (String key : candidate.sshHostKeys) {
                     if (historical.sshHostKeys != null && !historical.sshHostKeys.isEmpty() && !historical.sshHostKeys.contains(key)) {
-                        ThreatEvent threat = new ThreatEvent();
-                        threat.severity = "HIGH";
-                        threat.description = "SSH Host Key mutation detected! Remote host identification has changed. Key: " + key;
-                        threat.physicalDeviceId = historical.physicalDevice.id;
-                        threat.ipAddress = sighting.ipAddress;
-                        threat.macAddress = sighting.macAddress;
-                        threat.detectedAt = Instant.now();
-                        threat.persist();
+                        String desc = "SSH Host Key mutation detected! Remote host identification has changed. Key: " + key;
+                        ThreatEvent existing = ThreatEvent.find("physicalDeviceId = ?1 and description = ?2 and resolved = false", historical.physicalDevice.id, desc).firstResult();
+                        if (existing != null) {
+                            existing.detectedAt = Instant.now();
+                            existing.persist();
+                            threatBroadcaster.fire(existing);
+                        } else {
+                            ThreatEvent threat = new ThreatEvent();
+                            threat.severity = "HIGH";
+                            threat.description = desc;
+                            threat.physicalDeviceId = historical.physicalDevice.id;
+                            threat.ipAddress = sighting.ipAddress;
+                            threat.macAddress = sighting.macAddress;
+                            threat.detectedAt = Instant.now();
+                            threat.persist();
+                            threatBroadcaster.fire(threat);
+                        }
                     }
                 }
             }
@@ -872,8 +914,14 @@ public class FingerprintEngine {
         if (source.dhcpOption55 != null) dest.dhcpOption55 = source.dhcpOption55;
         if (source.dhcpOption60 != null) dest.dhcpOption60 = source.dhcpOption60;
         if (source.tcpFingerprint != null) dest.tcpFingerprint = source.tcpFingerprint;
-        if (source.mdnsServices != null && !source.mdnsServices.isEmpty()) dest.mdnsServices = source.mdnsServices;
-        if (source.openPorts != null && !source.openPorts.isEmpty()) dest.openPorts = source.openPorts;
+        if (source.mdnsServices != null && !source.mdnsServices.isEmpty()) {
+            dest.mdnsServices = source.mdnsServices;
+            FingerprintVector.update("mdnsServices = ?1 where id = ?2", source.mdnsServices, dest.id);
+        }
+        if (source.openPorts != null && !source.openPorts.isEmpty()) {
+            dest.openPorts = source.openPorts;
+            FingerprintVector.update("openPorts = ?1 where id = ?2", source.openPorts, dest.id);
+        }
         if (source.httpServerHeader != null) dest.httpServerHeader = source.httpServerHeader;
         if (source.tlsJa4 != null) dest.tlsJa4 = source.tlsJa4;
         if (source.tlsCertSubject != null) dest.tlsCertSubject = source.tlsCertSubject;
@@ -962,4 +1010,31 @@ public class FingerprintEngine {
         }
         return hostKeyRef.get();
     }
+
+    @io.quarkus.scheduler.Scheduled(every = "1m")
+    @Transactional
+    public void sweepOfflineDevices() {
+        long timeoutMinutes = 5;
+        GlobalSetting setting = GlobalSetting.findById("DEVICE_OFFLINE_TIMEOUT_MINUTES");
+        if (setting != null) {
+            try { timeoutMinutes = Long.parseLong(setting.value); } catch (Exception e) {}
+        }
+        
+        Instant cutoff = Instant.now().minus(timeoutMinutes, java.time.temporal.ChronoUnit.MINUTES);
+        List<PhysicalDevice> devices = PhysicalDevice.find("status = ?1 and lastSeen < ?2", DeviceStatus.ONLINE, cutoff).list();
+        for (PhysicalDevice device : devices) {
+            device.status = DeviceStatus.OFFLINE;
+            device.persist();
+            
+            String ip = device.identities.stream()
+                .filter(id -> id.current)
+                .map(id -> id.ipAddress)
+                .findFirst()
+                .orElse("0.0.0.0");
+                
+            eventBroadcaster.fire(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "OFFLINE", ip));
+            LOG.info("Marked device " + device.displayName + " as OFFLINE due to inactivity.");
+        }
+    }
 }
+

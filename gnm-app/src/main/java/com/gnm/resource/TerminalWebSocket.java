@@ -45,6 +45,9 @@ public class TerminalWebSocket {
     @Inject
     VaultEngine vaultEngine;
 
+    @Inject
+    jakarta.enterprise.event.Event<ThreatEvent> threatBroadcaster;
+
     private static final ObjectMapper mapper = new ObjectMapper();
 
     // Track active sessions to pipe input correctly and clean up on close
@@ -151,13 +154,22 @@ public class TerminalWebSocket {
                 connection.sendTextAndAwait("Received: " + fingerprint + "\r\n");
                 
                 QuarkusTransaction.requiringNew().run(() -> {
-                    ThreatEvent threat = new ThreatEvent();
-                    threat.severity = "HIGH";
-                    threat.description = "SSH Host Key mutation detected! Remote host identification has changed. Key: " + fingerprint;
-                    threat.physicalDeviceId = service.physicalDevice.id;
-                    threat.ipAddress = ip;
-                    threat.detectedAt = Instant.now();
-                    threat.persist();
+                    String desc = "SSH Host Key mutation detected! Remote host identification has changed. Key: " + fingerprint;
+                    ThreatEvent existing = ThreatEvent.find("physicalDeviceId = ?1 and description = ?2 and resolved = false", service.physicalDevice.id, desc).firstResult();
+                    if (existing != null) {
+                        existing.detectedAt = Instant.now();
+                        existing.persist();
+                        threatBroadcaster.fire(existing);
+                    } else {
+                        ThreatEvent threat = new ThreatEvent();
+                        threat.severity = "HIGH";
+                        threat.description = desc;
+                        threat.physicalDeviceId = service.physicalDevice.id;
+                        threat.ipAddress = ip;
+                        threat.detectedAt = Instant.now();
+                        threat.persist();
+                        threatBroadcaster.fire(threat);
+                    }
                 });
 
                 return false;

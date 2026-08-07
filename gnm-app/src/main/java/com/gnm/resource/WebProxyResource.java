@@ -23,6 +23,7 @@ public class WebProxyResource {
 
     private static final Logger log = Logger.getLogger(WebProxyResource.class);
     private final HttpClient httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
             .followRedirects(HttpClient.Redirect.NEVER)
             .build();
 

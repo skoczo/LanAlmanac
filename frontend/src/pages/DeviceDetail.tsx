@@ -17,9 +17,11 @@ import {
   Edit2,
   Save,
   X,
+  Trash2,
   Terminal as TerminalIcon
 } from 'lucide-react'
 import { Terminal } from '../components/Terminal'
+import { useNavigate } from '@tanstack/react-router'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface Identity {
@@ -151,6 +153,20 @@ export const DeviceDetail: React.FC = () => {
         setLoading(false)
       })
   }, [deviceId])
+  
+  const navigate = useNavigate()
+
+  const handleDeleteDevice = async () => {
+    if (!window.confirm('Are you sure you want to permanently delete this device? This will remove all associated telemetry, credentials, and fingerprints.')) {
+      return
+    }
+    try {
+      await apiClient(`/api/devices/${deviceId}`, { method: 'DELETE' })
+      navigate({ to: '/devices' })
+    } catch (err: any) {
+      alert('Failed to delete device: ' + (err.message || 'Unknown error'))
+    }
+  }
 
   const handleSaveEdits = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -350,31 +366,41 @@ export const DeviceDetail: React.FC = () => {
         </div>
       )}
 
-      {/* Header back button */}
-      <div className="flex items-center gap-4">
-        <Link
-          to="/devices"
-          className="p-2.5 rounded-xl bg-bg-surface border border-border-subtle hover:bg-bg-surface-raised text-text-secondary hover:text-text-primary transition-all cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold tracking-tight">{device.displayName}</h1>
-            <span className={`w-2 h-2 rounded-full ${
-              device.status === 'ONLINE' ? 'bg-accent-success animate-pulse' : 'bg-accent-danger'
-            }`} />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
-              {device.status}
-            </span>
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Link
+            to="/devices"
+            className="p-2.5 rounded-xl bg-bg-surface border border-border-subtle hover:bg-bg-surface-raised text-text-secondary hover:text-text-primary transition-all cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-xl font-bold tracking-tight">{device.displayName}</h1>
+              <span className={`w-2 h-2 rounded-full ${
+                device.status === 'ONLINE' ? 'bg-accent-success animate-pulse' : 'bg-accent-danger'
+              }`} />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                {device.status}
+              </span>
+            </div>
+            <p className="text-xs text-text-secondary font-mono mt-0.5">
+              {currentIdentity?.ipAddress || 'Unknown IP'} · {device.manufacturer} {device.model}
+            </p>
           </div>
-          <p className="text-xs text-text-secondary font-mono mt-0.5">
-            {currentIdentity?.ipAddress || 'Unknown IP'} · {device.manufacturer} {device.model}
-          </p>
         </div>
+
+        <button
+          onClick={handleDeleteDevice}
+          className="p-2.5 rounded-xl bg-bg-surface border border-border-subtle hover:bg-accent-danger/10 text-text-secondary hover:text-accent-danger transition-all cursor-pointer"
+          title="Delete Device"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
       </div>
 
-      {/* Navigation tabs */}
+    {/* Navigation tabs */}
       <div className="flex items-center border-b border-border-subtle gap-2 overflow-x-auto">
         {(['overview', 'identities', 'fingerprint', 'services', 'credentials', 'monitor', 'settings', 'web console'] as const).map((tab) => (
           <button

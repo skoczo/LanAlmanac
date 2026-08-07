@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth/auth-context'
-import { ShieldAlert, CheckCircle, ShieldCheck, MessageSquare, Key, Network } from 'lucide-react'
+import { ShieldAlert, CheckCircle, ShieldCheck, MessageSquare, Key, Network, AlertOctagon } from 'lucide-react'
 
 export interface ThreatEvent {
   id: string
@@ -142,9 +142,10 @@ export const Alerts: React.FC = () => {
           )}
 
           {threats.map((threat) => {
-            const isUnknownHostname = threat.description.includes('Hostname: Unknown')
+            const isUnknownHostname = threat.description.includes('Hostname: Unknown') || threat.description.includes('from Unknown')
             const isSshMutation = threat.description.includes('SSH Host Key mutation detected')
             const hasSshKey = isSshMutation && threat.description.includes('Key: ')
+            const isCritical = threat.severity === 'CRITICAL'
             const deviceName = threat.physicalDeviceId ? devices[threat.physicalDeviceId] || 'Unknown Device' : 'Unassociated'
 
             return (
@@ -153,12 +154,14 @@ export const Alerts: React.FC = () => {
                 className={`flex flex-col gap-3 p-4 rounded-xl border transition-colors ${
                   threat.resolved 
                     ? 'bg-bg-surface border-border-subtle opacity-60' 
-                    : 'bg-accent-danger/5 border-accent-danger/30 shadow-sm shadow-accent-danger/5'
+                    : isCritical
+                      ? 'bg-red-950/20 border-red-500/60 shadow-md shadow-red-900/10'
+                      : 'bg-accent-danger/5 border-accent-danger/30 shadow-sm shadow-accent-danger/5'
                 }`}
               >
                 <div className="flex items-start gap-4">
-                  <div className={`mt-1 flex-shrink-0 ${threat.resolved ? 'text-text-muted' : 'text-accent-danger animate-pulse-slow'}`}>
-                    {threat.resolved ? <CheckCircle className="w-5 h-5" /> : <ShieldAlert className="w-5 h-5" />}
+                  <div className={`mt-1 flex-shrink-0 ${threat.resolved ? 'text-text-muted' : isCritical ? 'text-red-500 animate-pulse' : 'text-accent-danger animate-pulse-slow'}`}>
+                    {threat.resolved ? <CheckCircle className="w-5 h-5" /> : isCritical ? <AlertOctagon className="w-6 h-6" /> : <ShieldAlert className="w-5 h-5" />}
                   </div>
                   
                   <div className="flex-1 min-w-0">
@@ -167,7 +170,9 @@ export const Alerts: React.FC = () => {
                         <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
                           threat.resolved 
                             ? 'bg-bg-surface-raised text-text-secondary' 
-                            : threat.severity === 'HIGH' ? 'bg-accent-danger/20 text-accent-danger' : 'bg-accent-warning/20 text-accent-warning'
+                            : isCritical
+                              ? 'bg-red-500/20 text-red-500 border border-red-500/50'
+                              : threat.severity === 'HIGH' ? 'bg-accent-danger/20 text-accent-danger' : 'bg-accent-warning/20 text-accent-warning'
                         }`}>
                           {threat.severity} SEVERITY
                         </span>
@@ -183,7 +188,7 @@ export const Alerts: React.FC = () => {
                       </span>
                     </div>
 
-                    <p className={`text-sm font-bold leading-relaxed mb-3 ${threat.resolved ? 'text-text-secondary' : 'text-text-primary'}`}>
+                    <p className={`text-sm font-bold leading-relaxed mb-3 ${threat.resolved ? 'text-text-secondary' : isCritical ? 'text-red-400 text-base' : 'text-text-primary'}`}>
                       {threat.description}
                     </p>
                     
