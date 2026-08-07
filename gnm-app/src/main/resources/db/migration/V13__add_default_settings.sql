@@ -1,0 +1,3 @@
+INSERT INTO global_setting (key, value) VALUES ('ENABLE_ACTIVE_SCANNING', 'true') ON CONFLICT (key) DO NOTHING;
+INSERT INTO global_setting (key, value) VALUES ('POLL_INTERVAL_SEC', '60') ON CONFLICT (key) DO NOTHING;
+INSERT INTO global_setting (key, value) VALUES ('TELEMETRY_RETENTION_DAYS', '30') ON CONFLICT (key) DO NOTHING;

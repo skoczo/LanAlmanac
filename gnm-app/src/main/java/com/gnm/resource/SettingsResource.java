@@ -29,4 +29,18 @@ public class SettingsResource {
         setting.persist();
         return setting;
     }
+
+    @GET
+    @Path("/public/oidc")
+    public java.util.Map<String, String> getPublicOidcSettings() {
+        GlobalSetting enabled = GlobalSetting.findById("oidc.enabled");
+        GlobalSetting url = GlobalSetting.findById("oidc.authority.url");
+        GlobalSetting clientId = GlobalSetting.findById("oidc.client.id");
+
+        return java.util.Map.of(
+            "enabled", enabled != null && "true".equalsIgnoreCase(enabled.value) ? "true" : "false",
+            "authority", url != null ? url.value : "",
+            "clientId", clientId != null ? clientId.value : ""
+        );
+    }
 }

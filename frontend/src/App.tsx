@@ -15,6 +15,7 @@ import { DeviceDetail } from './pages/DeviceDetail'
 import { Topology } from './pages/Topology'
 import { Vault } from './pages/Vault'
 import { Alerts } from './pages/Alerts'
+import { Settings } from './pages/Settings'
 
 // 1. Root Router Guard Component
 const RootComponent = () => {
@@ -80,6 +81,12 @@ const alertsRoute = createRoute({
   component: Alerts
 })
 
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings',
+  component: Settings
+})
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   devicesRoute,
@@ -87,6 +94,7 @@ const routeTree = rootRoute.addChildren([
   topologyRoute,
   vaultRoute,
   alertsRoute,
+  settingsRoute,
   loginRoute
 ])
 

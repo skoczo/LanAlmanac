@@ -22,6 +22,7 @@ dependencies {
     implementation("io.quarkus:quarkus-smallrye-jwt")
     implementation("io.quarkus:quarkus-security-jpa")
     implementation("io.quarkus:quarkus-smallrye-jwt-build")
+    implementation("io.quarkus:quarkus-oidc")
     
     // Database & Hibernate
     implementation("io.quarkus:quarkus-hibernate-orm-panache")

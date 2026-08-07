@@ -3,6 +3,7 @@ package com.gnm.service;
 import com.gnm.model.Credential;
 import com.gnm.model.NetworkIdentity;
 import com.gnm.model.PhysicalDevice;
+import com.gnm.model.GlobalSetting;
 import com.gnm.model.Telemetry;
 import com.gnm.model.enums.CredentialType;
 import io.quarkus.scheduler.Scheduled;
@@ -29,9 +30,21 @@ public class TelemetryEngine {
     @Inject
     VaultEngine vaultEngine;
 
-    @Scheduled(every = "60s")
+    private Instant lastPollTime = Instant.MIN;
+
+    @Scheduled(every = "10s")
     @Transactional
     public void pollMetrics() {
+        long intervalSec = 60;
+        GlobalSetting setting = GlobalSetting.findById("POLL_INTERVAL_SEC");
+        if (setting != null) {
+            try { intervalSec = Long.parseLong(setting.value); } catch (Exception e) {}
+        }
+        if (Instant.now().isBefore(lastPollTime.plusSeconds(intervalSec))) {
+            return;
+        }
+        lastPollTime = Instant.now();
+
         if (!vaultEngine.isUnsealed()) {
             log.debug("Vault is sealed, skipping telemetry polling");
             return;
@@ -123,5 +136,20 @@ public class TelemetryEngine {
         t.id = new Telemetry.TelemetryId(Instant.now(), device.id, metricName);
         t.value = value;
         t.persist();
+    }
+
+    @Scheduled(every = "1h")
+    @Transactional
+    public void cleanupOldTelemetry() {
+        long retentionDays = 30;
+        GlobalSetting setting = GlobalSetting.findById("TELEMETRY_RETENTION_DAYS");
+        if (setting != null) {
+            try { retentionDays = Long.parseLong(setting.value); } catch (Exception e) {}
+        }
+        Instant cutoff = Instant.now().minus(retentionDays, java.time.temporal.ChronoUnit.DAYS);
+        long deleted = Telemetry.delete("id.time < ?1", cutoff);
+        if (deleted > 0) {
+            log.info("Deleted " + deleted + " old telemetry records beyond retention of " + retentionDays + " days.");
+        }
     }
 }

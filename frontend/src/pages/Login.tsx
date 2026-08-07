@@ -3,7 +3,7 @@ import { useAuth } from '../lib/auth/auth-context'
 import { KeyRound, ShieldCheck, User } from 'lucide-react'
 
 export const Login: React.FC = () => {
-  const { login } = useAuth()
+  const { login, isOidcEnabled, oidcLogin } = useAuth()
   const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('admin')
   const [error, setError] = useState<string | null>(null)
@@ -64,6 +64,26 @@ export const Login: React.FC = () => {
           <div className="mb-6 p-3 rounded-lg bg-accent-danger/10 border border-accent-danger/25 text-sm text-accent-danger flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-accent-danger animate-ping" />
             {error}
+          </div>
+        )}
+
+        {isOidcEnabled && (
+          <div className="mb-6">
+            <button
+              type="button"
+              onClick={() => oidcLogin()}
+              className="w-full bg-bg-surface-raised border border-border-subtle hover:border-accent-primary hover:text-accent-primary text-text-primary font-semibold py-3 rounded-xl shadow-sm transition-all text-sm flex justify-center items-center gap-2 cursor-pointer"
+            >
+              Sign In with SSO
+            </button>
+            <div className="relative mt-6 mb-2">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-border-subtle"></div>
+              </div>
+              <div className="relative flex justify-center text-xs">
+                <span className="bg-bg-surface px-2 text-text-muted">Or continue with local account</span>
+              </div>
+            </div>
           </div>
         )}
 
