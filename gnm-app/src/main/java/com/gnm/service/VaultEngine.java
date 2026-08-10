@@ -22,7 +22,7 @@ public class VaultEngine {
     private static final int GCM_TAG_LENGTH = 128; // bits
     private static final int SALT_LENGTH = 16;
 
-    private SecretKey unsealedMasterKey = null;
+    private volatile SecretKey unsealedMasterKey = null;
 
     public boolean isInitialized() {
         return new File(VAULT_FILE_PATH).exists();

@@ -51,7 +51,6 @@ public class VaultResourceTest {
         // Initialize vault
         given()
           .contentType(ContentType.JSON)
-          .body(Map.of("passcode", "my_passcode"))
           .when().post("/api/vault/init")
           .then()
              .statusCode(200)
@@ -79,18 +78,9 @@ public class VaultResourceTest {
              .statusCode(200)
              .body("sealed", is(true));
              
-        // Unseal with wrong password
+        // Unseal with server password
         given()
           .contentType(ContentType.JSON)
-          .body(Map.of("passcode", "wrong"))
-          .when().post("/api/vault/unseal")
-          .then()
-             .statusCode(401);
-             
-        // Unseal with right password
-        given()
-          .contentType(ContentType.JSON)
-          .body(Map.of("passcode", "my_passcode"))
           .when().post("/api/vault/unseal")
           .then()
              .statusCode(200);

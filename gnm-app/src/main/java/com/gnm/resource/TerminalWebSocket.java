@@ -54,7 +54,6 @@ public class TerminalWebSocket {
     private final Map<String, SshSessionContext> activeSessions = new ConcurrentHashMap<>();
 
     @OnOpen
-    @Transactional
     public void onOpen(WebSocketConnection connection, @PathParam("deviceId") String deviceIdStr, @PathParam("credentialId") String credentialIdStr) {
         log.infof("Terminal WebSocket opened for device %s", deviceIdStr);
         
@@ -67,54 +66,75 @@ public class TerminalWebSocket {
         UUID deviceId = UUID.fromString(deviceIdStr);
         UUID credentialId = UUID.fromString(credentialIdStr);
 
-        PhysicalDevice device = PhysicalDevice.findById(deviceId);
-        if (device == null) {
-            connection.sendTextAndAwait("Error: Device not found.\r\n");
+        class SetupResult {
+            String ipAddress;
+            Credential cred;
+            NetworkService finalService;
+        }
+
+        SetupResult result = null;
+        try {
+            result = QuarkusTransaction.requiringNew().call(() -> {
+                PhysicalDevice device = PhysicalDevice.findById(deviceId);
+                if (device == null) {
+                    return null;
+                }
+
+                Credential cred = Credential.findById(credentialId);
+                if (cred == null || !cred.physicalDevice.id.equals(device.id)) {
+                    return null;
+                }
+
+                String ipAddress = device.identities.stream()
+                        .filter(id -> id.current)
+                        .map(id -> id.ipAddress)
+                        .findFirst()
+                        .orElse(null);
+
+                if (ipAddress == null) {
+                    return null;
+                }
+
+                int port = cred.port != null ? cred.port : 22;
+                NetworkService targetService = null;
+                for (NetworkService svc : device.services) {
+                    if (svc.port != null && svc.port == port && "SSH".equalsIgnoreCase(svc.serviceType)) {
+                        targetService = svc;
+                        break;
+                    }
+                }
+                if (targetService == null) {
+                    targetService = new NetworkService();
+                    targetService.physicalDevice = device;
+                    targetService.serviceType = "SSH";
+                    targetService.protocol = "TCP";
+                    targetService.port = port;
+                    targetService.label = "SSH (" + port + ")";
+                    targetService.firstSeen = Instant.now();
+                    targetService.lastSeen = Instant.now();
+                    targetService.persist();
+                    device.services.add(targetService);
+                }
+                
+                SetupResult r = new SetupResult();
+                r.ipAddress = ipAddress;
+                r.cred = cred;
+                r.finalService = targetService;
+                return r;
+            });
+        } catch (Exception e) {
+            log.error("Error setting up terminal session", e);
+        }
+
+        if (result == null) {
+            connection.sendTextAndAwait("Error: Could not initialize session. Check device, credentials, and IP.\r\n");
             connection.close();
             return;
         }
 
-        Credential cred = Credential.findById(credentialId);
-        if (cred == null || !cred.physicalDevice.id.equals(device.id)) {
-            connection.sendTextAndAwait("Error: Credential not found.\r\n");
-            connection.close();
-            return;
-        }
-
-        String ipAddress = device.identities.stream()
-                .filter(id -> id.current)
-                .map(id -> id.ipAddress)
-                .findFirst()
-                .orElse(null);
-
-        if (ipAddress == null) {
-            connection.sendTextAndAwait("Error: Device has no active IP address.\r\n");
-            connection.close();
-            return;
-        }
-
-        int port = cred.port != null ? cred.port : 22;
-        NetworkService targetService = null;
-        for (NetworkService svc : device.services) {
-            if (svc.port != null && svc.port == port && "SSH".equalsIgnoreCase(svc.serviceType)) {
-                targetService = svc;
-                break;
-            }
-        }
-        if (targetService == null) {
-            targetService = new NetworkService();
-            targetService.physicalDevice = device;
-            targetService.serviceType = "SSH";
-            targetService.protocol = "TCP";
-            targetService.port = port;
-            targetService.label = "SSH (" + port + ")";
-            targetService.firstSeen = Instant.now();
-            targetService.lastSeen = Instant.now();
-            targetService.persist();
-            device.services.add(targetService);
-        }
-
-        final NetworkService finalService = targetService;
+        final String ipAddress = result.ipAddress;
+        final Credential cred = result.cred;
+        final NetworkService finalService = result.finalService;
 
         // Start SSH connection in a virtual thread
         log.infof("Starting SSH virtual thread for device %s (IP: %s)", deviceIdStr, ipAddress);
@@ -127,23 +147,29 @@ public class TerminalWebSocket {
         
         // Trust On First Use (TOFU) logic
         client.setServerKeyVerifier((clientSession, remoteAddress, serverKey) -> {
-            String fingerprint = KeyUtils.getFingerPrint(BuiltinDigests.sha256, serverKey);
-            log.infof("Received server key fingerprint: %s", fingerprint);
+            try {
+                String fingerprint = KeyUtils.getFingerPrint(BuiltinDigests.sha256, serverKey);
+                log.infof("Received server key fingerprint: %s", fingerprint);
 
-            if (service.sshHostKey == null || service.sshHostKey.isEmpty()) {
-                // First use: store it but reject until trusted
-                QuarkusTransaction.requiringNew().run(() -> {
-                    NetworkService s = NetworkService.findById(service.id);
-                    s.sshHostKey = fingerprint;
-                    s.sshHostKeyTrusted = false;
-                    s.persist();
-                });
-                
-                connection.sendTextAndAwait("\r\n[Security] First time connecting to this host.\r\n");
-                connection.sendTextAndAwait("[Security] Host Key Fingerprint: " + fingerprint + "\r\n");
-                connection.sendTextAndAwait("[Security] Please explicitly trust this key in the UI before connecting.\r\n");
-                return false;
-            }
+                if (service.sshHostKey == null || service.sshHostKey.isEmpty()) {
+                    // First use: store it but reject until trusted
+                    QuarkusTransaction.requiringNew().run(() -> {
+                        NetworkService s = NetworkService.findById(service.id);
+                        if (s == null) {
+                            log.error("NetworkService not found by ID: " + service.id);
+                            throw new RuntimeException("NetworkService not found");
+                        }
+                        s.sshHostKey = fingerprint;
+                        s.sshHostKeyTrusted = false;
+                        s.persist();
+                        log.infof("Saved SSH host key for service %s", s.id);
+                    });
+                    
+                    connection.sendTextAndAwait("\r\n[Security] First time connecting to this host.\r\n");
+                    connection.sendTextAndAwait("[Security] Host Key Fingerprint: " + fingerprint + "\r\n");
+                    connection.sendTextAndAwait("[Security] Please explicitly trust this key in the UI before connecting.\r\n");
+                    return false;
+                }
 
             if (!service.sshHostKey.equals(fingerprint)) {
                 // Key changed! MITM or host re-installed
@@ -182,6 +208,10 @@ public class TerminalWebSocket {
             }
 
             return true;
+            } catch (Exception e) {
+                log.error("Exception in ServerKeyVerifier!", e);
+                return false;
+            }
         });
 
         client.start();

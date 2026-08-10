@@ -1,0 +1,8 @@
+FROM alpine:latest
+RUN apk add --no-cache openssh bash && \
+    ssh-keygen -A && \
+    echo 'root:root' | chpasswd && \
+    adduser -D -s /bin/bash -u 1000 testuser && \
+    echo 'testuser:testpass' | chpasswd && \
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+CMD ["/usr/sbin/sshd", "-D"]

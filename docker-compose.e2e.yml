@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+
+  ne-linux-server:
+    image: gnm-ne-linux-server:latest
+    networks:
+      gnm_net:
+        ipv4_address: 192.168.100.10
+
+  ne-router-sim:
+    image: gnm-ne-router-sim:latest
+    networks:
+      gnm_net:
+        ipv4_address: 192.168.100.20
+
+  traffic-generator:
+    image: gnm-traffic-generator:latest
+    networks:
+      gnm_net:
+        ipv4_address: 192.168.100.30
+
+networks:
+  gnm_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.100.0/24

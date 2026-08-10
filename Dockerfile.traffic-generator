@@ -1,0 +1,4 @@
+FROM alpine:latest
+RUN apk add --no-cache tcpdump iproute2 python3 py3-pip && \
+    pip install --break-system-packages scapy
+CMD ["sh", "-c", "while true; do sleep 1000; done"]

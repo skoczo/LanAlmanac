@@ -9,7 +9,7 @@ repositories {
 }
 
 dependencies {
-    implementation(enforcedPlatform("io.quarkus.platform:quarkus-bom:3.38.0"))
+    implementation(enforcedPlatform("io.quarkus.platform:quarkus-bom:3.38.1"))
     
     // REST API & JSON
     implementation("io.quarkus:quarkus-rest")
@@ -51,6 +51,8 @@ dependencies {
     testImplementation("io.rest-assured:rest-assured")
     testImplementation("io.quarkus:quarkus-test-security")
     testImplementation("io.quarkus:quarkus-jacoco")
+    testImplementation("org.testcontainers:testcontainers:1.20.1")
+    testImplementation("org.testcontainers:junit-jupiter:1.20.1")
 }
 
 java {

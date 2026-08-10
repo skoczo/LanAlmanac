@@ -3,6 +3,8 @@ package com.gnm;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
+import jakarta.transaction.Transactional;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.gnm.dto.backup.LanAlmanacBackup;
@@ -26,10 +28,20 @@ public class BackupCompatibilityTest {
     @Inject
     BackupService backupService;
 
+    @AfterEach
+    @Transactional
+    public void cleanup() {
+        com.gnm.model.Credential.deleteAll();
+        com.gnm.model.NetworkService.deleteAll();
+        com.gnm.model.NetworkIdentity.deleteAll();
+        com.gnm.model.PhysicalDevice.deleteAll();
+    }
+
     @Test
     public void testBackupBackwardCompatibility() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         mapper.registerModule(new JavaTimeModule());
+        mapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
         // Find the backups folder in test resources
         URL resource = getClass().getClassLoader().getResource("backups");

@@ -1,0 +1,6 @@
+FROM alpine:latest
+RUN apk add --no-cache openssh net-snmp && \
+    ssh-keygen -A && \
+    echo 'root:root' | chpasswd && \
+    echo 'rocommunity public' > /etc/snmp/snmpd.conf
+CMD ["sh", "-c", "snmpd && /usr/sbin/sshd -D"]

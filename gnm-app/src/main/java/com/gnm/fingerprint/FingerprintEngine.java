@@ -296,8 +296,11 @@ public class FingerprintEngine {
             if ("DETECTION".equals(appMode)) {
                 LOG.warn("IDS DETECTION MODE: Unknown device detected on network! Generating ThreatEvent.");
                 String desc = "Rogue Device Detected: Unauthorized access attempt from " + (resolvedHostname != null ? resolvedHostname : "Unknown");
-                ThreatEvent existing = ThreatEvent.find("ipAddress = ?1 and macAddress = ?2 and description = ?3 and resolved = false", sighting.ipAddress, sighting.macAddress, desc).firstResult();
+                ThreatEvent existing = ThreatEvent.find("ipAddress = ?1 and macAddress = ?2 and description = ?3", sighting.ipAddress, sighting.macAddress, desc).firstResult();
                 if (existing != null) {
+                    if (existing.resolved) {
+                        return; // Ignore if user already explicitly resolved this rogue device sighting
+                    }
                     existing.detectedAt = Instant.now();
                     existing.persist();
                     threatBroadcaster.fire(existing);
@@ -817,11 +820,13 @@ public class FingerprintEngine {
                 for (Integer port : candidate.openPorts) {
                     if (historical.openPorts != null && !historical.openPorts.contains(port)) {
                         String desc = "New unexpected open port detected: " + port;
-                        ThreatEvent existing = ThreatEvent.find("physicalDeviceId = ?1 and description = ?2 and resolved = false", historical.physicalDevice.id, desc).firstResult();
+                        ThreatEvent existing = ThreatEvent.find("physicalDeviceId = ?1 and description = ?2", historical.physicalDevice.id, desc).firstResult();
                         if (existing != null) {
-                            existing.detectedAt = Instant.now();
-                            existing.persist();
-                            threatBroadcaster.fire(existing);
+                            if (!existing.resolved) {
+                                existing.detectedAt = Instant.now();
+                                existing.persist();
+                                threatBroadcaster.fire(existing);
+                            }
                         } else {
                             ThreatEvent threat = new ThreatEvent();
                             threat.severity = "MEDIUM";
@@ -838,23 +843,41 @@ public class FingerprintEngine {
             }
             if (candidate.sshHostKeys != null && !candidate.sshHostKeys.isEmpty()) {
                 for (String key : candidate.sshHostKeys) {
-                    if (historical.sshHostKeys != null && !historical.sshHostKeys.isEmpty() && !historical.sshHostKeys.contains(key)) {
-                        String desc = "SSH Host Key mutation detected! Remote host identification has changed. Key: " + key;
-                        ThreatEvent existing = ThreatEvent.find("physicalDeviceId = ?1 and description = ?2 and resolved = false", historical.physicalDevice.id, desc).firstResult();
-                        if (existing != null) {
-                            existing.detectedAt = Instant.now();
-                            existing.persist();
-                            threatBroadcaster.fire(existing);
+                    LOG.infof("Checking SSH Key %s against historical keys: %s", key, historical.sshHostKeys);
+                    if (historical.sshHostKeys != null && !historical.sshHostKeys.isEmpty()) {
+                        if (!historical.sshHostKeys.contains(key)) {
+                            String desc = "SSH Host Key mutation detected! Remote host identification has changed. Key: " + key;
+                            ThreatEvent existing = ThreatEvent.find("physicalDeviceId = ?1 and description = ?2", historical.physicalDevice.id, desc).firstResult();
+                            if (existing != null) {
+                                if (!existing.resolved) {
+                                    existing.detectedAt = Instant.now();
+                                    existing.persist();
+                                    threatBroadcaster.fire(existing);
+                                }
+                            } else {
+                                ThreatEvent threat = new ThreatEvent();
+                                threat.severity = "HIGH";
+                                threat.description = desc;
+                                threat.physicalDeviceId = historical.physicalDevice.id;
+                                threat.ipAddress = sighting.ipAddress;
+                                threat.macAddress = sighting.macAddress;
+                                threat.detectedAt = Instant.now();
+                                threat.persist();
+                                threatBroadcaster.fire(threat);
+                            }
                         } else {
-                            ThreatEvent threat = new ThreatEvent();
-                            threat.severity = "HIGH";
-                            threat.description = desc;
-                            threat.physicalDeviceId = historical.physicalDevice.id;
-                            threat.ipAddress = sighting.ipAddress;
-                            threat.macAddress = sighting.macAddress;
-                            threat.detectedAt = Instant.now();
-                            threat.persist();
-                            threatBroadcaster.fire(threat);
+                            // Auto-mitigation: Key is trusted! Resolve any pending SSH mismatch alarms.
+                            LOG.infof("SSH Key %s is trusted. Searching for unresolved threats for device %s", key, historical.physicalDevice.id);
+                            List<ThreatEvent> unresolved = ThreatEvent.list("physicalDeviceId", historical.physicalDevice.id);
+                            for (ThreatEvent threat : unresolved) {
+                                if (!threat.resolved && threat.description != null && threat.description.startsWith("SSH Host Key mutation")) {
+                                    LOG.infof("Auto-mitigating threat %s", threat.id);
+                                    threat.resolved = true;
+                                    threat.notes = "Key reverted to original trusted value. Previous mismatch may indicate a temporary MitM attack or network misconfiguration.";
+                                    threat.persist();
+                                    threatBroadcaster.fire(threat);
+                                }
+                            }
                         }
                     }
                 }
@@ -926,9 +949,16 @@ public class FingerprintEngine {
         if (source.tlsJa4 != null) dest.tlsJa4 = source.tlsJa4;
         if (source.tlsCertSubject != null) dest.tlsCertSubject = source.tlsCertSubject;
         if (source.sshHostKeys != null && !source.sshHostKeys.isEmpty()) {
-            for (String key : source.sshHostKeys) {
-                if (!dest.sshHostKeys.contains(key)) {
-                    dest.sshHostKeys.add(key);
+            GlobalSetting modeSetting = GlobalSetting.findById("APP_MODE");
+            String appMode = modeSetting != null ? modeSetting.value : "DISCOVERY";
+            boolean isManaged = dest.physicalDevice != null && dest.physicalDevice.managementState == com.gnm.model.enums.ManagementState.MANAGED;
+            
+            // Only merge new SSH keys automatically if not managed and not in detection mode
+            if (!"DETECTION".equals(appMode) && !isManaged) {
+                for (String key : source.sshHostKeys) {
+                    if (!dest.sshHostKeys.contains(key)) {
+                        dest.sshHostKeys.add(key);
+                    }
                 }
             }
         }
@@ -969,7 +999,7 @@ public class FingerprintEngine {
             for (int port : portsToScan) {
                 futures.add(executor.submit(() -> {
                     try (java.net.Socket socket = new java.net.Socket()) {
-                        socket.connect(new java.net.InetSocketAddress(ipAddress, port), 500); // 500ms timeout
+                        socket.connect(new java.net.InetSocketAddress(ipAddress, port), 2000); // 2000ms timeout
                         return port;
                     } catch (Exception e) {
                         return null;
@@ -1000,19 +1030,20 @@ public class FingerprintEngine {
                 return false; // Reject key to immediately abort handshake
             });
             client.start();
-            try (ClientSession session = client.connect("fakeuser", ip, port).verify(2000).getSession()) {
-                session.auth().verify(2000); 
+            try (ClientSession session = client.connect("fakeuser", ip, port).verify(15000).getSession()) {
+                session.auth().verify(15000); 
             } catch (Exception e) {
                 // Expected to fail because we reject the server key, or auth fails
             }
         } catch (Exception e) {
-            // Ignore
+            LOG.error("Failed to fetch SSH host key from " + ip + ":" + port, e);
         }
-        return hostKeyRef.get();
+        String key = hostKeyRef.get();
+        LOG.info("fetchSshHostKey(" + ip + ", " + port + ") returned: " + key);
+        return key;
     }
 
     @io.quarkus.scheduler.Scheduled(every = "1m")
-    @Transactional
     public void sweepOfflineDevices() {
         long timeoutMinutes = 5;
         GlobalSetting setting = GlobalSetting.findById("DEVICE_OFFLINE_TIMEOUT_MINUTES");
@@ -1023,18 +1054,29 @@ public class FingerprintEngine {
         Instant cutoff = Instant.now().minus(timeoutMinutes, java.time.temporal.ChronoUnit.MINUTES);
         List<PhysicalDevice> devices = PhysicalDevice.find("status = ?1 and lastSeen < ?2", DeviceStatus.ONLINE, cutoff).list();
         for (PhysicalDevice device : devices) {
-            device.status = DeviceStatus.OFFLINE;
-            device.persist();
-            
-            String ip = device.identities.stream()
-                .filter(id -> id.current)
-                .map(id -> id.ipAddress)
-                .findFirst()
-                .orElse("0.0.0.0");
-                
-            eventBroadcaster.fire(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "OFFLINE", ip));
-            LOG.info("Marked device " + device.displayName + " as OFFLINE due to inactivity.");
+            try {
+                self.markDeviceOfflineInTransaction(device.id);
+            } catch (Exception e) {
+                LOG.error("Failed to mark device offline", e);
+            }
         }
+    }
+
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public void markDeviceOfflineInTransaction(java.util.UUID deviceId) {
+        PhysicalDevice device = PhysicalDevice.findById(deviceId);
+        if (device == null) return;
+        device.status = DeviceStatus.OFFLINE;
+        device.persist();
+        
+        String ip = device.identities.stream()
+            .filter(id -> id.current)
+            .map(id -> id.ipAddress)
+            .findFirst()
+            .orElse("0.0.0.0");
+            
+        eventBroadcaster.fire(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "OFFLINE", ip));
+        LOG.info("Marked device " + device.displayName + " as OFFLINE due to inactivity.");
     }
 }
 

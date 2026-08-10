@@ -1,15 +1,26 @@
 package com.gnm.resource;
 
 import com.gnm.model.GlobalSetting;
+import com.gnm.model.SettingChangedEvent;
+import jakarta.enterprise.event.Event;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import java.util.List;
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.util.Collections;
+import java.util.stream.Collectors;
+
 
 @Path("/api/settings")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class SettingsResource {
+
+    @Inject
+    Event<SettingChangedEvent> settingChangedEvent;
 
     @GET
     public List<GlobalSetting> getAllSettings() {
@@ -27,7 +38,26 @@ public class SettingsResource {
         }
         setting.value = update.value;
         setting.persist();
+        
+        settingChangedEvent.fire(new SettingChangedEvent(key, update.value));
+        
         return setting;
+    }
+
+    @GET
+    @Path("/interfaces")
+    public List<String> getNetworkInterfaces() throws SocketException {
+        return Collections.list(NetworkInterface.getNetworkInterfaces())
+                .stream()
+                .filter(ni -> {
+                    try {
+                        return ni.isUp() && !ni.isLoopback();
+                    } catch (SocketException e) {
+                        return false;
+                    }
+                })
+                .map(NetworkInterface::getName)
+                .collect(Collectors.toList());
     }
 
     @GET

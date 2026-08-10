@@ -11,9 +11,9 @@ import jakarta.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public class DynamicOidcTenantResolver implements TenantConfigResolver {
 
-    @SuppressWarnings("removal")
     @Override
-    public Uni<OidcTenantConfig> resolve(RoutingContext routingContext, io.quarkus.oidc.OidcRequestContext<OidcTenantConfig> requestContext) {
+    public Uni<OidcTenantConfig> resolve(RoutingContext routingContext,
+            io.quarkus.oidc.OidcRequestContext<OidcTenantConfig> requestContext) {
         return Uni.createFrom().item(() -> {
             return io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().call(() -> {
                 GlobalSetting enabled = GlobalSetting.findById("oidc.enabled");
@@ -28,12 +28,12 @@ public class DynamicOidcTenantResolver implements TenantConfigResolver {
                     return null;
                 }
 
-                OidcTenantConfig config = new OidcTenantConfig();
-                config.setTenantId("dynamic-oidc");
-                config.setAuthServerUrl(authUrl.value);
-                config.setClientId(clientId.value);
-                config.setApplicationType(ApplicationType.SERVICE);
-                return config;
+                return OidcTenantConfig.builder()
+                        .tenantId("dynamic-oidc")
+                        .authServerUrl(authUrl.value)
+                        .clientId(clientId.value)
+                        .applicationType(io.quarkus.oidc.runtime.OidcTenantConfig.ApplicationType.SERVICE)
+                        .build();
             });
         }).runSubscriptionOn(io.smallrye.mutiny.infrastructure.Infrastructure.getDefaultWorkerPool());
     }

@@ -54,3 +54,10 @@ Thumbs.db
 *.txt
 
 logs
+
+# --- Playwright ---
+frontend/playwright-report/
+frontend/test-results/
+
+# --- TypeScript Build Info ---
+frontend/*.tsbuildinfo

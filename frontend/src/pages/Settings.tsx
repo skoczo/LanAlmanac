@@ -9,6 +9,7 @@ interface Setting {
 
 export const Settings = () => {
   const [settings, setSettings] = useState<Setting[]>([])
+  const [interfaces, setInterfaces] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [savingKey, setSavingKey] = useState<string | null>(null)
@@ -24,7 +25,20 @@ export const Settings = () => {
     try {
       setLoading(true)
       const data = await apiClient<Setting[]>('/api/settings')
+      
+      // Ensure 'gnm.listen.interface' is always present in the UI even if not in DB yet
+      if (!data.some((s: Setting) => s.key === 'gnm.listen.interface')) {
+        data.push({ key: 'gnm.listen.interface', value: '' })
+      }
+      
       setSettings(data)
+      
+      try {
+        const ifaces = await apiClient<string[]>('/api/settings/interfaces')
+        setInterfaces(ifaces)
+      } catch (err) {
+        console.error('Failed to fetch network interfaces', err)
+      }
       
       const initialEdits: Record<string, string> = {}
       data.forEach((s: Setting) => {
@@ -116,12 +130,31 @@ export const Settings = () => {
                       <label className="block text-sm font-semibold text-text-primary mb-1">
                         {setting.key}
                       </label>
-                      <input
-                        type="text"
-                        value={editedValues[setting.key] || ''}
-                        onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                        className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-primary transition-colors"
-                      />
+                      {setting.key === 'gnm.listen.interface' ? (
+                        <select
+                          value={editedValues[setting.key] || ''}
+                          onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                          className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-primary transition-colors"
+                        >
+                          <option value="" disabled>Select an interface</option>
+                          {interfaces.map((iface) => (
+                            <option key={iface} value={iface}>
+                              {iface}
+                            </option>
+                          ))}
+                          {/* Fallback to show the current value if it's not in the discovered interfaces */}
+                          {editedValues[setting.key] && !interfaces.includes(editedValues[setting.key]) && (
+                            <option value={editedValues[setting.key]}>{editedValues[setting.key]} (Not found)</option>
+                          )}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={editedValues[setting.key] || ''}
+                          onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                          className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-primary transition-colors"
+                        />
+                      )}
                     </div>
                     
                     <div className="flex items-end md:self-end h-[60px] pb-1">

@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.List;
 
 import com.gnm.model.NetworkSighting;
+import com.gnm.model.GlobalSetting;
 
 @ApplicationScoped
 public class ArpScanner {
@@ -22,9 +23,10 @@ public class ArpScanner {
     NetworkSightingQueue sightingQueue;
 
     @ConfigProperty(name = "gnm.listen.interface", defaultValue = "eth0")
-    String networkInterface;
+    String networkInterfaceProp;
 
     public void scan() {
+        String networkInterface = getListenInterface();
         LOG.info("Starting active ARP scan on interface: " + networkInterface);
 
         try {
@@ -40,6 +42,14 @@ public class ArpScanner {
         // In devcontainer/user environments, this JNI step may throw unsuffered privileges / libpcap missing.
         // We throw to trigger the robust proc/net/arp parser fallback.
         throw new UnsupportedOperationException("Pcap native JNI capabilities restricted in this runtime context.");
+    }
+
+    private String getListenInterface() {
+        GlobalSetting setting = GlobalSetting.findById("gnm.listen.interface");
+        if (setting != null && setting.value != null && !setting.value.trim().isEmpty()) {
+            return setting.value.trim();
+        }
+        return networkInterfaceProp;
     }
 
     private void runArpCacheFallback() {

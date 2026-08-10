@@ -1,6 +1,7 @@
 package com.gnm.discovery;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
@@ -8,6 +9,9 @@ import org.pcap4j.core.*;
 import org.pcap4j.packet.*;
 
 import com.gnm.model.NetworkSighting;
+import com.gnm.model.GlobalSetting;
+import com.gnm.model.SettingChangedEvent;
+import jakarta.transaction.Transactional;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -24,9 +28,10 @@ public class PassivePacketListener {
     NetworkSightingQueue sightingQueue;
 
     @ConfigProperty(name = "gnm.listen.interface", defaultValue = "eth0")
-    String networkInterface;
+    String networkInterfaceProp;
 
     public void startCapture() {
+        String networkInterface = getListenInterface();
         LOG.info("Initializing passive packet listener on interface: " + networkInterface);
 
         try {
@@ -56,6 +61,33 @@ public class PassivePacketListener {
                     "Ensure libpcap-dev is installed and container has cap_add: [NET_RAW, NET_ADMIN].");
         } finally {
             cleanup();
+        }
+    }
+
+    @Transactional
+    String getListenInterface() {
+        // Find setting via Panache (might require transaction if called outside one, 
+        // but simple read often works if transactional scope is active or we are in a virtual thread. 
+        // Better yet, we can do this in a transactional block if needed, but since it's a simple read, it should be fine).
+        try {
+            GlobalSetting setting = GlobalSetting.findById("gnm.listen.interface");
+            if (setting != null && setting.value != null && !setting.value.trim().isEmpty()) {
+                return setting.value.trim();
+            }
+        } catch (Exception e) {
+            LOG.warn("Failed to read interface from DB, falling back to config property", e);
+        }
+        return networkInterfaceProp;
+    }
+
+    public void onSettingChanged(@Observes SettingChangedEvent event) {
+        if ("gnm.listen.interface".equals(event.getKey())) {
+            LOG.info("Network interface setting changed to " + event.getValue() + ". Restarting sniffer...");
+            stop();
+            Thread.startVirtualThread(() -> {
+                running = true;
+                startCapture();
+            });
         }
     }
 
