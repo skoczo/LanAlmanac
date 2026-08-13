@@ -65,4 +65,7 @@ public class FingerprintVector extends PanacheEntityBase {
 
     @Column(name = "captured_at", nullable = false)
     public Instant capturedAt;
+
+    @Column(name = "hostname")
+    public String hostname;
 }

@@ -21,6 +21,7 @@ public class SimilarityEngine {
     private static final double W_HTTP = 0.25;
     private static final double W_TLS_JA4 = 0.35;
     private static final double W_TLS_CERT = 0.35;
+    private static final double W_HOSTNAME = 0.35;
 
     public double calculateSimilarity(FingerprintVector candidate, FingerprintVector historical) {
         if (candidate == null || historical == null) {
@@ -66,7 +67,7 @@ public class SimilarityEngine {
         }
 
         // 6. MAC OUI
-        if (hasValue(candidate.macOui) || hasValue(historical.macOui)) {
+        if (hasValue(candidate.macOui) && hasValue(historical.macOui)) {
             double score = compareStrings(candidate.macOui, historical.macOui);
             weightedScoreSum += score * W_MAC_OUI;
             weightSum += W_MAC_OUI;
@@ -98,6 +99,21 @@ public class SimilarityEngine {
             double score = compareStringsContains(candidate.tlsCertSubject, historical.tlsCertSubject);
             weightedScoreSum += score * W_TLS_CERT;
             weightSum += W_TLS_CERT;
+        }
+
+        // 11. Hostname Similarity
+        String candidateHost = candidate.hostname;
+        String historicalHost = historical.hostname;
+        if (!hasValue(historicalHost) && historical.physicalDevice != null) {
+            String dn = historical.physicalDevice.displayName;
+            if (dn != null && !dn.startsWith("Discovered Host ")) {
+                historicalHost = dn;
+            }
+        }
+        if (hasValue(candidateHost) && hasValue(historicalHost)) {
+            double score = compareStringsContains(candidateHost, historicalHost);
+            weightedScoreSum += score * W_HOSTNAME;
+            weightSum += W_HOSTNAME;
         }
 
         // Return normalized similarity. If no common signals were present, return 0.0.

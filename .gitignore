@@ -23,6 +23,7 @@ frontend/.env.production.local
 *.bluej
 *.grp
 *.properties.local
+bin/
 
 # --- Dynamic Keys (Security) ---
 # Never check in generated JWT signing private/public keys

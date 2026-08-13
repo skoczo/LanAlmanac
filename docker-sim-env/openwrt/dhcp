@@ -1,0 +1,63 @@
+config dnsmasq
+        option domainneeded '1'
+        option boguspriv '1'
+        option filterwin2k '0'
+        option localise_queries '1'
+        option rebind_protection '1'
+        option rebind_localhost '1'
+        option local '/lan/'
+        option domain 'lan'
+        option expandhosts '1'
+        option nonegcache '0'
+        option authoritative '1'
+        option readethers '1'
+        option leasefile '/tmp/dhcp.leases'
+        option resolvfile '/tmp/resolv.conf.d/resolv.conf.auto'
+        option nonwildcard '1'
+        option localservice '1'
+        option ednspacket_max '1232'
+
+config dhcp 'lan'
+        option interface 'lan'
+        option start '100'
+        option limit '150'
+        option leasetime '12h'
+        option dhcpv4 'server'
+
+# Static DHCP leases - map MAC -> IP -> hostname for NEs
+# These IPs match the Docker static assignments so there is no conflict
+config host
+        option name 'ubuntu-ne'
+        option mac '00:50:56:00:00:0b'
+        option ip '172.20.0.11'
+
+config host
+        option name 'centos-ne'
+        option mac '00:50:56:00:00:0c'
+        option ip '172.20.0.12'
+
+config host
+        option name 'alpine-ne'
+        option mac '00:50:56:00:00:0d'
+        option ip '172.20.0.13'
+
+# Infrastructure containers - not DHCP clients, but we register them in DNS
+config host
+        option name 'sim-postgres'
+        option mac '00:50:56:00:00:02'
+        option ip '172.20.0.2'
+
+config host
+        option name 'sim-gnm-app'
+        option mac '00:50:56:00:00:04'
+        option ip '172.20.0.4'
+
+config host
+        option name 'sim-nginx'
+        option mac '00:50:56:00:00:05'
+        option ip '172.20.0.5'
+
+config host
+        option name 'sim-redis'
+        option mac '00:50:56:00:00:03'
+        option ip '172.20.0.3'

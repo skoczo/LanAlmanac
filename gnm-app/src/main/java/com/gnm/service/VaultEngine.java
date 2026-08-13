@@ -137,6 +137,7 @@ public class VaultEngine {
     
     public EncryptedRecord encrypt(byte[] plaintext) {
         if (!isUnsealed()) throw new IllegalStateException("Vault is sealed");
+        if (plaintext == null || plaintext.length == 0) return new EncryptedRecord(new byte[0], new byte[0]);
         try {
             byte[] iv = new byte[GCM_IV_LENGTH];
             new SecureRandom().nextBytes(iv);
@@ -154,6 +155,7 @@ public class VaultEngine {
     
     public byte[] decrypt(byte[] ciphertext, byte[] iv) {
         if (!isUnsealed()) throw new IllegalStateException("Vault is sealed");
+        if (ciphertext == null || ciphertext.length == 0) return new byte[0];
         try {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);

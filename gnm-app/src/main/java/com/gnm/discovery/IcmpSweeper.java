@@ -97,13 +97,21 @@ public class IcmpSweeper {
 
     private boolean isReachable(String ip) {
         // 1. Try system ping command (works for non-root on Linux due to SUID)
+        Process p = null;
         try {
-            Process p = new ProcessBuilder("ping", "-c", "1", "-W", "1", ip).start();
-            if (p.waitFor() == 0) {
-                return true;
+            p = new ProcessBuilder("ping", "-c", "1", "-W", "1", ip).start();
+            boolean completed = p.waitFor(1200, java.util.concurrent.TimeUnit.MILLISECONDS);
+            if (completed) {
+                if (p.exitValue() == 0) {
+                    return true;
+                }
+            } else {
+                p.destroyForcibly();
             }
         } catch (Exception e) {
-            // Fallback to TCP checks
+            if (p != null && p.isAlive()) {
+                p.destroyForcibly();
+            }
         }
 
         // 2. Try port sweep (22, 80, 443, 137, 445).
