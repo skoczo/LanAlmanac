@@ -16,6 +16,7 @@ import com.gnm.model.NetworkIdentity;
 import com.gnm.model.NetworkSighting;
 import com.gnm.model.NetworkService;
 import com.gnm.model.Telemetry;
+import com.gnm.model.FingerprintCorrelationEvent;
 import com.gnm.model.enums.DeviceStatus;
 import com.gnm.model.enums.DeviceType;
 import com.gnm.discovery.NetworkSightingQueue;
@@ -342,5 +343,12 @@ public class DeviceResource {
         identity.persist();
 
         return Response.status(Response.Status.CREATED).entity(device).build();
+    }
+
+    @GET
+    @Path("/{id}/correlation-history")
+    @Transactional
+    public List<FingerprintCorrelationEvent> getCorrelationHistory(@PathParam("id") UUID id) {
+        return FingerprintCorrelationEvent.list("physicalDevice.id = ?1 order by timestamp desc", id);
     }
 }

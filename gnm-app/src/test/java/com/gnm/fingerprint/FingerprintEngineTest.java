@@ -257,4 +257,54 @@ public class FingerprintEngineTest {
         existingIdentity.current = true;
         existingIdentity.persist();
     }
+
+    @Test
+    public void testSpoofingRejected() {
+        Instant past = Instant.now().minusSeconds(3600);
+        
+        // 1. Set up a device with a hostname and specific fingerprint
+        setupSpoofTestDevice(past);
+
+        // 2. Simulate a rogue sighting spoofing the hostname but having mismatching fingerprint options
+        NetworkSighting spoofSighting = new NetworkSighting();
+        spoofSighting.ipAddress = "192.168.1.88";
+        spoofSighting.macAddress = "02:99:88:77:66:55"; // Local MAC
+        spoofSighting.source = "DHCP_SNIFF";
+        spoofSighting.observedAt = Instant.now();
+        spoofSighting.rawMetadata = "{\"host\":\"annas-iphone\",\"dhcpOption55\":\"99,98,97\"}"; // Mismatch Option 55
+
+        // 3. Process sighting
+        engine.processSighting(spoofSighting);
+
+        // 4. Assertions: since fingerprints mismatched, it should NOT merge (should create a new device)
+        assertEquals(2, PhysicalDevice.count(), "Spoofed hostname should not be merged due to mismatching DHCP option");
+    }
+
+    @Transactional
+    void setupSpoofTestDevice(Instant past) {
+        PhysicalDevice existingDevice = new PhysicalDevice();
+        existingDevice.displayName = "Anna's iPhone";
+        existingDevice.deviceType = DeviceType.PHONE;
+        existingDevice.firstSeen = past;
+        existingDevice.lastSeen = past;
+        existingDevice.status = DeviceStatus.ONLINE;
+        existingDevice.confidenceScore = 1.0;
+        existingDevice.persist();
+
+        FingerprintVector existingFingerprint = new FingerprintVector();
+        existingFingerprint.physicalDevice = existingDevice;
+        existingFingerprint.dhcpOption55 = "1,3,6,15";
+        existingFingerprint.hostname = "annas-iphone";
+        existingFingerprint.capturedAt = past;
+        existingFingerprint.persist();
+
+        NetworkIdentity existingIdentity = new NetworkIdentity();
+        existingIdentity.physicalDevice = existingDevice;
+        existingIdentity.ipAddress = "192.168.1.50";
+        existingIdentity.macAddress = "02:AA:BB:CC:11:22";
+        existingIdentity.firstSeen = past;
+        existingIdentity.lastSeen = past;
+        existingIdentity.current = true;
+        existingIdentity.persist();
+    }
 }

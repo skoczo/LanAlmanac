@@ -48,58 +48,54 @@ public class FingerprintEngineLocalMacHostnameMergeTest {
     /**
      * Scenario: Android phone with locally-administered MAC (02:xx:xx:xx:xx:xx) appears
      * initially at IP .50, then MAC-randomizes and reappears at IP .73 with a new MAC.
-     * Both sightings have hostname "android-phone.lan" and an empty fingerprint.
+     * Both sightings have hostname "android-phone.lan" AND the same DHCP Option 55 fingerprint.
      * The second sighting MUST merge into the existing device, not create a new one.
+     *
+     * NOTE: The SimilarityEngine now requires at least 2 independent matching signals
+     * to produce a score above the merge threshold. Hostname alone is capped at 0.5
+     * (below the 0.75 merge threshold) to prevent hostname-spoofing attacks.
      */
     @Test
     public void testLocalMacWithSameHostnameMergesToExistingDevice() throws InterruptedException {
-        // Step 1: First sighting - creates the initial device
+        // Step 1: First sighting - creates the initial device with DHCP fingerprint
         NetworkSighting firstSighting = new NetworkSighting();
         firstSighting.ipAddress = "172.20.0.50";
         firstSighting.macAddress = "02:AB:CD:EF:12:34"; // Locally-administered (02:xx prefix)
-        firstSighting.source = "ARP_CACHE_FALLBACK";
+        firstSighting.source = "DHCP_SNIFF";
         firstSighting.observedAt = Instant.now();
-        firstSighting.rawMetadata = "{}"; // No fingerprint signals - simulates minimal ARP-only sighting
+        firstSighting.rawMetadata = "{\"dhcpOption55\":\"1,3,6,15,28,42\",\"host\":\"android-phone.lan\"}";
 
         engine.processSighting(firstSighting);
-
-        // Wait for async processing and then manually set the hostname (as the engine would do
-        // after resolveHostname(), which is skipped in test mode). We simulate the state
-        // that would exist after the first sighting has fully processed:
-        setDeviceHostnameAndFingerprintHostname("172.20.0.50", "android-phone.lan");
 
         // Verify initial state: 1 device created
         assertEquals(1, PhysicalDevice.count(), "First sighting should create exactly 1 device");
         assertEquals(1, NetworkIdentity.count());
         assertEquals(1, FingerprintVector.count());
 
-        // Verify the fingerprint has the hostname persisted
+        // Verify the fingerprint has both hostname and DHCP option persisted
         FingerprintVector fv = FingerprintVector.findAll().firstResult();
         assertNotNull(fv, "FingerprintVector should exist");
         assertEquals("android-phone.lan", fv.hostname,
-                "Hostname should be persisted in FingerprintVector (not @Transient)");
+                "Hostname should be persisted in FingerprintVector");
+        assertEquals("1,3,6,15,28,42", fv.dhcpOption55,
+                "DHCP Option 55 should be persisted in FingerprintVector");
 
-        // Step 2: Same device with new (randomized) MAC and new DHCP IP
+        // Step 2: Same device with new (randomized) MAC and new DHCP IP, same fingerprint
         NetworkSighting secondSighting = new NetworkSighting();
         secondSighting.ipAddress = "172.20.0.73"; // New DHCP-assigned IP
         secondSighting.macAddress = "02:FE:DC:BA:98:76"; // New randomized locally-administered MAC
-        secondSighting.source = "ARP_CACHE_FALLBACK";
+        secondSighting.source = "DHCP_SNIFF";
         secondSighting.observedAt = Instant.now();
-        secondSighting.rawMetadata = "{}"; // Still no fingerprint signals
-
-        // We must simulate the hostname being resolved in processSighting. Since we can't
-        // actually do DNS in tests, we inject it via rawMetadata:
-        secondSighting.rawMetadata = "{\"host\":\"android-phone.lan\"}";
+        secondSighting.rawMetadata = "{\"dhcpOption55\":\"1,3,6,15,28,42\",\"host\":\"android-phone.lan\"}";
 
         engine.processSighting(secondSighting);
 
         // Step 3: Assert that the second sighting merged into the existing device
         long deviceCount = PhysicalDevice.count();
         assertEquals(1, deviceCount,
-                "Second sighting from same device (different randomized MAC + same hostname) " +
+                "Second sighting from same device (different randomized MAC + same hostname + same DHCP) " +
                 "should MERGE into the existing PhysicalDevice, NOT create a new one. " +
-                "Found " + deviceCount + " devices instead of 1. " +
-                "This indicates the hostname-based pre-merge for locally-administered MACs is not working.");
+                "Found " + deviceCount + " devices instead of 1.");
 
         // Should have 2 identities now (one per MAC/IP pair)
         assertEquals(2, NetworkIdentity.count(),

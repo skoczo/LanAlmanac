@@ -137,8 +137,7 @@ services:
   ne-android:
     build: android/
     networks:
-      gnm_sim_net:
-        ipv4_address: 172.20.0.50
+      - gnm_sim_net
     cap_add:
       - NET_ADMIN
     hostname: android-phone

@@ -30,40 +30,46 @@ public class SimilarityEngine {
 
         double weightedScoreSum = 0.0;
         double weightSum = 0.0;
+        int signalCount = 0; // Track number of independent signals contributing to the score
 
         // 1. DHCP Option 55
-        if (hasValue(candidate.dhcpOption55) || hasValue(historical.dhcpOption55)) {
+        if (hasValue(candidate.dhcpOption55) && hasValue(historical.dhcpOption55)) {
             double score = compareStrings(candidate.dhcpOption55, historical.dhcpOption55);
             weightedScoreSum += score * W_DHCP_55;
             weightSum += W_DHCP_55;
+            signalCount++;
         }
 
         // 2. DHCP Option 60
-        if (hasValue(candidate.dhcpOption60) || hasValue(historical.dhcpOption60)) {
+        if (hasValue(candidate.dhcpOption60) && hasValue(historical.dhcpOption60)) {
             double score = compareStrings(candidate.dhcpOption60, historical.dhcpOption60);
             weightedScoreSum += score * W_DHCP_60;
             weightSum += W_DHCP_60;
+            signalCount++;
         }
 
         // 3. TCP Fingerprint
-        if (hasValue(candidate.tcpFingerprint) || hasValue(historical.tcpFingerprint)) {
+        if (hasValue(candidate.tcpFingerprint) && hasValue(historical.tcpFingerprint)) {
             double score = compareStrings(candidate.tcpFingerprint, historical.tcpFingerprint);
             weightedScoreSum += score * W_TCP;
             weightSum += W_TCP;
+            signalCount++;
         }
 
         // 4. mDNS Services (Jaccard Index)
-        if (hasList(candidate.mdnsServices) || hasList(historical.mdnsServices)) {
+        if (hasList(candidate.mdnsServices) && hasList(historical.mdnsServices)) {
             double score = compareLists(candidate.mdnsServices, historical.mdnsServices);
             weightedScoreSum += score * W_MDNS;
             weightSum += W_MDNS;
+            signalCount++;
         }
 
         // 5. Open Ports (Jaccard Index)
-        if (hasList(candidate.openPorts) || hasList(historical.openPorts)) {
+        if (hasList(candidate.openPorts) && hasList(historical.openPorts)) {
             double score = compareLists(candidate.openPorts, historical.openPorts);
             weightedScoreSum += score * W_OPEN_PORTS;
             weightSum += W_OPEN_PORTS;
+            signalCount++;
         }
 
         // 6. MAC OUI
@@ -71,34 +77,39 @@ public class SimilarityEngine {
             double score = compareStrings(candidate.macOui, historical.macOui);
             weightedScoreSum += score * W_MAC_OUI;
             weightSum += W_MAC_OUI;
+            signalCount++;
         }
 
         // 7. SSH Host Keys (High signal)
-        if (hasList(candidate.sshHostKeys) || hasList(historical.sshHostKeys)) {
+        if (hasList(candidate.sshHostKeys) && hasList(historical.sshHostKeys)) {
             double score = compareLists(candidate.sshHostKeys, historical.sshHostKeys);
             weightedScoreSum += score * W_SSH_KEY;
             weightSum += W_SSH_KEY;
+            signalCount++;
         }
 
         // 8. HTTP Server Header
-        if (hasValue(candidate.httpServerHeader) || hasValue(historical.httpServerHeader)) {
+        if (hasValue(candidate.httpServerHeader) && hasValue(historical.httpServerHeader)) {
             double score = compareStringsContains(candidate.httpServerHeader, historical.httpServerHeader);
             weightedScoreSum += score * W_HTTP;
             weightSum += W_HTTP;
+            signalCount++;
         }
 
         // 9. TLS JA4 Signature
-        if (hasValue(candidate.tlsJa4) || hasValue(historical.tlsJa4)) {
+        if (hasValue(candidate.tlsJa4) && hasValue(historical.tlsJa4)) {
             double score = compareStrings(candidate.tlsJa4, historical.tlsJa4);
             weightedScoreSum += score * W_TLS_JA4;
             weightSum += W_TLS_JA4;
+            signalCount++;
         }
 
         // 10. TLS Certificate Subject
-        if (hasValue(candidate.tlsCertSubject) || hasValue(historical.tlsCertSubject)) {
+        if (hasValue(candidate.tlsCertSubject) && hasValue(historical.tlsCertSubject)) {
             double score = compareStringsContains(candidate.tlsCertSubject, historical.tlsCertSubject);
             weightedScoreSum += score * W_TLS_CERT;
             weightSum += W_TLS_CERT;
+            signalCount++;
         }
 
         // 11. Hostname Similarity
@@ -114,10 +125,21 @@ public class SimilarityEngine {
             double score = compareStringsContains(candidateHost, historicalHost);
             weightedScoreSum += score * W_HOSTNAME;
             weightSum += W_HOSTNAME;
+            signalCount++;
         }
 
-        // Return normalized similarity. If no common signals were present, return 0.0.
-        return weightSum > 0.0 ? (weightedScoreSum / weightSum) : 0.0;
+        // Compute normalized similarity
+        double similarity = weightSum > 0.0 ? (weightedScoreSum / weightSum) : 0.0;
+
+        // Security: Require at least 2 independent signals for a high-confidence merge.
+        // A single matching signal (e.g. hostname alone) is easily spoofed and must NOT
+        // be sufficient to exceed the merge threshold (default 0.75).
+        // Cap single-signal scores at 0.5 to force multi-factor correlation.
+        if (signalCount < 2 && similarity > 0.5) {
+            similarity = 0.5;
+        }
+
+        return similarity;
     }
 
     private boolean hasValue(String val) {

@@ -98,4 +98,52 @@ public class DiscoveryAndFingerprintingTest extends AbstractE2ETest {
         }
         assertTrue(discovered, "Passive sniffer should detect DHCP broadcast from traffic generator at 192.168.100.30");
     }
+
+    @Test
+    @TestSecurity(user = "admin", roles = "gnm-admin")
+    public void testCorrelationHistoryAPI() throws Exception {
+        // Given: We process a new device sighting
+        com.gnm.model.NetworkSighting sighting = new com.gnm.model.NetworkSighting();
+        sighting.ipAddress = "192.168.100.80";
+        sighting.macAddress = "00:AA:BB:CC:DD:EE";
+        sighting.source = "DHCP_SNIFF";
+        sighting.observedAt = java.time.Instant.now();
+        sighting.rawMetadata = "{\"dhcpOption55\":\"1,3,6\",\"dhcpOption60\":\"test-client\"}";
+        
+        sightingQueue.offer(sighting);
+
+        // Find device ID
+        String deviceId = null;
+        for (int i = 0; i < 50; i++) {
+            io.restassured.response.Response res = given().when().get("/api/devices");
+            if (res.statusCode() == 200) {
+                java.util.Optional<java.util.Map<String, Object>> deviceOpt = res.jsonPath().getList(".").stream()
+                        .map(device -> (java.util.Map<String, Object>) device)
+                        .filter(d -> {
+                            java.util.List<java.util.Map<String, Object>> idents = 
+                                (java.util.List<java.util.Map<String, Object>>) d.get("identities");
+                            return idents != null && idents.stream().anyMatch(ident -> "192.168.100.80".equals(ident.get("ipAddress")));
+                        })
+                        .findFirst();
+                if (deviceOpt.isPresent()) {
+                    deviceId = (String) deviceOpt.get().get("id");
+                    break;
+                }
+            }
+            Thread.sleep(200);
+        }
+        
+        assertTrue(deviceId != null, "Device should be registered and have an ID");
+
+        // When: We request the correlation history for this device
+        given()
+                .when().get("/api/devices/" + deviceId + "/correlation-history")
+                .then()
+                .statusCode(200)
+                .body("size()", greaterThanOrEqualTo(1))
+                .body("[0].decisionType", equalTo("NEW_DEVICE"))
+                .body("[0].ipAddress", equalTo("192.168.100.80"))
+                .body("[0].macAddress", equalTo("00:AA:BB:CC:DD:EE"))
+                .body("[0].confidenceScore", equalTo(1.0f));
+    }
 }

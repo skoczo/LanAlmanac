@@ -18,6 +18,7 @@ import {
   Save,
   X,
   Trash2,
+  GitMerge,
   Terminal as TerminalIcon
 } from 'lucide-react'
 import { Terminal } from '../components/Terminal'
@@ -49,6 +50,17 @@ interface Fingerprint {
   openPorts: number[]
   macOui: string
   capturedAt: string
+}
+
+interface CorrelationEvent {
+  id: string
+  ipAddress: string
+  macAddress: string
+  hostname: string
+  decisionType: 'NEW_DEVICE' | 'DIRECT_MATCH' | 'HOSTNAME_MATCH' | 'SIMILARITY_MATCH'
+  confidenceScore: number
+  details: string
+  timestamp: string
 }
 
 interface Credential {
@@ -109,8 +121,9 @@ export const DeviceDetail: React.FC = () => {
   
   const [device, setDevice] = useState<Device | null>(null)
   const [telemetry, setTelemetry] = useState<TelemetryPoint[]>([])
+  const [correlationHistory, setCorrelationHistory] = useState<CorrelationEvent[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'identities' | 'fingerprint' | 'services' | 'credentials' | 'monitor' | 'settings' | 'web console'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'identities' | 'fingerprint' | 'correlation' | 'services' | 'credentials' | 'monitor' | 'settings' | 'web console'>('overview')
   const [newLabel, setNewLabel] = useState('')
   
   const { sealed, setShowUnsealModal } = useVault()
@@ -141,11 +154,13 @@ export const DeviceDetail: React.FC = () => {
 
     Promise.all([
       apiClient<Device>(`/api/devices/${deviceId}`),
-      apiClient<TelemetryPoint[]>(`/api/devices/${deviceId}/telemetry`)
+      apiClient<TelemetryPoint[]>(`/api/devices/${deviceId}/telemetry`),
+      apiClient<CorrelationEvent[]>(`/api/devices/${deviceId}/correlation-history`).catch(() => [])
     ])
-      .then(([deviceData, telemetryData]) => {
+      .then(([deviceData, telemetryData, correlationData]) => {
         setDevice(deviceData)
         setTelemetry(telemetryData)
+        setCorrelationHistory(correlationData)
         setLoading(false)
       })
       .catch((err) => {
@@ -402,7 +417,7 @@ export const DeviceDetail: React.FC = () => {
 
     {/* Navigation tabs */}
       <div className="flex items-center border-b border-border-subtle gap-2 overflow-x-auto">
-        {(['overview', 'identities', 'fingerprint', 'services', 'credentials', 'monitor', 'settings', 'web console'] as const).map((tab) => (
+        {(['overview', 'identities', 'fingerprint', 'correlation', 'services', 'credentials', 'monitor', 'settings', 'web console'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -717,6 +732,119 @@ export const DeviceDetail: React.FC = () => {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+        {/* CORRELATION HISTORY TAB */}
+        {activeTab === 'correlation' && (
+          <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg animate-fade-in">
+            <div className="flex items-center justify-between border-b border-border-subtle pb-4">
+              <div>
+                <h3 className="font-bold text-lg tracking-tight">Correlation & Fingerprint History</h3>
+                <p className="text-xs text-text-muted mt-1">
+                  Historical record of when this device was detected on the network and the decisions made to link those detections back to this physical device.
+                </p>
+              </div>
+              <GitMerge className="w-6 h-6 text-accent-primary animate-pulse" />
+            </div>
+
+            {correlationHistory.length === 0 ? (
+              <div className="text-center py-12 border-2 border-dashed border-border-subtle rounded-xl bg-bg-base/30">
+                <Clock className="w-8 h-8 text-text-muted mx-auto mb-2.5" />
+                <p className="text-sm text-text-secondary">No correlation events recorded yet.</p>
+                <p className="text-xs text-text-muted mt-1">Events will appear here as new sightings are processed by the Fingerprint Engine.</p>
+              </div>
+            ) : (
+              <div className="relative pl-6 border-l-2 border-border-subtle/50 ml-4 space-y-8 mt-6">
+                {correlationHistory.map((event) => {
+                  let IconComponent = Clock;
+                  let colorClass = 'text-accent-info bg-accent-info/10 border-accent-info/20';
+                  let typeLabel: string = event.decisionType;
+
+                  if (event.decisionType === 'NEW_DEVICE') {
+                    IconComponent = Cpu;
+                    colorClass = 'text-accent-success bg-accent-success/10 border-accent-success/20';
+                    typeLabel = 'New Device Discovered';
+                  } else if (event.decisionType === 'DIRECT_MATCH') {
+                    IconComponent = ShieldCheck;
+                    colorClass = 'text-accent-primary bg-accent-primary/10 border-accent-primary/20';
+                    typeLabel = 'Direct MAC Match';
+                  } else if (event.decisionType === 'HOSTNAME_MATCH') {
+                    IconComponent = TerminalIcon;
+                    colorClass = 'text-accent-warning bg-accent-warning/10 border-accent-warning/20';
+                    typeLabel = 'Hostname Early Merge';
+                  } else if (event.decisionType === 'SIMILARITY_MATCH') {
+                    IconComponent = HardDrive;
+                    colorClass = 'text-accent-info bg-accent-info/10 border-accent-info/20';
+                    typeLabel = `Fingerprint Similarity Engine`;
+                  }
+
+                  return (
+                    <div key={event.id} className="relative group">
+                      {/* Timeline dot & icon */}
+                      <span className={`absolute -left-[37px] top-0 flex items-center justify-center w-7.5 h-7.5 rounded-full border ${colorClass} shadow-md`}>
+                        <IconComponent className="w-3.5 h-3.5" />
+                      </span>
+
+                      <div className="bg-bg-surface-raised border border-border-subtle rounded-xl p-5 space-y-3 transition-all hover:border-border-accent/40 shadow-sm">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                          <div>
+                            <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">
+                              Decision Mode
+                            </span>
+                            <span className="font-bold text-xs text-text-primary">
+                              {typeLabel}
+                            </span>
+                          </div>
+                          <div className="text-right sm:text-right">
+                            <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">
+                              Observed At
+                            </span>
+                            <span className="text-xs text-text-secondary">
+                              {new Date(event.timestamp).toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-bg-base/50 p-3.5 rounded-lg border border-border-subtle/50 text-xs">
+                          <div>
+                            <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">
+                              IP Address
+                            </span>
+                            <span className="font-mono font-semibold text-text-primary">{event.ipAddress}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">
+                              MAC Address
+                            </span>
+                            <span className="font-mono font-semibold text-text-primary">{event.macAddress}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider block">
+                              Hostname
+                            </span>
+                            <span className="font-mono font-semibold text-text-primary">{event.hostname || '-'}</span>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 flex items-center justify-between border-t border-border-subtle/30 text-xs gap-4">
+                          <p className="text-text-secondary italic">"{event.details}"</p>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Confidence:</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              event.confidenceScore >= 0.8 
+                                ? 'bg-accent-success/10 text-accent-success border border-accent-success/20' 
+                                : 'bg-accent-warning/10 text-accent-warning border border-accent-warning/20'
+                            }`}>
+                              {Math.round(event.confidenceScore * 100)}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

@@ -31,7 +31,8 @@ public class FingerprintEngine {
 
     private static final Logger LOG = Logger.getLogger(FingerprintEngine.class);
     private final ObjectMapper MAPPER = new ObjectMapper();
-    private final java.util.concurrent.ConcurrentHashMap<String, Object> ipLocks = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<String, Object> ipLocks = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<String, java.time.Instant> lastScanTimes = new java.util.concurrent.ConcurrentHashMap<>();
 
     private volatile boolean running = true;
 
@@ -122,26 +123,37 @@ public class FingerprintEngine {
         // 1. Parse sighting metadata into candidate FingerprintVector
         FingerprintVector candidate = parseMetadata(sighting);
 
-        // Scan open ports dynamically on virtual threads to enrich the fingerprint vector
-        List<Integer> openPorts = scanOpenPorts(sighting.ipAddress);
-        if (!openPorts.isEmpty()) {
-            candidate.openPorts = openPorts;
+        // Throttle active scanning (port scans, DNS resolution) to at most once every 5 minutes per IP
+        // This prevents infinite loops where our active scan triggers a packet response, which triggers another sighting, which triggers another scan...
+        java.time.Instant lastScan = lastScanTimes.get(sighting.ipAddress);
+        boolean isTest = io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST;
+        boolean shouldScan = isTest || lastScan == null || java.time.Instant.now().isAfter(lastScan.plusSeconds(300));
+
+        String hostname = null;
+        if (shouldScan) {
+            lastScanTimes.put(sighting.ipAddress, java.time.Instant.now());
             
-            // Actively fetch SSH host keys for any open port that is commonly SSH
-            for (Integer port : openPorts) {
-                if (port == 22 || port == 2222 || port == 2223 || port == 2224) {
-                    String sshKey = fetchSshHostKey(sighting.ipAddress, port);
-                    if (sshKey != null && !sshKey.isEmpty()) {
-                        candidate.sshHostKeys.add(sshKey);
-                        LOG.info("Automatically fetched SSH Host Key on port " + port + ": " + sshKey);
+            // Scan open ports dynamically on virtual threads to enrich the fingerprint vector
+            List<Integer> openPorts = scanOpenPorts(sighting.ipAddress);
+            if (!openPorts.isEmpty()) {
+                candidate.openPorts = openPorts;
+                
+                // Actively fetch SSH host keys for any open port that is commonly SSH
+                for (Integer port : openPorts) {
+                    if (port == 22 || port == 2222 || port == 2223 || port == 2224) {
+                        String sshKey = fetchSshHostKey(sighting.ipAddress, port);
+                        if (sshKey != null && !sshKey.isEmpty()) {
+                            candidate.sshHostKeys.add(sshKey);
+                            LOG.info("Automatically fetched SSH Host Key on port " + port + ": " + sshKey);
+                        }
                     }
                 }
             }
+            
+            // Resolve hostname outside of transaction to avoid timeout
+            hostname = resolveHostname(sighting.ipAddress, candidate.openPorts);
         }
-        
-        // Resolve hostname outside of transaction to avoid timeout
-        String hostname = resolveHostname(sighting.ipAddress, candidate.openPorts);
-        
+
         // Fallback to sighting metadata host if lookup fails
         if (hostname == null && sighting.rawMetadata != null) {
             try {
@@ -234,84 +246,11 @@ public class FingerprintEngine {
             return;
         }
 
-        // 3a. Hostname-based early merge for locally-administered MACs (e.g. phones with randomized MACs).
-        // When a device has a locally-administered MAC (U/L bit=1, i.e. not globally unique), it may change
-        // its MAC frequently (privacy/randomization). In such cases, all fingerprint signals may be null,
-        // causing the similarity engine to return 0.0. We use a persisted hostname as a strong identity
-        // signal to merge these devices without requiring other fingerprint signals.
-        if (!isGloballyUniqueMac(sighting.macAddress) && candidate.hostname != null && !candidate.hostname.isEmpty()) {
-            List<FingerprintVector> hostMatches = FingerprintVector.find("hostname = ?1", candidate.hostname).list();
-            for (FingerprintVector hm : hostMatches) {
-                if (hm.physicalDevice != null) {
-                    // Verify the existing device also uses a locally-administered MAC (same class of device)
-                    boolean existingHasLocalMac = hm.physicalDevice.identities != null &&
-                        hm.physicalDevice.identities.stream()
-                            .anyMatch(id -> !isGloballyUniqueMac(id.macAddress));
-                    if (existingHasLocalMac) {
-                        LOG.info("Hostname-based early merge: sighting (" + sighting.ipAddress + " / " + sighting.macAddress +
-                                 ") matched existing device '" + hm.physicalDevice.displayName + "' via persisted hostname '" + candidate.hostname + "'");
-                        // Use this as bestMatch at high confidence and fall through to merge logic below
-                        PhysicalDevice hostnameMatch = hm.physicalDevice;
-
-                        // Enforce IP Uniqueness: deactivate any current identity at this IP
-                        List<NetworkIdentity> activeIdentitiesOnIp = NetworkIdentity.list("ipAddress = ?1 and current = true", sighting.ipAddress);
-                        for (NetworkIdentity oldId : activeIdentitiesOnIp) {
-                            oldId.current = false;
-                            oldId.persist();
-                            if (!oldId.physicalDevice.id.equals(hostnameMatch.id)) {
-                                long activeCount = NetworkIdentity.count("physicalDevice.id = ?1 and current = true", oldId.physicalDevice.id);
-                                if (activeCount == 0) {
-                                    oldId.physicalDevice.status = DeviceStatus.OFFLINE;
-                                    oldId.physicalDevice.persist();
-                                }
-                            }
-                        }
-
-                        // Deactivate all previous current flags for this device
-                        List<NetworkIdentity> oldIdentities = NetworkIdentity.list("physicalDevice.id", hostnameMatch.id);
-                        for (NetworkIdentity oldId : oldIdentities) {
-                            oldId.current = false;
-                            oldId.persist();
-                        }
-
-                        // Create new identity for this sighting
-                        NetworkIdentity newId = new NetworkIdentity();
-                        newId.physicalDevice = hostnameMatch;
-                        newId.ipAddress = sighting.ipAddress;
-                        newId.macAddress = sighting.macAddress;
-                        newId.firstSeen = sighting.observedAt;
-                        newId.lastSeen = sighting.observedAt;
-                        newId.current = true;
-                        newId.hostname = resolvedHostname;
-                        newId.persist();
-
-                        hostnameMatch.status = DeviceStatus.ONLINE;
-                        hostnameMatch.lastSeen = sighting.observedAt;
-
-                        FingerprintVector historical = FingerprintVector.find("physicalDevice.id = ?1", hostnameMatch.id).firstResult();
-                        if (historical != null) {
-                            checkSignatureMutations(candidate, historical, sighting);
-                            mergeVectors(candidate, historical);
-                        }
-                        hostnameMatch.persist();
-                        if (candidate.openPorts != null) {
-                            try {
-                                syncNetworkServices(hostnameMatch, candidate.openPorts);
-                            } catch (Exception e) {
-                                LOG.error("Failed to sync network services for hostnameMatch " + hostnameMatch.id, e);
-                            }
-                        }
-                        eventBroadcaster.fire(new DeviceEvent("STATUS_CHANGE", hostnameMatch.id.toString(), hostnameMatch.displayName, "ONLINE", sighting.ipAddress));
-                        return;
-                    }
-                }
-            }
-        }
-
         // 3b. Match against existing devices using Similarity Engine
         List<FingerprintVector> allFingerprints = FingerprintVector.listAll();
         PhysicalDevice bestMatch = null;
         double bestScore = 0.0;
+        boolean matchedViaExactMac = false;
 
         for (FingerprintVector hist : allFingerprints) {
             // Strict Separation Rule: If the candidate MAC is globally unique (permanent hardware),
@@ -339,6 +278,7 @@ public class FingerprintEngine {
             if (exactMacMatch) {
                 bestScore = 1.0;
                 bestMatch = hist.physicalDevice;
+                matchedViaExactMac = true;
                 break;
             }
 
@@ -404,6 +344,22 @@ public class FingerprintEngine {
                     LOG.error("Failed to sync network services for bestMatch " + bestMatch.id, e);
                 }
             }
+
+            FingerprintCorrelationEvent correlationEvent = new FingerprintCorrelationEvent();
+            correlationEvent.physicalDevice = bestMatch;
+            correlationEvent.ipAddress = sighting.ipAddress;
+            correlationEvent.macAddress = sighting.macAddress;
+            correlationEvent.hostname = candidate.hostname;
+            if (matchedViaExactMac) {
+                correlationEvent.decisionType = "DIRECT_MATCH";
+                correlationEvent.details = "Direct MAC match on " + sighting.macAddress;
+            } else {
+                correlationEvent.decisionType = "SIMILARITY_MATCH";
+                correlationEvent.details = "Matched existing device '" + bestMatch.displayName + "' using Similarity Engine (Score: " + Math.round(bestScore*100) + "%)";
+            }
+            correlationEvent.confidenceScore = bestScore;
+            correlationEvent.timestamp = sighting.observedAt;
+            correlationEvent.persist();
 
             eventBroadcaster.fire(new DeviceEvent("STATUS_CHANGE", bestMatch.id.toString(), bestMatch.displayName, "ONLINE", sighting.ipAddress));
         } else {
@@ -490,6 +446,17 @@ public class FingerprintEngine {
                     LOG.error("Failed to sync network services for device " + newDevice.id, e);
                 }
             }
+
+            FingerprintCorrelationEvent correlationEvent = new FingerprintCorrelationEvent();
+            correlationEvent.physicalDevice = newDevice;
+            correlationEvent.ipAddress = sighting.ipAddress;
+            correlationEvent.macAddress = sighting.macAddress;
+            correlationEvent.hostname = resolvedHostname;
+            correlationEvent.decisionType = "NEW_DEVICE";
+            correlationEvent.confidenceScore = 1.0;
+            correlationEvent.details = "Device first discovered on network";
+            correlationEvent.timestamp = sighting.observedAt;
+            correlationEvent.persist();
 
             eventBroadcaster.fire(new DeviceEvent("NEW_DEVICE", newDevice.id.toString(), newDevice.displayName, "ONLINE", sighting.ipAddress));
         }
@@ -952,6 +919,9 @@ public class FingerprintEngine {
                 }
                 if (json.has("dhcpOption60")) {
                     v.dhcpOption60 = json.get("dhcpOption60").asText();
+                }
+                if (json.has("host")) {
+                    v.hostname = json.get("host").asText();
                 }
                 if (json.has("services")) {
                     List<String> svcs = new ArrayList<>();
