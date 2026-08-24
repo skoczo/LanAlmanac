@@ -27,6 +27,9 @@ public class PassivePacketListener {
     private String localMacAddress;
     private final java.util.Set<String> localIpAddresses = new java.util.HashSet<>();
 
+    private final java.util.Map<String, String> dhcpCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<String, String> ipToMacCache = new java.util.concurrent.ConcurrentHashMap<>();
+
     @Inject
     NetworkSightingQueue sightingQueue;
 
@@ -143,8 +146,6 @@ public class PassivePacketListener {
         }
     }
 
-    private static final java.util.Map<String, String> dhcpCache = new java.util.concurrent.ConcurrentHashMap<>();
-
     private Optional<NetworkSighting> emitSighting(NetworkSighting sighting) {
         if (sighting != null && sighting.macAddress != null) {
             String cachedDhcp = dhcpCache.get(sighting.macAddress);
@@ -180,6 +181,10 @@ public class PassivePacketListener {
                 String ip = arp.getHeader().getSrcProtocolAddr().getHostAddress();
                 String mac = arp.getHeader().getSrcHardwareAddr().toString().toUpperCase();
                 
+                if (mac != null && !"00:00:00:00:00:00".equals(mac)) {
+                    ipToMacCache.put(ip, mac);
+                }
+
                 if (isLocal(ip, mac)) {
                     return Optional.empty();
                 }
@@ -202,6 +207,15 @@ public class PassivePacketListener {
                 String mac = "00:00:00:00:00:00";
                 if (packet.contains(EthernetPacket.class)) {
                     mac = packet.get(EthernetPacket.class).getHeader().getSrcAddr().toString().toUpperCase();
+                }
+
+                if ("00:00:00:00:00:00".equals(mac)) {
+                    String cachedMac = ipToMacCache.get(ip);
+                    if (cachedMac != null) {
+                        mac = cachedMac;
+                    }
+                } else {
+                    ipToMacCache.put(ip, mac);
                 }
 
                 if (isLocal(ip, mac)) {
@@ -303,6 +317,9 @@ public class PassivePacketListener {
                         // Cache DHCP metadata by MAC if it has valid options
                         if (clientMac != null && !"00:00:00:00:00:00".equals(clientMac) && !"{}".equals(metaStr)) {
                             dhcpCache.put(clientMac, metaStr);
+                        }
+                        if (clientMac != null && !"00:00:00:00:00:00".equals(clientMac) && clientIp != null && !"0.0.0.0".equals(clientIp)) {
+                            ipToMacCache.put(clientIp, clientMac);
                         }
                         
                         // Skip if we still have no valid client IP

@@ -150,6 +150,13 @@ public class FingerprintEngine {
                 }
             }
             
+            // Actively fetch UPnP SSDP USN for hardware-tied fingerprinting
+            String usn = fetchUpnpUsn(sighting.ipAddress);
+            if (usn != null && !usn.isEmpty()) {
+                candidate.ssdpUsn = usn;
+                LOG.info("Automatically fetched UPnP SSDP USN: " + usn);
+            }
+
             // Resolve hostname outside of transaction to avoid timeout
             hostname = resolveHostname(sighting.ipAddress, candidate.openPorts);
         }
@@ -181,16 +188,34 @@ public class FingerprintEngine {
                 sighting.ipAddress, sighting.macAddress).firstResult();
 
         if (identity == null) {
+            boolean isTestMode = io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST;
+            boolean isManual = isTestMode || "MANUAL_DISCOVERY".equals(sighting.source);
+
+            boolean hasMetadata = (candidate.hostname != null && !candidate.hostname.isEmpty())
+                    || (candidate.dhcpOption55 != null && !candidate.dhcpOption55.isEmpty())
+                    || (candidate.dhcpOption60 != null && !candidate.dhcpOption60.isEmpty())
+                    || (candidate.openPorts != null && !candidate.openPorts.isEmpty())
+                    || (candidate.sshHostKeys != null && !candidate.sshHostKeys.isEmpty());
+
+            boolean isPlaceholderMac = sighting.macAddress == null || sighting.macAddress.isEmpty() || "00:00:00:00:00:00".equals(sighting.macAddress);
+            boolean isRandomizedMac = !isPlaceholderMac && !isGloballyUniqueMac(sighting.macAddress);
+
+            // Defer creating NEW physical devices for 0-signal background sightings (placeholder or randomized MAC) until fingerprint metadata arrives
+            if (!isManual && !hasMetadata && (isPlaceholderMac || isRandomizedMac)) {
+                LOG.debug("Deferring new device creation for 0-signal background sighting on IP " + sighting.ipAddress + " (MAC: " + sighting.macAddress + ")");
+                return;
+            }
+
             // Check if there is an active identity on this IP
             NetworkIdentity activeIdOnIp = NetworkIdentity.find("ipAddress = ?1 and current = true", sighting.ipAddress).firstResult();
             if (activeIdOnIp != null) {
-                boolean sightingIsPlaceholder = sighting.macAddress.equals("00:00:00:00:00:00") || sighting.macAddress.isEmpty();
-                boolean activeIsPlaceholder = activeIdOnIp.macAddress.equals("00:00:00:00:00:00") || activeIdOnIp.macAddress.isEmpty();
-                boolean isVirtualOrLocalMac = !isGloballyUniqueMac(sighting.macAddress) || !isGloballyUniqueMac(activeIdOnIp.macAddress);
+                boolean sightingIsPlaceholder = sighting.macAddress == null || sighting.macAddress.equals("00:00:00:00:00:00") || sighting.macAddress.isEmpty();
+                boolean activeIsPlaceholder = activeIdOnIp.macAddress == null || activeIdOnIp.macAddress.equals("00:00:00:00:00:00") || activeIdOnIp.macAddress.isEmpty();
 
-                if (sightingIsPlaceholder || activeIsPlaceholder || isVirtualOrLocalMac) {
+                // Reuse activeIdOnIp if either sighting or active identity is a 00:00:00:00:00:00 placeholder.
+                // If both are real MACs, allow it to fall through to Similarity Engine for device correlation.
+                if (sightingIsPlaceholder || activeIsPlaceholder) {
                     identity = activeIdOnIp;
-                    // Upgrade or update the identity's MAC inline if sighting has a non-placeholder MAC
                     if (!sightingIsPlaceholder) {
                         identity.macAddress = sighting.macAddress;
                     }
@@ -250,6 +275,7 @@ public class FingerprintEngine {
         List<FingerprintVector> allFingerprints = FingerprintVector.listAll();
         PhysicalDevice bestMatch = null;
         double bestScore = 0.0;
+        List<String> bestDetails = new ArrayList<>();
         boolean matchedViaExactMac = false;
 
         for (FingerprintVector hist : allFingerprints) {
@@ -282,9 +308,10 @@ public class FingerprintEngine {
                 break;
             }
 
-            double score = similarityEngine.calculateSimilarity(candidate, hist);
-            if (score > bestScore) {
-                bestScore = score;
+            SimilarityEngine.SimilarityResult result = similarityEngine.calculateSimilarity(candidate, hist);
+            if (result.score > bestScore) {
+                bestScore = result.score;
+                bestDetails = result.details;
                 bestMatch = hist.physicalDevice;
             }
         }
@@ -355,7 +382,14 @@ public class FingerprintEngine {
                 correlationEvent.details = "Direct MAC match on " + sighting.macAddress;
             } else {
                 correlationEvent.decisionType = "SIMILARITY_MATCH";
-                correlationEvent.details = "Matched existing device '" + bestMatch.displayName + "' using Similarity Engine (Score: " + Math.round(bestScore*100) + "%)";
+                StringBuilder sb = new StringBuilder();
+                sb.append("Matched existing device '").append(bestMatch.displayName)
+                  .append("' using Similarity Engine (Score: ").append(Math.round(bestScore * 100)).append("%)\n\n");
+                sb.append("Calculation Breakdown:\n");
+                for (String detail : bestDetails) {
+                    sb.append(detail).append("\n");
+                }
+                correlationEvent.details = sb.toString().trim();
             }
             correlationEvent.confidenceScore = bestScore;
             correlationEvent.timestamp = sighting.observedAt;
@@ -435,6 +469,7 @@ public class FingerprintEngine {
             historical.httpServerHeader = candidate.httpServerHeader;
             historical.tlsJa4 = candidate.tlsJa4;
             historical.tlsCertSubject = candidate.tlsCertSubject;
+            historical.ssdpUsn = candidate.ssdpUsn;
             historical.hostname = resolvedHostname; // Persist hostname for later hostname-based merging
             historical.capturedAt = Instant.now();
             historical.persist();
@@ -776,6 +811,38 @@ public class FingerprintEngine {
         return null;
     }
 
+    private String fetchUpnpUsn(String ipAddress) {
+        try (java.net.DatagramSocket socket = new java.net.DatagramSocket()) {
+            socket.setSoTimeout(500);
+
+            String query = "M-SEARCH * HTTP/1.1\r\n" +
+                           "Host: 239.255.255.250:1900\r\n" +
+                           "Man: \"ssdp:discover\"\r\n" +
+                           "ST: ssdp:all\r\n" +
+                           "MX: 1\r\n\r\n";
+
+            byte[] requestBytes = query.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            java.net.InetAddress addr = java.net.InetAddress.getByName(ipAddress);
+            java.net.DatagramPacket request = new java.net.DatagramPacket(requestBytes, requestBytes.length, addr, 1900);
+            socket.send(request);
+
+            byte[] responseBuffer = new byte[2048];
+            java.net.DatagramPacket response = new java.net.DatagramPacket(responseBuffer, responseBuffer.length);
+            socket.receive(response);
+
+            String responseString = new String(responseBuffer, 0, response.getLength(), java.nio.charset.StandardCharsets.UTF_8);
+            
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?i)USN:\\s*(.*?)\r\n").matcher(responseString);
+            if (m.find()) {
+                String usn = m.group(1).trim();
+                return usn;
+            }
+        } catch (Exception e) {
+            // Ignore timeout
+        }
+        return null;
+    }
+
     private String resolveViaHttpTitle(String ipAddress, int port, boolean https) {
         try {
             String protocol = https ? "https" : "http";
@@ -1079,6 +1146,7 @@ public class FingerprintEngine {
         if (source.httpServerHeader != null) dest.httpServerHeader = source.httpServerHeader;
         if (source.tlsJa4 != null) dest.tlsJa4 = source.tlsJa4;
         if (source.tlsCertSubject != null) dest.tlsCertSubject = source.tlsCertSubject;
+        if (source.ssdpUsn != null && !source.ssdpUsn.isEmpty()) dest.ssdpUsn = source.ssdpUsn;
         if (source.hostname != null && !source.hostname.isEmpty()) dest.hostname = source.hostname; // Keep hostname current
         if (source.sshHostKeys != null && !source.sshHostKeys.isEmpty()) {
             GlobalSetting modeSetting = GlobalSetting.findById("APP_MODE");

@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# Flush IP and randomize MAC immediately on startup to prevent GNM from discovering the default container state
+# Wait briefly for GNM to capture the initial state and SSDP USN so it can correlate it later
+sleep 3
 ip addr flush dev eth0 || true
 RANDOM_MAC=$(printf '02:%02X:%02X:%02X:%02X:%02X\n' $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)))
 ip link set dev eth0 down || true

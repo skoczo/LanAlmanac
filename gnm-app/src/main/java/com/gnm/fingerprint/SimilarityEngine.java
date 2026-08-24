@@ -22,10 +22,18 @@ public class SimilarityEngine {
     private static final double W_TLS_JA4 = 0.35;
     private static final double W_TLS_CERT = 0.35;
     private static final double W_HOSTNAME = 0.35;
+    private static final double W_SSDP_USN = 0.80;
 
-    public double calculateSimilarity(FingerprintVector candidate, FingerprintVector historical) {
+    public static class SimilarityResult {
+        public double score;
+        public List<String> details = new java.util.ArrayList<>();
+    }
+
+    public SimilarityResult calculateSimilarity(FingerprintVector candidate, FingerprintVector historical) {
+        SimilarityResult result = new SimilarityResult();
         if (candidate == null || historical == null) {
-            return 0.0;
+            result.score = 0.0;
+            return result;
         }
 
         double weightedScoreSum = 0.0;
@@ -38,6 +46,7 @@ public class SimilarityEngine {
             weightedScoreSum += score * W_DHCP_55;
             weightSum += W_DHCP_55;
             signalCount++;
+            if (score > 0) result.details.add(String.format("- DHCP Option 55 matched (score: %.0f%%, weight: %.2f)", score * 100, W_DHCP_55));
         }
 
         // 2. DHCP Option 60
@@ -46,6 +55,7 @@ public class SimilarityEngine {
             weightedScoreSum += score * W_DHCP_60;
             weightSum += W_DHCP_60;
             signalCount++;
+            if (score > 0) result.details.add(String.format("- DHCP Option 60 matched (score: %.0f%%, weight: %.2f)", score * 100, W_DHCP_60));
         }
 
         // 3. TCP Fingerprint
@@ -54,6 +64,7 @@ public class SimilarityEngine {
             weightedScoreSum += score * W_TCP;
             weightSum += W_TCP;
             signalCount++;
+            if (score > 0) result.details.add(String.format("- TCP Fingerprint matched (score: %.0f%%, weight: %.2f)", score * 100, W_TCP));
         }
 
         // 4. mDNS Services (Jaccard Index)
@@ -62,6 +73,7 @@ public class SimilarityEngine {
             weightedScoreSum += score * W_MDNS;
             weightSum += W_MDNS;
             signalCount++;
+            if (score > 0) result.details.add(String.format("- mDNS Services matched (score: %.0f%%, weight: %.2f)", score * 100, W_MDNS));
         }
 
         // 5. Open Ports (Jaccard Index)
@@ -70,6 +82,7 @@ public class SimilarityEngine {
             weightedScoreSum += score * W_OPEN_PORTS;
             weightSum += W_OPEN_PORTS;
             signalCount++;
+            if (score > 0) result.details.add(String.format("- Open Ports matched (score: %.0f%%, weight: %.2f)", score * 100, W_OPEN_PORTS));
         }
 
         // 6. MAC OUI
@@ -78,6 +91,7 @@ public class SimilarityEngine {
             weightedScoreSum += score * W_MAC_OUI;
             weightSum += W_MAC_OUI;
             signalCount++;
+            if (score > 0) result.details.add(String.format("- MAC OUI matched (score: %.0f%%, weight: %.2f)", score * 100, W_MAC_OUI));
         }
 
         // 7. SSH Host Keys (High signal)
@@ -86,6 +100,7 @@ public class SimilarityEngine {
             weightedScoreSum += score * W_SSH_KEY;
             weightSum += W_SSH_KEY;
             signalCount++;
+            if (score > 0) result.details.add(String.format("- SSH Host Keys matched (score: %.0f%%, weight: %.2f)", score * 100, W_SSH_KEY));
         }
 
         // 8. HTTP Server Header
@@ -94,6 +109,7 @@ public class SimilarityEngine {
             weightedScoreSum += score * W_HTTP;
             weightSum += W_HTTP;
             signalCount++;
+            if (score > 0) result.details.add(String.format("- HTTP Server Header matched (score: %.0f%%, weight: %.2f)", score * 100, W_HTTP));
         }
 
         // 9. TLS JA4 Signature
@@ -102,6 +118,7 @@ public class SimilarityEngine {
             weightedScoreSum += score * W_TLS_JA4;
             weightSum += W_TLS_JA4;
             signalCount++;
+            if (score > 0) result.details.add(String.format("- TLS JA4 Signature matched (score: %.0f%%, weight: %.2f)", score * 100, W_TLS_JA4));
         }
 
         // 10. TLS Certificate Subject
@@ -110,6 +127,7 @@ public class SimilarityEngine {
             weightedScoreSum += score * W_TLS_CERT;
             weightSum += W_TLS_CERT;
             signalCount++;
+            if (score > 0) result.details.add(String.format("- TLS Cert Subject matched (score: %.0f%%, weight: %.2f)", score * 100, W_TLS_CERT));
         }
 
         // 11. Hostname Similarity
@@ -126,6 +144,16 @@ public class SimilarityEngine {
             weightedScoreSum += score * W_HOSTNAME;
             weightSum += W_HOSTNAME;
             signalCount++;
+            if (score > 0) result.details.add(String.format("- Hostname matched (score: %.0f%%, weight: %.2f)", score * 100, W_HOSTNAME));
+        }
+
+        // 12. SSDP USN (High signal)
+        if (hasValue(candidate.ssdpUsn) && hasValue(historical.ssdpUsn)) {
+            double score = compareStrings(candidate.ssdpUsn, historical.ssdpUsn);
+            weightedScoreSum += score * W_SSDP_USN;
+            weightSum += W_SSDP_USN;
+            signalCount++;
+            if (score > 0) result.details.add(String.format("- SSDP USN matched (score: %.0f%%, weight: %.2f)", score * 100, W_SSDP_USN));
         }
 
         // Compute normalized similarity
@@ -137,9 +165,11 @@ public class SimilarityEngine {
         // Cap single-signal scores at 0.5 to force multi-factor correlation.
         if (signalCount < 2 && similarity > 0.5) {
             similarity = 0.5;
+            result.details.add("! Score capped at 50% due to single-signal match");
         }
 
-        return similarity;
+        result.score = similarity;
+        return result;
     }
 
     private boolean hasValue(String val) {

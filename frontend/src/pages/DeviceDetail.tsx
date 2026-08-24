@@ -692,6 +692,10 @@ export const DeviceDetail: React.FC = () => {
                   <p className="text-[10px] text-text-muted uppercase font-bold tracking-wider">DHCP Vendor Code (Option 60)</p>
                   <p className="font-mono text-xs text-text-primary mt-1">{latestFingerprint.dhcpOption60 || '-'}</p>
                 </div>
+                <div className="border-b border-border-subtle/50 pb-2.5">
+                  <p className="text-[10px] text-text-muted uppercase font-bold tracking-wider">UPnP SSDP USN</p>
+                  <p className="font-mono text-xs text-text-primary mt-1 break-all">{latestFingerprint.ssdpUsn || '-'}</p>
+                </div>
                 <div>
                   <p className="text-[10px] text-text-muted uppercase font-bold tracking-wider">TLS Client JA4 Hash</p>
                   <p className="font-mono text-xs text-text-primary mt-1">{latestFingerprint.tlsJa4 || '-'}</p>

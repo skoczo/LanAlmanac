@@ -28,8 +28,8 @@ public class SimilarityEngineTest {
         v2.openPorts = List.of(80, 443, 7000);
         v2.macOui = "AA:BB:CC";
 
-        double score = engine.calculateSimilarity(v1, v2);
-        assertEquals(1.0, score, 0.0001, "Exact same vectors must return 1.0 similarity");
+        SimilarityEngine.SimilarityResult result = engine.calculateSimilarity(v1, v2);
+        assertEquals(1.0, result.score, 0.0001, "Exact same vectors must return 1.0 similarity");
     }
 
     @Test
@@ -46,13 +46,13 @@ public class SimilarityEngineTest {
         historical.mdnsServices = List.of("_airplay._tcp", "_companion-link._tcp");
         historical.macOui = "AA:BB:CC"; // Original MAC OUI
 
-        double score = engine.calculateSimilarity(candidate, historical);
+        SimilarityEngine.SimilarityResult result = engine.calculateSimilarity(candidate, historical);
         
         // Weight sum = DHCP_55 (0.3) + MDNS (0.3) + MAC_OUI (0.05) = 0.65
         // Score sum = 1.0*0.3 + 1.0*0.3 + 0.0*0.05 = 0.6
         // Similarity = 0.6 / 0.65 = 0.923
-        assertTrue(score >= 0.75, "Partial match under MAC randomization should exceed merge threshold (score: " + score + ")");
-        assertEquals(0.923, score, 0.001);
+        assertTrue(result.score >= 0.75, "Partial match under MAC randomization should exceed merge threshold (score: " + result.score + ")");
+        assertEquals(0.923, result.score, 0.001);
     }
 
     @Test
@@ -69,17 +69,17 @@ public class SimilarityEngineTest {
         v2.dhcpOption60 = "HP-LaserJet";
         v2.mdnsServices = List.of("_ipp._tcp", "_printer._tcp");
 
-        double score = engine.calculateSimilarity(v1, v2);
-        assertTrue(score < 0.35, "Different categories must return low similarity (score: " + score + ")");
+        SimilarityEngine.SimilarityResult result = engine.calculateSimilarity(v1, v2);
+        assertTrue(result.score < 0.35, "Different categories must return low similarity (score: " + result.score + ")");
     }
 
     @Test
     public void testNullAndEmptyHandling() {
-        double scoreNull = engine.calculateSimilarity(null, null);
-        assertEquals(0.0, scoreNull);
+        SimilarityEngine.SimilarityResult resultNull = engine.calculateSimilarity(null, null);
+        assertEquals(0.0, resultNull.score);
 
         FingerprintVector empty = new FingerprintVector();
-        double scoreEmpty = engine.calculateSimilarity(empty, empty);
-        assertEquals(0.0, scoreEmpty, "Empty vectors should yield 0.0 as there are no signals to compare");
+        SimilarityEngine.SimilarityResult resultEmpty = engine.calculateSimilarity(empty, empty);
+        assertEquals(0.0, resultEmpty.score, "Empty vectors should yield 0.0 as there are no signals to compare");
     }
 }
