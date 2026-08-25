@@ -219,10 +219,20 @@ public class TerminalWebSocket {
         try {
             int port = cred.port != null ? cred.port : 22;
             log.infof("Connecting to %s@%s:%d", cred.username, ip, port);
+            connection.sendTextAndAwait(String.format("Connecting to %s@%s port %d...\r\n", cred.username, ip, port));
+            
             ClientSession session = client.connect(cred.username, ip, port).verify(10000).getSession();
 
             log.info("Reading secret from vault...");
-            String secret = new String(vaultEngine.decrypt(cred.encryptedPayload, cred.noncePayload), StandardCharsets.UTF_8);
+            String secret;
+            try {
+                secret = new String(vaultEngine.decrypt(cred.encryptedPayload, cred.noncePayload), StandardCharsets.UTF_8);
+            } catch (Exception e) {
+                connection.sendTextAndAwait("\r\n[CRITICAL ERROR] Failed to decrypt credential payload.\r\n");
+                connection.sendTextAndAwait("This usually means the vault master key was reset, but the database kept the old encrypted data.\r\n");
+                connection.sendTextAndAwait("Please delete this credential in the UI and create it again.\r\n");
+                throw new RuntimeException("Decryption failed", e);
+            }
             
             if (cred.credentialType == CredentialType.PASSWORD) {
                 log.info("Adding password identity");
