@@ -29,8 +29,17 @@ public class IcmpSweeper {
 
     public void sweep() {
         String[] subnets = subnetConfig.split(",");
-        for (String subnet : subnets) {
-            sweepSubnet(subnet.trim());
+        // Fan out all subnets in parallel virtual threads so a slow sweep of one subnet
+        // does not block the others from being refreshed within the same scheduler tick.
+        try (java.util.concurrent.ExecutorService subnetExecutor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+            java.util.List<java.util.concurrent.Future<?>> subnetFutures = new java.util.ArrayList<>();
+            for (String subnet : subnets) {
+                String trimmed = subnet.trim();
+                subnetFutures.add(subnetExecutor.submit(() -> sweepSubnet(trimmed)));
+            }
+            for (java.util.concurrent.Future<?> f : subnetFutures) {
+                try { f.get(); } catch (Exception ignored) {}
+            }
         }
     }
 
