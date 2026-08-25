@@ -239,8 +239,9 @@ public class PassivePacketListener {
                         String opt55 = null;
                         String opt60 = null;
                         String dhcpHostname = null;
+                        String requestedIp = null;
                         String clientMac = mac; // fallback to Ethernet header
-                        String clientIp = ip;   // fallback to IP header
+                        String clientIp = "0.0.0.0";
                         
                         try {
                             byte[] udpPayload = udp.getPayload() != null ? udp.getPayload().getRawData() : null;
@@ -254,14 +255,15 @@ public class PassivePacketListener {
                                     clientMac = chaddr;
                                 }
                                 
+                                // Extract ciaddr (client IP) from bytes 12-15
+                                String ciaddr = String.format("%d.%d.%d.%d",
+                                        udpPayload[12] & 0xFF, udpPayload[13] & 0xFF,
+                                        udpPayload[14] & 0xFF, udpPayload[15] & 0xFF);
+
                                 // Extract yiaddr (assigned IP) from bytes 16-19
                                 String yiaddr = String.format("%d.%d.%d.%d",
                                         udpPayload[16] & 0xFF, udpPayload[17] & 0xFF,
                                         udpPayload[18] & 0xFF, udpPayload[19] & 0xFF);
-                                // Use yiaddr if source IP is 0.0.0.0 (DHCP client request before lease)
-                                if ("0.0.0.0".equals(clientIp) && !"0.0.0.0".equals(yiaddr)) {
-                                    clientIp = yiaddr;
-                                }
                                 
                                 // Parse DHCP options (offset 240+)
                                 int i = 240;
@@ -278,6 +280,13 @@ public class PassivePacketListener {
                                     
                                     if (optType == 12) { // Hostname
                                         dhcpHostname = new String(optData, java.nio.charset.StandardCharsets.US_ASCII).trim();
+                                    } else if (optType == 50 && optLen == 4) { // Requested IP Address
+                                        String reqIp = String.format("%d.%d.%d.%d",
+                                                optData[0] & 0xFF, optData[1] & 0xFF,
+                                                optData[2] & 0xFF, optData[3] & 0xFF);
+                                        if (!"0.0.0.0".equals(reqIp)) {
+                                            requestedIp = reqIp;
+                                        }
                                     } else if (optType == 55) { // Parameter Request List
                                         StringBuilder sb = new StringBuilder();
                                         for (int j = 0; j < optData.length; j++) {
@@ -289,6 +298,17 @@ public class PassivePacketListener {
                                         opt60 = new String(optData, java.nio.charset.StandardCharsets.US_ASCII).trim();
                                     }
                                     i += 2 + optLen;
+                                }
+
+                                // Determine client IP: yiaddr > ciaddr > Option 50 requestedIp > IP header src
+                                if (!"0.0.0.0".equals(yiaddr)) {
+                                    clientIp = yiaddr;
+                                } else if (!"0.0.0.0".equals(ciaddr)) {
+                                    clientIp = ciaddr;
+                                } else if (requestedIp != null) {
+                                    clientIp = requestedIp;
+                                } else if (!"0.0.0.0".equals(ip)) {
+                                    clientIp = ip;
                                 }
                             }
                         } catch (Exception e) {
