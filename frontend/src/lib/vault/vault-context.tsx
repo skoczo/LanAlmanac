@@ -4,11 +4,13 @@ import { useAuth } from '../auth/auth-context'
 interface VaultStatus {
   initialized: boolean
   sealed: boolean
+  autoUnsealEnabled: boolean
 }
 
 interface VaultContextType {
   initialized: boolean
   sealed: boolean
+  autoUnsealEnabled: boolean
   showUnsealModal: boolean
   setShowUnsealModal: (show: boolean) => void
   refreshStatus: () => Promise<void>
@@ -21,6 +23,7 @@ export const VaultProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const { apiClient, isAuthenticated } = useAuth()
   const [initialized, setInitialized] = useState(false)
   const [sealed, setSealed] = useState(true)
+  const [autoUnsealEnabled, setAutoUnsealEnabled] = useState(false)
   const [showUnsealModal, setShowUnsealModal] = useState(false)
 
   const refreshStatus = async () => {
@@ -29,6 +32,7 @@ export const VaultProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const res = await apiClient<VaultStatus>('/api/vault/status')
       setInitialized(res.initialized)
       setSealed(res.sealed)
+      setAutoUnsealEnabled(res.autoUnsealEnabled ?? false)
     } catch (e) {
       console.error("Failed to fetch vault status", e)
     }
@@ -42,6 +46,7 @@ export const VaultProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <VaultContext.Provider value={{
       initialized,
       sealed,
+      autoUnsealEnabled,
       showUnsealModal,
       setShowUnsealModal,
       refreshStatus,

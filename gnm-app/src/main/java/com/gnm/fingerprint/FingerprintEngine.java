@@ -199,8 +199,22 @@ public class FingerprintEngine {
                 // If both are real MACs, allow it to fall through to Similarity Engine for device correlation.
                 if (sightingIsPlaceholder || activeIsPlaceholder) {
                     identity = activeIdOnIp;
-                    if (!sightingIsPlaceholder) {
+                    if (!sightingIsPlaceholder && activeIsPlaceholder) {
+                        // ARP scan upgraded a placeholder MAC to a real MAC — record this in the correlation history.
+                        String oldMac = identity.macAddress;
                         identity.macAddress = sighting.macAddress;
+                        LOG.info("MAC address resolved for IP " + sighting.ipAddress + ": " + oldMac + " -> " + sighting.macAddress);
+                        FingerprintCorrelationEvent macEvent = new FingerprintCorrelationEvent();
+                        macEvent.physicalDevice = identity.physicalDevice;
+                        macEvent.ipAddress = sighting.ipAddress;
+                        macEvent.macAddress = sighting.macAddress;
+                        macEvent.hostname = identity.hostname;
+                        macEvent.decisionType = "MAC_RESOLVED";
+                        macEvent.confidenceScore = 0.9;
+                        macEvent.details = "MAC address resolved from ARP scan: " + sighting.macAddress
+                                + (isGloballyUniqueMac(sighting.macAddress) ? " (globally unique)" : " (locally administered / randomized)");
+                        macEvent.timestamp = sighting.observedAt;
+                        macEvent.persist();
                     }
                 }
             }

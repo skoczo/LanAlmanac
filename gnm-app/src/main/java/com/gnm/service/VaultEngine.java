@@ -31,14 +31,23 @@ public class VaultEngine {
     void onStart(@Observes StartupEvent ev) {
         String envPassword = System.getenv("GNM_VAULT_PASSWORD");
         if (envPassword != null && !envPassword.trim().isEmpty()) {
-            if (isInitialized()) {
+            if (!isInitialized()) {
+                // First-ever start: auto-initialize the vault using the env password so that
+                // headless deployments never need a manual init step.
+                try {
+                    LOG.info("GNM_VAULT_PASSWORD is set and vault is not yet initialized. Auto-initializing vault...");
+                    initializeVault(envPassword);
+                    LOG.info("Vault automatically initialized and unsealed using GNM_VAULT_PASSWORD.");
+                } catch (Exception e) {
+                    LOG.error("Failed to auto-initialize vault using GNM_VAULT_PASSWORD.", e);
+                }
+            } else {
+                // Vault already initialized (subsequent restarts): just unseal it.
                 if (unsealVault(envPassword)) {
                     LOG.info("Vault automatically unsealed using GNM_VAULT_PASSWORD environment variable.");
                 } else {
                     LOG.error("Failed to unseal vault using GNM_VAULT_PASSWORD: password may be incorrect.");
                 }
-            } else {
-                LOG.warn("GNM_VAULT_PASSWORD is set, but vault is not initialized yet. Skipping auto-unseal.");
             }
         }
     }

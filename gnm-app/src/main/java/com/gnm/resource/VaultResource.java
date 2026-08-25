@@ -30,9 +30,12 @@ public class VaultResource {
     @GET
     @Path("/status")
     public Response getStatus() {
+        boolean autoUnsealEnabled = System.getenv("GNM_VAULT_PASSWORD") != null
+                && !System.getenv("GNM_VAULT_PASSWORD").trim().isEmpty();
         return Response.ok(Map.of(
                 "initialized", vaultEngine.isInitialized(),
-                "sealed", !vaultEngine.isUnsealed()
+                "sealed", !vaultEngine.isUnsealed(),
+                "autoUnsealEnabled", autoUnsealEnabled
         )).build();
     }
 

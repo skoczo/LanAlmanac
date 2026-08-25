@@ -19,6 +19,7 @@ import {
   X,
   Trash2,
   GitMerge,
+  Wifi,
   Terminal as TerminalIcon
 } from 'lucide-react'
 import { Terminal } from '../components/Terminal'
@@ -57,7 +58,7 @@ interface CorrelationEvent {
   ipAddress: string
   macAddress: string
   hostname: string
-  decisionType: 'NEW_DEVICE' | 'DIRECT_MATCH' | 'HOSTNAME_MATCH' | 'SIMILARITY_MATCH'
+  decisionType: 'NEW_DEVICE' | 'DIRECT_MATCH' | 'HOSTNAME_MATCH' | 'SIMILARITY_MATCH' | 'MAC_RESOLVED'
   confidenceScore: number
   details: string
   timestamp: string
@@ -780,6 +781,10 @@ export const DeviceDetail: React.FC = () => {
                     IconComponent = HardDrive;
                     colorClass = 'text-accent-info bg-accent-info/10 border-accent-info/20';
                     typeLabel = `Fingerprint Similarity Engine`;
+                  } else if (event.decisionType === 'MAC_RESOLVED') {
+                    IconComponent = Wifi;
+                    colorClass = 'text-accent-warning bg-accent-warning/10 border-accent-warning/20';
+                    typeLabel = 'MAC Address Resolved';
                   }
 
                   return (

@@ -4,12 +4,13 @@ import { useAuth } from '../lib/auth/auth-context'
 import { Lock, Unlock, ShieldAlert } from 'lucide-react'
 
 export const VaultUnsealModal = () => {
-  const { sealed, showUnsealModal, setShowUnsealModal, refreshStatus } = useVault()
+  const { sealed, autoUnsealEnabled, showUnsealModal, setShowUnsealModal, refreshStatus } = useVault()
   const { apiClient } = useAuth()
   const [error, setError] = useState<string | null>(null)
   const [password, setPassword] = useState('')
 
-  if (!showUnsealModal || !sealed) return null
+  // In auto-unseal mode the backend manages the vault — never prompt the user manually.
+  if (!showUnsealModal || !sealed || autoUnsealEnabled) return null
 
   const handleUnseal = async (e: React.FormEvent) => {
     e.preventDefault()
