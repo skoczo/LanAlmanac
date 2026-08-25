@@ -189,25 +189,7 @@ public class FingerprintEngine {
                 sighting.ipAddress, sighting.macAddress).firstResult();
 
         if (identity == null) {
-            boolean isTestMode = io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST;
-            boolean isManual = isTestMode || "MANUAL_DISCOVERY".equals(sighting.source);
-
-            boolean hasMetadata = (candidate.hostname != null && !candidate.hostname.isEmpty())
-                    || (candidate.dhcpOption55 != null && !candidate.dhcpOption55.isEmpty())
-                    || (candidate.dhcpOption60 != null && !candidate.dhcpOption60.isEmpty())
-                    || (candidate.openPorts != null && !candidate.openPorts.isEmpty())
-                    || (candidate.sshHostKeys != null && !candidate.sshHostKeys.isEmpty());
-
-            boolean isPlaceholderMac = sighting.macAddress == null || sighting.macAddress.isEmpty() || "00:00:00:00:00:00".equals(sighting.macAddress);
-            boolean isRandomizedMac = !isPlaceholderMac && !isGloballyUniqueMac(sighting.macAddress);
-
-            // Defer creating NEW physical devices for 0-signal background sightings (placeholder or randomized MAC) until fingerprint metadata arrives
-            if (!isManual && !hasMetadata && (isPlaceholderMac || isRandomizedMac)) {
-                LOG.debug("Deferring new device creation for 0-signal background sighting on IP " + sighting.ipAddress + " (MAC: " + sighting.macAddress + ")");
-                return;
-            }
-
-            // Check if there is an active identity on this IP
+            // Check if there is an active identity on this IP first
             NetworkIdentity activeIdOnIp = NetworkIdentity.find("ipAddress = ?1 and current = true", sighting.ipAddress).firstResult();
             if (activeIdOnIp != null) {
                 boolean sightingIsPlaceholder = sighting.macAddress == null || sighting.macAddress.equals("00:00:00:00:00:00") || sighting.macAddress.isEmpty();
@@ -220,6 +202,26 @@ public class FingerprintEngine {
                     if (!sightingIsPlaceholder) {
                         identity.macAddress = sighting.macAddress;
                     }
+                }
+            }
+
+            if (identity == null) {
+                boolean isTestMode = io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST;
+                boolean isManual = isTestMode || "MANUAL_DISCOVERY".equals(sighting.source);
+
+                boolean hasMetadata = (candidate.hostname != null && !candidate.hostname.isEmpty())
+                        || (candidate.dhcpOption55 != null && !candidate.dhcpOption55.isEmpty())
+                        || (candidate.dhcpOption60 != null && !candidate.dhcpOption60.isEmpty())
+                        || (candidate.openPorts != null && !candidate.openPorts.isEmpty())
+                        || (candidate.sshHostKeys != null && !candidate.sshHostKeys.isEmpty());
+
+                boolean isPlaceholderMac = sighting.macAddress == null || sighting.macAddress.isEmpty() || "00:00:00:00:00:00".equals(sighting.macAddress);
+                boolean isRandomizedMac = !isPlaceholderMac && !isGloballyUniqueMac(sighting.macAddress);
+
+                // Defer creating NEW physical devices for 0-signal background sightings (placeholder or randomized MAC) until fingerprint metadata arrives
+                if (!isManual && !hasMetadata && (isPlaceholderMac || isRandomizedMac)) {
+                    LOG.debug("Deferring new device creation for 0-signal background sighting on IP " + sighting.ipAddress + " (MAC: " + sighting.macAddress + ")");
+                    return;
                 }
             }
         }
