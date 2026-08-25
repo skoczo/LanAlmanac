@@ -41,10 +41,9 @@ public class DiscoveryScheduler {
     }
 
     @Scheduled(every = "${gnm.scan.icmp-interval:60s}", identity = "icmp-sweep-job")
-    @Transactional
     public void triggerIcmpSweep() {
         if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) return;
-        GlobalSetting setting = GlobalSetting.findById("ENABLE_ACTIVE_SCANNING");
+        GlobalSetting setting = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().call(() -> GlobalSetting.findById("ENABLE_ACTIVE_SCANNING"));
         if (setting != null && "false".equalsIgnoreCase(setting.value)) {
             LOG.debug("Active scanning is disabled via settings. Skipping ICMP sweep.");
             return;
@@ -54,10 +53,9 @@ public class DiscoveryScheduler {
     }
 
     @Scheduled(every = "${gnm.scan.arp-interval:30s}", identity = "arp-scan-job")
-    @Transactional
     public void triggerArpScan() {
         if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) return;
-        GlobalSetting setting = GlobalSetting.findById("ENABLE_ACTIVE_SCANNING");
+        GlobalSetting setting = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().call(() -> GlobalSetting.findById("ENABLE_ACTIVE_SCANNING"));
         if (setting != null && "false".equalsIgnoreCase(setting.value)) {
             LOG.debug("Active scanning is disabled via settings. Skipping ARP scan.");
             return;
