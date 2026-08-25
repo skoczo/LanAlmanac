@@ -31,7 +31,7 @@ public class FingerprintEngine {
 
     private static final Logger LOG = Logger.getLogger(FingerprintEngine.class);
     private final ObjectMapper MAPPER = new ObjectMapper();
-    private final java.util.Map<String, Object> ipLocks = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Object dbLock = new Object();
     private final java.util.Map<String, java.time.Instant> lastScanTimes = new java.util.concurrent.ConcurrentHashMap<>();
 
     private volatile boolean running = true;
@@ -115,7 +115,9 @@ public class FingerprintEngine {
             LOG.debug("Ignoring sighting with invalid or non-routable IP address: " + (sighting != null ? sighting.ipAddress : "null"));
             if (sighting != null && sighting.macAddress != null && !"00:00:00:00:00:00".equals(sighting.macAddress) && !sighting.macAddress.isEmpty()) {
                 FingerprintVector candidate = parseMetadata(sighting);
-                self.mergeMetadataByMacInTransaction(sighting.macAddress, candidate);
+                synchronized (dbLock) {
+                    self.mergeMetadataByMacInTransaction(sighting.macAddress, candidate);
+                }
             }
             return;
         }
@@ -175,8 +177,7 @@ public class FingerprintEngine {
 
         candidate.hostname = hostname;
 
-        Object lock = ipLocks.computeIfAbsent(sighting.ipAddress, k -> new Object());
-        synchronized (lock) {
+        synchronized (dbLock) {
             self.saveSightingInTransaction(sighting, candidate, hostname);
         }
     }

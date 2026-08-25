@@ -22,6 +22,11 @@ public class VaultResource {
     @ConfigProperty(name = "gnm.vault.password")
     Optional<String> vaultPassword;
 
+    public static class PasswordPayload {
+        public String password;
+    }
+
+
     @GET
     @Path("/status")
     public Response getStatus() {
@@ -33,27 +38,35 @@ public class VaultResource {
 
     @POST
     @Path("/init")
-    public Response initialize() {
-        if (vaultPassword.isEmpty()) {
-            return Response.status(Response.Status.BAD_REQUEST).entity(Map.of("error", "Vault password not configured on server")).build();
+    public Response initialize(PasswordPayload payload) {
+        String passcode = (payload != null && payload.password != null && !payload.password.trim().isEmpty()) 
+                ? payload.password 
+                : vaultPassword.orElse(null);
+
+        if (passcode == null || passcode.trim().isEmpty()) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(Map.of("error", "Vault password not provided and not configured on server")).build();
         }
         if (vaultEngine.isInitialized()) {
             return Response.status(Response.Status.CONFLICT).entity(Map.of("error", "Vault already initialized")).build();
         }
-        vaultEngine.initializeVault(vaultPassword.get());
+        vaultEngine.initializeVault(passcode);
         return Response.ok(Map.of("success", true)).build();
     }
 
     @POST
     @Path("/unseal")
-    public Response unseal() {
-        if (vaultPassword.isEmpty()) {
-            return Response.status(Response.Status.BAD_REQUEST).entity(Map.of("error", "Vault password not configured on server")).build();
+    public Response unseal(PasswordPayload payload) {
+        String passcode = (payload != null && payload.password != null && !payload.password.trim().isEmpty()) 
+                ? payload.password 
+                : vaultPassword.orElse(null);
+
+        if (passcode == null || passcode.trim().isEmpty()) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(Map.of("error", "Vault password not provided and not configured on server")).build();
         }
         if (!vaultEngine.isInitialized()) {
             return Response.status(Response.Status.BAD_REQUEST).entity(Map.of("error", "Vault not initialized")).build();
         }
-        boolean success = vaultEngine.unsealVault(vaultPassword.get());
+        boolean success = vaultEngine.unsealVault(passcode);
         if (success) {
             return Response.ok(Map.of("success", true)).build();
         } else {

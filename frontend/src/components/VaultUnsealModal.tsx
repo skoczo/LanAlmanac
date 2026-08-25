@@ -7,6 +7,7 @@ export const VaultUnsealModal = () => {
   const { sealed, showUnsealModal, setShowUnsealModal, refreshStatus } = useVault()
   const { apiClient } = useAuth()
   const [error, setError] = useState<string | null>(null)
+  const [password, setPassword] = useState('')
 
   if (!showUnsealModal || !sealed) return null
 
@@ -14,11 +15,13 @@ export const VaultUnsealModal = () => {
     e.preventDefault()
     try {
       await apiClient('/api/vault/unseal', {
-        method: 'POST'
+        method: 'POST',
+        body: JSON.stringify({ password })
       })
       await refreshStatus()
       setShowUnsealModal(false)
       setError(null)
+      setPassword('')
     } catch (err: any) {
       setError(err.message || 'Invalid passcode')
     }
@@ -33,7 +36,7 @@ export const VaultUnsealModal = () => {
           </div>
           <h2 className="text-lg font-bold text-text-primary">Vault Sealed</h2>
           <p className="text-xs text-text-secondary">
-            Click Unseal to unlock the Vault using the server's configured master password.
+            Enter the master password to unlock the Vault.
           </p>
         </div>
 
@@ -45,6 +48,18 @@ export const VaultUnsealModal = () => {
         )}
 
         <form onSubmit={handleUnseal} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-text-secondary mb-1">Master Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-3 py-2 bg-bg-surface-raised border border-border-subtle rounded-xl text-sm focus:outline-none focus:border-accent-primary"
+              placeholder="Enter vault password"
+              autoFocus
+            />
+          </div>
+
           <div className="flex gap-3 mt-6">
             <button
               type="button"
@@ -55,7 +70,8 @@ export const VaultUnsealModal = () => {
             </button>
             <button
               type="submit"
-              className="flex-1 bg-accent-primary hover:bg-accent-primary/95 text-text-primary font-semibold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 cursor-pointer"
+              disabled={!password}
+              className="flex-1 bg-accent-primary hover:bg-accent-primary/95 text-text-primary font-semibold py-2.5 rounded-xl text-xs flex justify-center items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Unlock className="w-4 h-4" />
               Unseal Vault

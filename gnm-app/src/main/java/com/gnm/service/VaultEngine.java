@@ -13,16 +13,35 @@ import java.io.File;
 import java.nio.file.Files;
 import java.security.SecureRandom;
 import java.nio.ByteBuffer;
+import io.quarkus.runtime.StartupEvent;
+import jakarta.enterprise.event.Observes;
+import org.jboss.logging.Logger;
 
 @ApplicationScoped
 public class VaultEngine {
 
+    private static final Logger LOG = Logger.getLogger(VaultEngine.class);
     private static final String VAULT_FILE_PATH = "keys/.vault_master";
     private static final int GCM_IV_LENGTH = 12;
     private static final int GCM_TAG_LENGTH = 128; // bits
     private static final int SALT_LENGTH = 16;
 
     private volatile SecretKey unsealedMasterKey = null;
+
+    void onStart(@Observes StartupEvent ev) {
+        String envPassword = System.getenv("GNM_VAULT_PASSWORD");
+        if (envPassword != null && !envPassword.trim().isEmpty()) {
+            if (isInitialized()) {
+                if (unsealVault(envPassword)) {
+                    LOG.info("Vault automatically unsealed using GNM_VAULT_PASSWORD environment variable.");
+                } else {
+                    LOG.error("Failed to unseal vault using GNM_VAULT_PASSWORD: password may be incorrect.");
+                }
+            } else {
+                LOG.warn("GNM_VAULT_PASSWORD is set, but vault is not initialized yet. Skipping auto-unseal.");
+            }
+        }
+    }
 
     public boolean isInitialized() {
         return new File(VAULT_FILE_PATH).exists();

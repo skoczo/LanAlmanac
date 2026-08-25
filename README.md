@@ -29,7 +29,7 @@ Start the Quarkus development server. Dev mode automatically recompiles Java cla
 ```bash
 GNM_VAULT_PASSWORD=my_secure_passcode ./gradlew :gnm-app:quarkusDev
 ```
-* **Vault Password**: Required for Vault initialization and unsealing. Can also be set in `gnm-app/.env` or `gnm-app/src/main/resources/application.properties` (`%dev.gnm.vault.password`).
+* **Vault Password**: Required for Vault initialization and unsealing. Can be set as an environment variable (`GNM_VAULT_PASSWORD`), in `gnm-app/.env`, or `gnm-app/src/main/resources/application.properties` (`%dev.gnm.vault.password`). If set in the environment, the Vault will automatically unseal on startup. If left unset, you will be prompted to enter the password manually in the GUI to unseal it.
 * **JWT Signing Keys**: On the first start, GNM will automatically generate a secure 2048-bit RSA keypair in the `./keys` folder.
 * **Database migrations**: Flyway automatically creates the tables at startup.
 * **Mock Data**: A mock data service detects an empty database and automatically seeds 7 devices, history, credentials, and 24 hours of telemetry metrics for dashboard visualization.
@@ -62,8 +62,9 @@ The project includes an automated GitHub Actions CI/CD pipeline (`.github/workfl
 To run the production-ready stack (with PostgreSQL, Redis, and the LanAlmanac backend/frontend):
 
 1. Clone this repository or copy the `docker-compose.prod.yml` file to your server.
-2. Set environment variables (e.g. `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `GNM_VAULT_PASSWORD`) in your `.env` file or export them. It is highly recommended to secure the vault using `GNM_VAULT_PASSWORD`.
-3. Start the stack using the published GitHub image:
+2. Set environment variables (e.g. `ADMIN_USERNAME`, `ADMIN_PASSWORD`) in your `.env` file or export them.
+3. (Optional) Set `GNM_VAULT_PASSWORD` in your environment. **If set, the vault will auto-unseal on application startup.** If not set, you must manually unseal it via the web interface by providing the master password.
+4. Run the application (this builds the React SPA and serves it from Quarkus):
 ```bash
 docker compose -f docker-compose.prod.yml up -d
 ```

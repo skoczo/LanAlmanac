@@ -23,6 +23,8 @@ export const Vault: React.FC = () => {
   const [revealedCreds, setRevealedCreds] = useState<Record<string, string>>({})
   
   const [initError, setInitError] = useState<string | null>(null)
+  const [password, setPassword] = useState('')
+
 
   useEffect(() => {
     refreshStatus()
@@ -35,10 +37,12 @@ export const Vault: React.FC = () => {
     e.preventDefault()
     try {
       await apiClient('/api/vault/init', {
-        method: 'POST'
+        method: 'POST',
+        body: JSON.stringify({ password })
       })
       await refreshStatus()
       setInitError(null)
+      setPassword('')
     } catch (err: any) {
       setInitError(err.message || 'Initialization failed')
     }
@@ -94,7 +98,7 @@ export const Vault: React.FC = () => {
         <div className="w-full max-w-md bg-bg-surface border border-border-subtle rounded-2xl p-8 shadow-2xl">
           <div className="text-center space-y-3 mb-6">
             <h2 className="text-lg font-bold text-text-primary">Initialize Vault</h2>
-            <p className="text-xs text-text-secondary">Click below to initialize the Vault using the server's configured master password (GNM_VAULT_PASSWORD).</p>
+            <p className="text-xs text-text-secondary">Enter a secure master password to initialize the Vault.</p>
           </div>
           {initError && (
             <div className="mb-4 p-2.5 rounded-lg bg-accent-danger/10 border border-accent-danger/25 text-[11px] text-accent-danger flex items-center gap-2">
@@ -103,7 +107,18 @@ export const Vault: React.FC = () => {
             </div>
           )}
           <form onSubmit={handleInit} className="space-y-4">
-            <button type="submit" className="w-full bg-accent-primary hover:bg-accent-primary/95 text-text-primary font-semibold py-3 rounded-xl shadow-lg transition-all text-xs cursor-pointer">
+            <div>
+              <label className="block text-xs font-semibold text-text-secondary mb-1">Master Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-3 py-2 bg-bg-surface-raised border border-border-subtle rounded-xl text-sm focus:outline-none focus:border-accent-primary"
+                placeholder="Enter new vault password"
+                autoFocus
+              />
+            </div>
+            <button type="submit" disabled={!password} className="w-full bg-accent-primary hover:bg-accent-primary/95 text-text-primary font-semibold py-3 rounded-xl shadow-lg transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
               Initialize Vault
             </button>
           </form>
