@@ -10,6 +10,7 @@ import java.util.List;
 
 import com.gnm.model.*;
 import com.gnm.model.enums.*;
+import com.gnm.discovery.NetworkSightingQueue;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -36,9 +37,13 @@ public class FingerprintEngineLocalMacHostnameMergeTest {
     @Inject
     FingerprintEngine engine;
 
+    @Inject
+    NetworkSightingQueue sightingQueue;
+
     @BeforeEach
     @Transactional
     public void cleanDatabase() {
+        engine.flushAndClear();
         NetworkSighting.deleteAll();
         NetworkIdentity.deleteAll();
         FingerprintVector.deleteAll();

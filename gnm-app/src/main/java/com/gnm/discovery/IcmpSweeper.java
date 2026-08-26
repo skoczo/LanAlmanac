@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.Semaphore;
 
 import com.gnm.model.NetworkSighting;
 
@@ -21,9 +20,6 @@ import com.gnm.model.NetworkSighting;
 public class IcmpSweeper {
 
     private static final Logger LOG = Logger.getLogger(IcmpSweeper.class);
-
-    // Limit concurrent ping processes to prevent process/thread explosion and OOM
-    private static final Semaphore PING_SEMAPHORE = new Semaphore(50);
 
     @Inject
     NetworkSightingQueue sightingQueue;
@@ -70,8 +66,8 @@ public class IcmpSweeper {
         long startTime = System.currentTimeMillis();
         java.util.Set<String> liveIps = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
 
-        // Spawn parallel virtual threads to probe each IP
-        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        // Spawn parallel threads to probe each IP (limited to 50 concurrent)
+        try (ExecutorService executor = Executors.newFixedThreadPool(50)) {
             List<Future<Void>> futures = targetIps.stream()
                 .map(ip -> executor.submit(() -> {
                     probeIp(ip, liveIps);
@@ -114,10 +110,9 @@ public class IcmpSweeper {
     }
 
     private boolean isReachable(String ip) {
-        // 1. Try system ping command (works for non-root on Linux due to SUID)
+        // 1. Try system ping command
         Process p = null;
         try {
-            PING_SEMAPHORE.acquire();
             p = new ProcessBuilder("ping", "-c", "1", "-W", "1", ip)
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
@@ -134,8 +129,6 @@ public class IcmpSweeper {
             if (p != null && p.isAlive()) {
                 p.destroyForcibly();
             }
-        } finally {
-            PING_SEMAPHORE.release();
         }
 
         // 2. Try port sweep (22, 80, 443, 137, 445).

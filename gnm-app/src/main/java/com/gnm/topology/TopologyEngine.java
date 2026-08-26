@@ -39,6 +39,9 @@ public class TopologyEngine {
     @Scheduled(every = "5m", identity = "topology-scan-job")
     @Transactional
     public void runTopologyScan() {
+        if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) {
+            return;
+        }
         LOG.info("Starting scheduled Topology Scan (LLDP/CDP/ARP)");
 
         if (!vaultEngine.isUnsealed()) {

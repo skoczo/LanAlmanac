@@ -35,6 +35,9 @@ public class TelemetryEngine {
     @Scheduled(every = "10s")
     @Transactional
     public void pollMetrics() {
+        if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) {
+            return;
+        }
         long intervalSec = 60;
         GlobalSetting setting = GlobalSetting.findById("POLL_INTERVAL_SEC");
         if (setting != null) {

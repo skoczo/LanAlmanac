@@ -40,6 +40,8 @@ public class FingerprintEngine {
     @Inject
     NetworkSightingQueue sightingQueue;
 
+    private final java.util.concurrent.atomic.AtomicInteger activeProcessingCount = new java.util.concurrent.atomic.AtomicInteger(0);
+
     @Inject
     SimilarityEngine similarityEngine;
 
@@ -90,6 +92,7 @@ public class FingerprintEngine {
         while (running) {
             try {
                 NetworkSighting sighting = sightingQueue.take();
+                activeProcessingCount.incrementAndGet();
                 Thread.startVirtualThread(() -> {
                     try {
                         processSighting(sighting);
@@ -97,6 +100,8 @@ public class FingerprintEngine {
                         if (running) {
                             LOG.error("Error processing network sighting event in virtual thread", e);
                         }
+                    } finally {
+                        activeProcessingCount.decrementAndGet();
                     }
                 });
             } catch (InterruptedException e) {
@@ -107,6 +112,24 @@ public class FingerprintEngine {
                     LOG.error("Error taking sighting from queue", e);
                 }
             }
+        }
+    }
+
+    public void flushAndClear() {
+        sightingQueue.clear();
+        while (activeProcessingCount.get() > 0) {
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        dbLock.lock();
+        try {
+            // Wait for any in-progress sighting processing to complete
+        } finally {
+            dbLock.unlock();
         }
     }
 
@@ -383,6 +406,7 @@ public class FingerprintEngine {
 
             bestMatch.status = DeviceStatus.ONLINE;
             bestMatch.lastSeen = sighting.observedAt;
+            bestMatch.consecutiveMissedProbes = 0;
             bestMatch.confidenceScore = (bestMatch.confidenceScore + bestScore) / 2.0; // rolling average
             
             FingerprintVector historical = FingerprintVector.find("physicalDevice.id = ?1", bestMatch.id).firstResult();
@@ -422,7 +446,7 @@ public class FingerprintEngine {
             correlationEvent.timestamp = sighting.observedAt;
             correlationEvent.persist();
 
-            eventBroadcaster.fire(new DeviceEvent("STATUS_CHANGE", bestMatch.id.toString(), bestMatch.displayName, "ONLINE", sighting.ipAddress));
+            eventBroadcaster.fireAsync(new DeviceEvent("STATUS_CHANGE", bestMatch.id.toString(), bestMatch.displayName, "ONLINE", sighting.ipAddress));
         } else {
             GlobalSetting modeSetting = GlobalSetting.findById("APP_MODE");
             String appMode = modeSetting != null ? modeSetting.value : "DISCOVERY";
@@ -437,7 +461,7 @@ public class FingerprintEngine {
                     }
                     existing.detectedAt = Instant.now();
                     existing.persist();
-                    threatBroadcaster.fire(existing);
+                    threatBroadcaster.fireAsync(existing);
                 } else {
                     ThreatEvent threat = new ThreatEvent();
                     threat.severity = "CRITICAL";
@@ -446,7 +470,7 @@ public class FingerprintEngine {
                     threat.macAddress = sighting.macAddress;
                     threat.detectedAt = Instant.now();
                     threat.persist();
-                    threatBroadcaster.fire(threat);
+                    threatBroadcaster.fireAsync(threat);
                 }
                 return; // Do NOT create device in detection mode!
             }
@@ -520,7 +544,7 @@ public class FingerprintEngine {
             correlationEvent.timestamp = sighting.observedAt;
             correlationEvent.persist();
 
-            eventBroadcaster.fire(new DeviceEvent("NEW_DEVICE", newDevice.id.toString(), newDevice.displayName, "ONLINE", sighting.ipAddress));
+            eventBroadcaster.fireAsync(new DeviceEvent("NEW_DEVICE", newDevice.id.toString(), newDevice.displayName, "ONLINE", sighting.ipAddress));
         }
     }
 
@@ -1320,6 +1344,15 @@ public class FingerprintEngine {
 
         boolean seenInThisCycle = currentIp != null && liveIps.contains(currentIp);
 
+        if (!seenInThisCycle && device.lastSeen != null) {
+            // Check if we have seen this device recently (e.g. passively via ARP or UDP broadcasts)
+            // within the last 3 minutes (180 seconds). If so, do not mark it offline.
+            if (device.lastSeen.isAfter(Instant.now().minusSeconds(180))) {
+                seenInThisCycle = true;
+                LOG.debugf("Device %s missed active probe but was seen passively recently at %s.", device.displayName, device.lastSeen);
+            }
+        }
+
         if (seenInThisCycle) {
             // Device responded — reset the counter
             if (device.consecutiveMissedProbes > 0) {
@@ -1336,7 +1369,7 @@ public class FingerprintEngine {
                 device.status = DeviceStatus.OFFLINE;
                 device.persist();
                 String ip = currentIp != null ? currentIp : "0.0.0.0";
-                eventBroadcaster.fire(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "OFFLINE", ip));
+                eventBroadcaster.fireAsync(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "OFFLINE", ip));
                 LOG.infof("Marked device %s as OFFLINE after %d consecutive missed ICMP probe cycles.",
                     device.displayName, device.consecutiveMissedProbes);
             } else {

@@ -1,7 +1,7 @@
 package com.gnm.resource;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Observes;
+import jakarta.enterprise.event.ObservesAsync;
 import jakarta.inject.Inject;
 import io.quarkus.websockets.next.*;
 import org.jboss.logging.Logger;
@@ -30,7 +30,7 @@ public class EventWebSocket {
         activeConnections.remove(conn);
     }
 
-    public void onDeviceEvent(@Observes DeviceEvent event) {
+    public void onDeviceEvent(@ObservesAsync DeviceEvent event) {
         LOG.info("Observing DeviceEvent: " + event.type + " for device: " + event.displayName);
         try {
             String json = MAPPER.writeValueAsString(event);
@@ -41,7 +41,7 @@ public class EventWebSocket {
             LOG.error("Failed to broadcast device event over WebSocket", e);
         }
     }
-    public void onThreatEvent(@Observes ThreatEvent threat) {
+    public void onThreatEvent(@ObservesAsync ThreatEvent threat) {
         LOG.info("Observing ThreatEvent: " + threat.description);
         try {
             var payload = new java.util.HashMap<String, String>();

@@ -37,6 +37,10 @@ public class PassivePacketListener {
     String networkInterfaceProp;
 
     public void startCapture() {
+        if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) {
+            LOG.info("Tests are running. Disabling passive packet sniffer.");
+            return;
+        }
         String networkInterface = getListenInterface();
         LOG.info("Initializing passive packet listener on interface: " + networkInterface);
 
