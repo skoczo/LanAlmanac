@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import com.gnm.discovery.NetworkSightingQueue;
@@ -31,7 +32,7 @@ public class FingerprintEngine {
 
     private static final Logger LOG = Logger.getLogger(FingerprintEngine.class);
     private final ObjectMapper MAPPER = new ObjectMapper();
-    private final Object dbLock = new Object();
+    private final java.util.concurrent.locks.ReentrantLock dbLock = new java.util.concurrent.locks.ReentrantLock();
     private final java.util.Map<String, java.time.Instant> lastScanTimes = new java.util.concurrent.ConcurrentHashMap<>();
 
     private volatile boolean running = true;
@@ -115,8 +116,11 @@ public class FingerprintEngine {
             LOG.debug("Ignoring sighting with invalid or non-routable IP address: " + (sighting != null ? sighting.ipAddress : "null"));
             if (sighting != null && sighting.macAddress != null && !"00:00:00:00:00:00".equals(sighting.macAddress) && !sighting.macAddress.isEmpty()) {
                 FingerprintVector candidate = parseMetadata(sighting);
-                synchronized (dbLock) {
+                dbLock.lock();
+                try {
                     self.mergeMetadataByMacInTransaction(sighting.macAddress, candidate);
+                } finally {
+                    dbLock.unlock();
                 }
             }
             return;
@@ -177,8 +181,11 @@ public class FingerprintEngine {
 
         candidate.hostname = hostname;
 
-        synchronized (dbLock) {
+        dbLock.lock();
+        try {
             self.saveSightingInTransaction(sighting, candidate, hostname);
+        } finally {
+            dbLock.unlock();
         }
     }
 
@@ -261,6 +268,7 @@ public class FingerprintEngine {
             boolean statusChanged = (device.status != DeviceStatus.ONLINE);
             device.status = DeviceStatus.ONLINE;
             device.lastSeen = sighting.observedAt;
+            device.consecutiveMissedProbes = 0; // Reset on any successful sighting
             
             // Ensure only this identity is marked current
             List<NetworkIdentity> allIdentities = NetworkIdentity.list("physicalDevice.id", device.id);
@@ -1262,40 +1270,79 @@ public class FingerprintEngine {
         return key;
     }
 
-    @io.quarkus.scheduler.Scheduled(every = "1m")
-    public void sweepOfflineDevices() {
-        long timeoutMinutes = 5;
-        GlobalSetting setting = GlobalSetting.findById("DEVICE_OFFLINE_TIMEOUT_MINUTES");
-        if (setting != null) {
-            try { timeoutMinutes = Long.parseLong(setting.value); } catch (Exception e) {}
+    /**
+     * Called by DiscoveryScheduler after each ICMP sweep cycle completes.
+     * Increments consecutiveMissedProbes for ONLINE devices whose current IP was
+     * NOT found in the sweep, and resets the counter for devices that responded.
+     * Marks a device OFFLINE only when the counter reaches the configured threshold.
+     */
+    public void updateProbeCounters(Set<String> liveIps) {
+        int threshold = 2;
+        try {
+            GlobalSetting setting = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew()
+                .call(() -> GlobalSetting.findById("DEVICE_OFFLINE_MISSED_PROBES_THRESHOLD"));
+            if (setting != null) {
+                try { threshold = Integer.parseInt(setting.value); } catch (Exception ignored) {}
+            }
+        } catch (Exception ignored) {}
+
+        final int finalThreshold = threshold;
+
+        List<PhysicalDevice> onlineDevices;
+        try {
+            onlineDevices = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew()
+                .call(() -> PhysicalDevice.find("status", DeviceStatus.ONLINE).list());
+        } catch (Exception e) {
+            LOG.error("Failed to list online devices for probe counter update", e);
+            return;
         }
-        
-        Instant cutoff = Instant.now().minus(timeoutMinutes, java.time.temporal.ChronoUnit.MINUTES);
-        List<PhysicalDevice> devices = PhysicalDevice.find("status = ?1 and lastSeen < ?2", DeviceStatus.ONLINE, cutoff).list();
-        for (PhysicalDevice device : devices) {
+
+        for (PhysicalDevice device : onlineDevices) {
             try {
-                self.markDeviceOfflineInTransaction(device.id);
+                self.updateProbeCounterInTransaction(device.id, liveIps, finalThreshold);
             } catch (Exception e) {
-                LOG.error("Failed to mark device offline", e);
+                LOG.error("Failed to update probe counter for device " + device.id, e);
             }
         }
     }
 
     @Transactional(Transactional.TxType.REQUIRES_NEW)
-    public void markDeviceOfflineInTransaction(java.util.UUID deviceId) {
+    public void updateProbeCounterInTransaction(UUID deviceId, Set<String> liveIps, int threshold) {
         PhysicalDevice device = PhysicalDevice.findById(deviceId);
-        if (device == null) return;
-        device.status = DeviceStatus.OFFLINE;
-        device.persist();
-        
-        String ip = device.identities.stream()
+        if (device == null || device.status != DeviceStatus.ONLINE) return;
+
+        // Determine the device's current IP address
+        String currentIp = device.identities.stream()
             .filter(id -> id.current)
             .map(id -> id.ipAddress)
             .findFirst()
-            .orElse("0.0.0.0");
-            
-        eventBroadcaster.fire(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "OFFLINE", ip));
-        LOG.info("Marked device " + device.displayName + " as OFFLINE due to inactivity.");
+            .orElse(null);
+
+        boolean seenInThisCycle = currentIp != null && liveIps.contains(currentIp);
+
+        if (seenInThisCycle) {
+            // Device responded — reset the counter
+            if (device.consecutiveMissedProbes > 0) {
+                device.consecutiveMissedProbes = 0;
+                device.persist();
+            }
+        } else {
+            // Device did NOT respond in this sweep cycle
+            device.consecutiveMissedProbes++;
+            LOG.debugf("Device %s (IP: %s) missed probe cycle. consecutiveMissedProbes=%d (threshold=%d)",
+                device.displayName, currentIp, device.consecutiveMissedProbes, threshold);
+
+            if (device.consecutiveMissedProbes >= threshold) {
+                device.status = DeviceStatus.OFFLINE;
+                device.persist();
+                String ip = currentIp != null ? currentIp : "0.0.0.0";
+                eventBroadcaster.fire(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "OFFLINE", ip));
+                LOG.infof("Marked device %s as OFFLINE after %d consecutive missed ICMP probe cycles.",
+                    device.displayName, device.consecutiveMissedProbes);
+            } else {
+                device.persist();
+            }
+        }
     }
 
     @Transactional
@@ -1309,4 +1356,3 @@ public class FingerprintEngine {
         }
     }
 }
-

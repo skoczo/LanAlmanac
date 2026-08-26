@@ -8,6 +8,7 @@ import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.scheduler.Scheduled;
 import org.jboss.logging.Logger;
 import com.gnm.model.GlobalSetting;
+import com.gnm.fingerprint.FingerprintEngine;
 import jakarta.transaction.Transactional;
 
 @ApplicationScoped
@@ -20,6 +21,9 @@ public class DiscoveryScheduler {
 
     @Inject
     IcmpSweeper icmpSweeper;
+
+    @Inject
+    FingerprintEngine fingerprintEngine;
 
     @Inject
     ArpScanner arpScanner;
@@ -49,7 +53,10 @@ public class DiscoveryScheduler {
             return;
         }
         LOG.debug("Scheduled trigger: running active ICMP sweep...");
-        icmpSweeper.sweep();
+        java.util.Set<String> liveIps = icmpSweeper.sweep();
+        // After sweep, update probe counters so FingerprintEngine can decide which
+        // devices missed this cycle and potentially transition them to OFFLINE.
+        fingerprintEngine.updateProbeCounters(liveIps);
     }
 
     @Scheduled(every = "${gnm.scan.arp-interval:30s}", identity = "arp-scan-job")

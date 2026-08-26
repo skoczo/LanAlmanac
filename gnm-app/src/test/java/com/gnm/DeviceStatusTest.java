@@ -56,12 +56,13 @@ public class DeviceStatusTest extends AbstractE2ETest {
         }
         assertTrue(isOnline, "Linux server (192.168.100.10) should be discovered and ONLINE");
 
-        // Set DEVICE_OFFLINE_TIMEOUT_MINUTES to 0 so inactivity sweep triggers immediately
-        String settingPayload = "{\"value\": \"0\"}";
+        // Set DEVICE_OFFLINE_MISSED_PROBES_THRESHOLD to 1 so a single missed probe
+        // cycle is enough to mark the device offline (probe-based mechanism).
+        String settingPayload = "{\"value\": \"1\"}";
         given()
             .contentType("application/json")
             .body(settingPayload)
-            .when().put("/api/settings/DEVICE_OFFLINE_TIMEOUT_MINUTES")
+            .when().put("/api/settings/DEVICE_OFFLINE_MISSED_PROBES_THRESHOLD")
             .then().statusCode(200);
 
         // When: We stop the ne-linux-server container
@@ -69,13 +70,24 @@ public class DeviceStatusTest extends AbstractE2ETest {
                 "ne-linux-server");
         pbStop.start().waitFor();
 
-        // Then: Wait for the application's inactivity check to mark this specific
-        // device as offline. The background job runs every 1 minute, so we wait up to 70 seconds.
+        // Directly trigger probe-update with an empty live-IPs set (simulating a sweep
+        // where 192.168.100.10 did NOT respond). With threshold=1, one such call is enough
+        // to transition the device to OFFLINE.
+        // We call it twice for robustness in case there is a transactional race on first call.
+        for (int attempt = 0; attempt < 2; attempt++) {
+            given()
+                .contentType("application/json")
+                .body("[]")
+                .when().post("/api/devices/probe-update")
+                .then().statusCode(202);
+            Thread.sleep(500);
+        }
+
+        // Then: Verify that the device is now OFFLINE (no scheduler wait needed).
         boolean isOffline = false;
-        for (int i = 0; i < 350; i++) { // Up to 70 seconds
+        for (int i = 0; i < 50; i++) { // Up to 10 seconds for DB to propagate
             io.restassured.response.Response res = given().when().get("/api/devices");
             if (res.statusCode() == 200) {
-                // We should also assert that there are devices in the list (num of devices)
                 assertTrue(res.jsonPath().getList(".").size() >= 1, "There should be at least 1 device in the system");
 
                 boolean match = res.jsonPath().getList(".").stream().anyMatch(device -> {
@@ -98,6 +110,6 @@ public class DeviceStatusTest extends AbstractE2ETest {
             }
             Thread.sleep(200);
         }
-        assertTrue(isOffline, "Linux server (192.168.100.10) should be marked as OFFLINE");
+        assertTrue(isOffline, "Linux server (192.168.100.10) should be marked OFFLINE after missed probe cycle");
     }
 }

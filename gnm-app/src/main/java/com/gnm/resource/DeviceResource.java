@@ -20,6 +20,7 @@ import com.gnm.model.FingerprintCorrelationEvent;
 import com.gnm.model.enums.DeviceStatus;
 import com.gnm.model.enums.DeviceType;
 import com.gnm.discovery.NetworkSightingQueue;
+import com.gnm.fingerprint.FingerprintEngine;
 import jakarta.inject.Inject;
 import java.net.InetAddress;
 import java.time.Instant;
@@ -32,6 +33,9 @@ public class DeviceResource {
 
     @Inject
     NetworkSightingQueue sightingQueue;
+
+    @Inject
+    FingerprintEngine fingerprintEngine;
 
     @GET
     @Transactional
@@ -75,6 +79,24 @@ public class DeviceResource {
             if (device.services != null) device.services.size();
             if (device.labels != null) device.labels.size();
         }
+    }
+
+    /**
+     * Test/admin endpoint: directly triggers updateProbeCounters with a provided set of live IPs.
+     * Devices whose current IP is NOT in liveIps will have their consecutiveMissedProbes incremented.
+     * This allows E2E tests to verify offline detection without waiting for the ICMP scheduler cycle.
+     *
+     * Body: JSON array of IP address strings that responded in the probe cycle.
+     * Example: [] means all online devices are considered to have missed the cycle.
+     */
+    @POST
+    @Path("/probe-update")
+    public Response triggerProbeUpdate(java.util.List<String> liveIpList) {
+        java.util.Set<String> liveIps = liveIpList != null
+            ? new java.util.HashSet<>(liveIpList)
+            : java.util.Collections.emptySet();
+        fingerprintEngine.updateProbeCounters(liveIps);
+        return Response.accepted(Map.of("message", "Probe counters updated", "liveIpCount", liveIps.size())).build();
     }
 
     @GET

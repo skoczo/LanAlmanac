@@ -62,6 +62,14 @@ public class PhysicalDevice extends PanacheEntityBase {
     @Column(name = "management_state", nullable = false)
     public ManagementState managementState = ManagementState.DISCOVERED;
 
+    /**
+     * Counts how many consecutive ICMP sweep cycles this device was NOT seen.
+     * When this reaches the configured threshold, the device is marked OFFLINE.
+     * Reset to 0 on any successful sighting.
+     */
+    @Column(name = "consecutive_missed_probes", nullable = false)
+    public int consecutiveMissedProbes = 0;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "physical_device_labels", joinColumns = @JoinColumn(name = "physical_device_id"))
     @Column(name = "label")

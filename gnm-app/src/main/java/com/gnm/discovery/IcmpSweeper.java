@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 
 import com.gnm.model.NetworkSighting;
 
@@ -21,29 +22,34 @@ public class IcmpSweeper {
 
     private static final Logger LOG = Logger.getLogger(IcmpSweeper.class);
 
+    // Limit concurrent ping processes to prevent process/thread explosion and OOM
+    private static final Semaphore PING_SEMAPHORE = new Semaphore(50);
+
     @Inject
     NetworkSightingQueue sightingQueue;
 
     @ConfigProperty(name = "gnm.subnet", defaultValue = "192.168.1.0/24")
     String subnetConfig;
 
-    public void sweep() {
+    public java.util.Set<String> sweep() {
         String[] subnets = subnetConfig.split(",");
+        java.util.Set<String> allLiveIps = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
         // Fan out all subnets in parallel virtual threads so a slow sweep of one subnet
         // does not block the others from being refreshed within the same scheduler tick.
         try (java.util.concurrent.ExecutorService subnetExecutor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
-            java.util.List<java.util.concurrent.Future<?>> subnetFutures = new java.util.ArrayList<>();
+            java.util.List<java.util.concurrent.Future<java.util.Set<String>>> subnetFutures = new java.util.ArrayList<>();
             for (String subnet : subnets) {
                 String trimmed = subnet.trim();
                 subnetFutures.add(subnetExecutor.submit(() -> sweepSubnet(trimmed)));
             }
-            for (java.util.concurrent.Future<?> f : subnetFutures) {
-                try { f.get(); } catch (Exception ignored) {}
+            for (java.util.concurrent.Future<java.util.Set<String>> f : subnetFutures) {
+                try { allLiveIps.addAll(f.get()); } catch (Exception ignored) {}
             }
         }
+        return allLiveIps;
     }
 
-    private void sweepSubnet(String subnet) {
+    private java.util.Set<String> sweepSubnet(String subnet) {
         LOG.info("Starting active ICMP sweep on subnet: " + subnet);
         
         String[] parts = subnet.split("/");
@@ -52,7 +58,7 @@ public class IcmpSweeper {
 
         if (prefix != 24) {
             LOG.warn("ICMP Sweeper currently only supports /24 subnets. Skipping scan.");
-            return;
+            return java.util.Collections.emptySet();
         }
 
         String base = baseIp.substring(0, baseIp.lastIndexOf('.') + 1);
@@ -62,12 +68,13 @@ public class IcmpSweeper {
         }
 
         long startTime = System.currentTimeMillis();
+        java.util.Set<String> liveIps = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
 
         // Spawn parallel virtual threads to probe each IP
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Future<Void>> futures = targetIps.stream()
                 .map(ip -> executor.submit(() -> {
-                    probeIp(ip);
+                    probeIp(ip, liveIps);
                     return (Void) null;
                 }))
                 .toList();
@@ -82,12 +89,14 @@ public class IcmpSweeper {
         }
 
         LOG.info("Active ICMP sweep completed in " + (System.currentTimeMillis() - startTime) + " ms.");
+        return liveIps;
     }
 
-    private void probeIp(String ip) {
+    private void probeIp(String ip, java.util.Set<String> liveIps) {
         try {
             if (isReachable(ip)) {
                 LOG.debug("Host responsive to hybrid probe: " + ip);
+                liveIps.add(ip);
                 
                 // Create a raw network sighting
                 NetworkSighting sighting = new NetworkSighting();
@@ -108,7 +117,11 @@ public class IcmpSweeper {
         // 1. Try system ping command (works for non-root on Linux due to SUID)
         Process p = null;
         try {
-            p = new ProcessBuilder("ping", "-c", "1", "-W", "1", ip).start();
+            PING_SEMAPHORE.acquire();
+            p = new ProcessBuilder("ping", "-c", "1", "-W", "1", ip)
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
             boolean completed = p.waitFor(1200, java.util.concurrent.TimeUnit.MILLISECONDS);
             if (completed) {
                 if (p.exitValue() == 0) {
@@ -121,6 +134,8 @@ public class IcmpSweeper {
             if (p != null && p.isAlive()) {
                 p.destroyForcibly();
             }
+        } finally {
+            PING_SEMAPHORE.release();
         }
 
         // 2. Try port sweep (22, 80, 443, 137, 445).
