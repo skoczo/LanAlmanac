@@ -72,12 +72,14 @@ public class RemoteAccessTest extends AbstractE2ETest {
     }
 
     @BeforeEach
-    @Transactional
     public void clearDatabase() {
-        com.gnm.model.Credential.deleteAll();
-        com.gnm.model.NetworkService.deleteAll();
-        com.gnm.model.NetworkIdentity.deleteAll();
-        com.gnm.model.PhysicalDevice.deleteAll();
+        fingerprintEngine.flushAndClear();
+        io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
+            com.gnm.model.Credential.deleteAll();
+            com.gnm.model.NetworkService.deleteAll();
+            com.gnm.model.NetworkIdentity.deleteAll();
+            com.gnm.model.PhysicalDevice.deleteAll();
+        });
     }
 
     @Test

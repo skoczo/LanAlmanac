@@ -75,6 +75,11 @@ public class DeviceStatusTest extends AbstractE2ETest {
         // to transition the device to OFFLINE.
         // We call it twice for robustness in case there is a transactional race on first call.
         for (int attempt = 0; attempt < 2; attempt++) {
+            // Push the lastSeen timestamp backwards so it doesn't trigger the "seen passively" safeguard
+            io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
+                com.gnm.model.PhysicalDevice.update("lastSeen = ?1", java.time.Instant.now().minusSeconds(300));
+            });
+            
             given()
                 .contentType("application/json")
                 .body("[]")
