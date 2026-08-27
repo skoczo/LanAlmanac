@@ -48,6 +48,14 @@ public class FingerprintEngine {
     @Inject
     SimilarityEngine similarityEngine;
 
+    public int getActiveScanPermitsAvailable() {
+        return activeScanConcurrency.availablePermits();
+    }
+
+    public int getProcessingPermitsAvailable() {
+        return processingConcurrency.availablePermits();
+    }
+
     @Inject
     Event<DeviceEvent> eventBroadcaster;
 
@@ -369,7 +377,7 @@ public class FingerprintEngine {
         }
 
         // 3b. Match against existing devices using Similarity Engine
-        List<FingerprintVector> allFingerprints = FingerprintVector.listAll();
+        List<FingerprintVector> allFingerprints = FingerprintVector.list("select distinct f from FingerprintVector f left join fetch f.physicalDevice d left join fetch d.identities");
         PhysicalDevice bestMatch = null;
         double bestScore = 0.0;
         List<String> bestDetails = new ArrayList<>();
