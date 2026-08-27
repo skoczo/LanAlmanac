@@ -1441,12 +1441,19 @@ public class FingerprintEngine {
             .findFirst()
             .orElse(null);
 
+        int effectiveThreshold = threshold;
+        int passiveWindowSeconds = 180;
+
+        if (device.deviceType == com.gnm.model.enums.DeviceType.PHONE) {
+            effectiveThreshold = Math.max(threshold, 10); // 10 missed cycles (10 minutes) for mobile devices in power-save mode
+            passiveWindowSeconds = 600; // 10 minutes passive window
+        }
+
         boolean seenInThisCycle = currentIp != null && liveIps.contains(currentIp);
 
         if (!seenInThisCycle && device.lastSeen != null) {
             // Check if we have seen this device recently (e.g. passively via ARP or UDP broadcasts)
-            // within the last 3 minutes (180 seconds). If so, do not mark it offline.
-            if (device.lastSeen.isAfter(Instant.now().minusSeconds(180))) {
+            if (device.lastSeen.isAfter(Instant.now().minusSeconds(passiveWindowSeconds))) {
                 seenInThisCycle = true;
                 LOG.debugf("Device %s missed active probe but was seen passively recently at %s.", device.displayName, device.lastSeen);
             }
@@ -1462,9 +1469,9 @@ public class FingerprintEngine {
             // Device did NOT respond in this sweep cycle
             device.consecutiveMissedProbes++;
             LOG.debugf("Device %s (IP: %s) missed probe cycle. consecutiveMissedProbes=%d (threshold=%d)",
-                device.displayName, currentIp, device.consecutiveMissedProbes, threshold);
+                device.displayName, currentIp, device.consecutiveMissedProbes, effectiveThreshold);
 
-            if (device.consecutiveMissedProbes >= threshold) {
+            if (device.consecutiveMissedProbes >= effectiveThreshold) {
                 device.status = DeviceStatus.OFFLINE;
                 device.persist();
                 String ip = currentIp != null ? currentIp : "0.0.0.0";
