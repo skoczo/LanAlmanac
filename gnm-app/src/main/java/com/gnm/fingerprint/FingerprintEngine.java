@@ -106,16 +106,32 @@ public class FingerprintEngine {
                 
                 String debounceKey = sighting.ipAddress + "|" + sighting.macAddress;
                 java.time.Instant lastDbUpdate = lastDbUpdateTimes.get(debounceKey);
-                boolean hasRawMetadata = sighting.rawMetadata != null && !sighting.rawMetadata.equals("{}") && !sighting.rawMetadata.isEmpty() && !sighting.rawMetadata.equals("{\"protocol\":\"arp\"}");
+                // ARP scanner emits rawMetadata like {"flags":"0x2","iface":"eth0"} — no real fingerprint data.
+                // Treat these as metadata-free so they fall under the 10-second debounce window.
+                boolean isArpScanOnly = sighting.rawMetadata != null
+                    && sighting.rawMetadata.contains("\"flags\":")
+                    && !sighting.rawMetadata.contains("\"host\"")
+                    && !sighting.rawMetadata.contains("\"dhcp\"")
+                    && !sighting.rawMetadata.contains("\"mdns\"");
+                boolean hasRawMetadata = !isArpScanOnly && sighting.rawMetadata != null
+                    && !sighting.rawMetadata.equals("{}")
+                    && !sighting.rawMetadata.isEmpty()
+                    && !sighting.rawMetadata.equals("{\"protocol\":\"arp\"}");
                 boolean isIcmpSweep = "ICMP_SWEEP".equals(sighting.source);
                 boolean isManual = "MANUAL_DISCOVERY".equals(sighting.source);
                 
                 if (!hasRawMetadata && !isIcmpSweep && !isManual && lastDbUpdate != null && java.time.Instant.now().isBefore(lastDbUpdate.plusSeconds(10))) {
                     continue; // Skip processing completely to protect DB and CPU
                 }
+
+                // Non-blocking: if all worker slots are busy, skip this sighting to prevent thread accumulation.
+                // The sighting will be re-discovered in the next scan cycle (every 30-60s).
+                if (!processingConcurrency.tryAcquire()) {
+                    LOG.debugf("Processing concurrency limit reached, dropping sighting for %s to protect CPU", sighting.ipAddress);
+                    continue;
+                }
                 lastDbUpdateTimes.put(debounceKey, java.time.Instant.now());
 
-                processingConcurrency.acquire();
                 activeProcessingCount.incrementAndGet();
                 Thread.startVirtualThread(() -> {
                     try {
@@ -164,20 +180,12 @@ public class FingerprintEngine {
             LOG.debug("Ignoring sighting with invalid or non-routable IP address: " + (sighting != null ? sighting.ipAddress : "null"));
             if (sighting != null && sighting.macAddress != null && !"00:00:00:00:00:00".equals(sighting.macAddress) && !sighting.macAddress.isEmpty()) {
                 FingerprintVector candidate = parseMetadata(sighting);
+                // Permit is already held by the caller (runProcessingLoop). No nested acquire needed.
+                dbLock.lock();
                 try {
-                    processingConcurrency.acquire();
-                    try {
-                        dbLock.lock();
-                        try {
-                            self.mergeMetadataByMacInTransaction(sighting.macAddress, candidate);
-                        } finally {
-                            dbLock.unlock();
-                        }
-                    } finally {
-                        processingConcurrency.release();
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+                    self.mergeMetadataByMacInTransaction(sighting.macAddress, candidate);
+                } finally {
+                    dbLock.unlock();
                 }
             }
             return;
