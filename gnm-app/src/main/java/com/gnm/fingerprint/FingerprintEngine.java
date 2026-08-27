@@ -115,6 +115,7 @@ public class FingerprintEngine {
                 }
                 lastDbUpdateTimes.put(debounceKey, java.time.Instant.now());
 
+                processingConcurrency.acquire();
                 activeProcessingCount.incrementAndGet();
                 Thread.startVirtualThread(() -> {
                     try {
@@ -125,6 +126,7 @@ public class FingerprintEngine {
                         }
                     } finally {
                         activeProcessingCount.decrementAndGet();
+                        processingConcurrency.release();
                     }
                 });
             } catch (InterruptedException e) {
@@ -247,20 +249,11 @@ public class FingerprintEngine {
 
         candidate.hostname = hostname;
 
+        dbLock.lock();
         try {
-            processingConcurrency.acquire();
-            try {
-                dbLock.lock();
-                try {
-                    self.saveSightingInTransaction(sighting, candidate, hostname);
-                } finally {
-                    dbLock.unlock();
-                }
-            } finally {
-                processingConcurrency.release();
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            self.saveSightingInTransaction(sighting, candidate, hostname);
+        } finally {
+            dbLock.unlock();
         }
     }
 
