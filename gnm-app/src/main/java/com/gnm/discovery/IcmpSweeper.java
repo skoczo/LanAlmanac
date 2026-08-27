@@ -5,14 +5,13 @@ import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
-import java.io.IOException;
-import java.net.InetAddress;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import com.gnm.model.NetworkSighting;
 
@@ -20,6 +19,14 @@ import com.gnm.model.NetworkSighting;
 public class IcmpSweeper {
 
     private static final Logger LOG = Logger.getLogger(IcmpSweeper.class);
+
+    // Hard deadline for a full /24 sweep — hosts that don't answer within this window are considered offline
+    private static final int SWEEP_TIMEOUT_SECONDS = 15;
+
+    // Per-host timeouts — kept short so a single dead host doesn't drag the sweep
+    private static final int PING_TIMEOUT_MS  = 500;
+    private static final int PORT_TIMEOUT_MS  =  50;
+    private static final int[] PROBE_PORTS    = { 22, 80, 443, 445 };
 
     @Inject
     NetworkSightingQueue sightingQueue;
@@ -30,16 +37,18 @@ public class IcmpSweeper {
     public java.util.Set<String> sweep() {
         String[] subnets = subnetConfig.split(",");
         java.util.Set<String> allLiveIps = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
-        // Fan out all subnets in parallel virtual threads so a slow sweep of one subnet
-        // does not block the others from being refreshed within the same scheduler tick.
-        try (java.util.concurrent.ExecutorService subnetExecutor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
-            java.util.List<java.util.concurrent.Future<java.util.Set<String>>> subnetFutures = new java.util.ArrayList<>();
+
+        // Fan out all subnets in parallel so a slow subnet doesn't block the others.
+        try (ExecutorService subnetExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<CompletableFuture<java.util.Set<String>>> subnetFutures = new ArrayList<>();
             for (String subnet : subnets) {
                 String trimmed = subnet.trim();
-                subnetFutures.add(subnetExecutor.submit(() -> sweepSubnet(trimmed)));
+                subnetFutures.add(CompletableFuture.supplyAsync(() -> sweepSubnet(trimmed), subnetExecutor));
             }
-            for (java.util.concurrent.Future<java.util.Set<String>> f : subnetFutures) {
-                try { allLiveIps.addAll(f.get()); } catch (Exception ignored) {}
+            for (CompletableFuture<java.util.Set<String>> f : subnetFutures) {
+                try {
+                    allLiveIps.addAll(f.get(SWEEP_TIMEOUT_SECONDS + 5, TimeUnit.SECONDS));
+                } catch (Exception ignored) {}
             }
         }
         return allLiveIps;
@@ -47,7 +56,7 @@ public class IcmpSweeper {
 
     private java.util.Set<String> sweepSubnet(String subnet) {
         LOG.info("Starting active ICMP sweep on subnet: " + subnet);
-        
+
         String[] parts = subnet.split("/");
         String baseIp = parts[0];
         int prefix = parts.length > 1 ? Integer.parseInt(parts[1]) : 24;
@@ -58,30 +67,28 @@ public class IcmpSweeper {
         }
 
         String base = baseIp.substring(0, baseIp.lastIndexOf('.') + 1);
-        List<String> targetIps = new ArrayList<>();
-        for (int i = 1; i <= 254; i++) {
-            targetIps.add(base + i);
-        }
 
         long startTime = System.currentTimeMillis();
         java.util.Set<String> liveIps = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
 
-        // Spawn parallel threads to probe each IP (limited to 50 concurrent)
-        try (ExecutorService executor = Executors.newFixedThreadPool(50)) {
-            List<Future<Void>> futures = targetIps.stream()
-                .map(ip -> executor.submit(() -> {
-                    probeIp(ip, liveIps);
-                    return (Void) null;
-                }))
-                .toList();
-
-            for (Future<Void> future : futures) {
-                try {
-                    future.get();
-                } catch (Exception e) {
-                    // Ignore individual task exceptions to let other pings finish
-                }
+        // Use virtual threads — one per IP. The OS scheduler parks them cheaply while waiting for I/O.
+        // A hard timeout of SWEEP_TIMEOUT_SECONDS ensures the sweep always completes promptly.
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<CompletableFuture<Void>> futures = new ArrayList<>(254);
+            for (int i = 1; i <= 254; i++) {
+                final String ip = base + i;
+                futures.add(CompletableFuture.runAsync(() -> probeIp(ip, liveIps), executor));
             }
+
+            try {
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .get(SWEEP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException e) {
+                LOG.warnf("ICMP sweep for %s hit %ds hard deadline — %d hosts responded so far.",
+                    subnet, SWEEP_TIMEOUT_SECONDS, liveIps.size());
+                // Cancel remaining probes
+                futures.forEach(f -> f.cancel(true));
+            } catch (Exception ignored) {}
         }
 
         LOG.info("Active ICMP sweep completed in " + (System.currentTimeMillis() - startTime) + " ms.");
@@ -93,50 +100,43 @@ public class IcmpSweeper {
             if (isReachable(ip)) {
                 LOG.debug("Host responsive to hybrid probe: " + ip);
                 liveIps.add(ip);
-                
-                // Create a raw network sighting
+
                 NetworkSighting sighting = new NetworkSighting();
                 sighting.ipAddress = ip;
                 sighting.macAddress = "00:00:00:00:00:00"; // MAC will be filled by ARP scan
                 sighting.source = "ICMP_SWEEP";
                 sighting.observedAt = Instant.now();
                 sighting.rawMetadata = "{}";
-                
+
                 sightingQueue.offer(sighting);
             }
         } catch (Exception e) {
-            // Skip
+            // Skip unreachable hosts silently
         }
     }
 
     private boolean isReachable(String ip) {
-        // 1. Try system ping command
+        // 1. Try system ping (-W in seconds on Linux, so 1 is the minimum; use -W 1)
         Process p = null;
         try {
             p = new ProcessBuilder("ping", "-c", "1", "-W", "1", ip)
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start();
-            boolean completed = p.waitFor(1200, java.util.concurrent.TimeUnit.MILLISECONDS);
-            if (completed) {
-                if (p.exitValue() == 0) {
-                    return true;
-                }
-            } else {
+            boolean completed = p.waitFor(PING_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            if (completed && p.exitValue() == 0) {
+                return true;
+            } else if (!completed) {
                 p.destroyForcibly();
             }
         } catch (Exception e) {
-            if (p != null && p.isAlive()) {
-                p.destroyForcibly();
-            }
+            if (p != null && p.isAlive()) p.destroyForcibly();
         }
 
-        // 2. Try port sweep (22, 80, 443, 137, 445).
-        // Active "Connection Refused" means the host is alive and responded!
-        int[] ports = { 22, 80, 443, 137, 445 };
-        for (int port : ports) {
+        // 2. Try TCP port probe — "Connection refused" still means the host is alive.
+        for (int port : PROBE_PORTS) {
             try (java.net.Socket socket = new java.net.Socket()) {
-                socket.connect(new java.net.InetSocketAddress(ip, port), 100);
+                socket.connect(new java.net.InetSocketAddress(ip, port), PORT_TIMEOUT_MS);
                 return true;
             } catch (java.io.IOException e) {
                 if (e.getMessage() != null && e.getMessage().toLowerCase().contains("refused")) {
