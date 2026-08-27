@@ -54,6 +54,17 @@ public class DiscoveryScheduler {
         }
         LOG.debug("Scheduled trigger: running active ICMP sweep...");
         java.util.Set<String> liveIps = icmpSweeper.sweep();
+
+        // Also merge active system ARP cache IPs so Doze mode / non-ICMP hosts are counted as live
+        try {
+            java.util.Set<String> arpIps = arpScanner.scan();
+            if (arpIps != null) {
+                liveIps.addAll(arpIps);
+            }
+        } catch (Exception e) {
+            LOG.warn("Failed to collect ARP live IPs for probe update", e);
+        }
+
         // After sweep, update probe counters so FingerprintEngine can decide which
         // devices missed this cycle and potentially transition them to OFFLINE.
         fingerprintEngine.updateProbeCounters(liveIps);

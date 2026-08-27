@@ -23,9 +23,12 @@ public class IcmpSweeper {
     // Hard deadline for a full /24 sweep — hosts that don't answer within this window are considered offline
     private static final int SWEEP_TIMEOUT_SECONDS = 15;
 
-    // Per-host timeouts — kept short so a single dead host doesn't drag the sweep
-    private static final int PING_TIMEOUT_MS  = 500;
-    private static final int PORT_TIMEOUT_MS  =  50;
+    // Per-host timeouts — balance detection reliability vs sweep speed
+    // 1500ms ping: covers high-latency IoT/WiFi devices (e.g. 650ms RTT on congested WiFi)
+    // Safe because virtual threads + 15s hard deadline guarantee the sweep always finishes
+    private static final int PING_TIMEOUT_MS  = 1500;
+    private static final int PORT_TIMEOUT_MS  =   80;
+    private static final int ARP_TIMEOUT_MS   =  800;  // arping covers Android Doze Mode devices
     private static final int[] PROBE_PORTS    = { 22, 80, 443, 445 };
 
     @Inject
@@ -116,7 +119,7 @@ public class IcmpSweeper {
     }
 
     private boolean isReachable(String ip) {
-        // 1. Try system ping (-W in seconds on Linux, so 1 is the minimum; use -W 1)
+        // 1. Try system ping (-W 1 is the minimum on Linux; waitFor enforces our tighter timeout)
         Process p = null;
         try {
             p = new ProcessBuilder("ping", "-c", "1", "-W", "1", ip)
@@ -144,6 +147,38 @@ public class IcmpSweeper {
                 }
             }
         }
+
+        // 3. ARP who-has probe — works for devices in Android Doze Mode / iOS sleep that
+        //    block ICMP and incoming TCP but still respond to ARP at the L2 level.
+        //    arping -C 1 sends exactly one ARP request and exits 0 if answered.
+        Process arp = null;
+        try {
+            arp = new ProcessBuilder("arping", "-c", "1", "-w", "1", "-I", getNetworkInterface(), ip)
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
+            boolean completed = arp.waitFor(ARP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            if (completed && arp.exitValue() == 0) {
+                return true;
+            } else if (!completed) {
+                arp.destroyForcibly();
+            }
+        } catch (Exception e) {
+            if (arp != null && arp.isAlive()) arp.destroyForcibly();
+            // arping may not be installed; fall through silently
+        }
+
         return false;
+    }
+
+    private String getNetworkInterface() {
+        // Read the same setting the rest of the app uses
+        try {
+            com.gnm.model.GlobalSetting setting = com.gnm.model.GlobalSetting.findById("gnm.listen.interface");
+            if (setting != null && setting.value != null && !setting.value.isBlank()) {
+                return setting.value.trim();
+            }
+        } catch (Exception ignored) {}
+        return "eth0";
     }
 }

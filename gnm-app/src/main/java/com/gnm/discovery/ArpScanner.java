@@ -9,7 +9,10 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import com.gnm.model.NetworkSighting;
 import com.gnm.model.GlobalSetting;
@@ -25,22 +28,19 @@ public class ArpScanner {
     @ConfigProperty(name = "gnm.listen.interface", defaultValue = "eth0")
     String networkInterfaceProp;
 
-    public void scan() {
+    public Set<String> scan() {
         String networkInterface = getListenInterface();
         LOG.info("Starting active ARP scan on interface: " + networkInterface);
 
         try {
-            // Attempt active pcap4j ARP scan (requires libpcap & root/capabilities)
-            runPcapArpScan();
+            return runPcapArpScan();
         } catch (Throwable e) {
             LOG.info("Raw socket ARP scan: " + e.getMessage() + ". Using system ARP cache fallback.");
-            runArpCacheFallback();
+            return runArpCacheFallback();
         }
     }
 
-    private void runPcapArpScan() throws Exception {
-        // In devcontainer/user environments, this JNI step may throw unsuffered privileges / libpcap missing.
-        // We throw to trigger the robust proc/net/arp parser fallback.
+    private Set<String> runPcapArpScan() throws Exception {
         throw new UnsupportedOperationException("Pcap native JNI capabilities restricted in this runtime context.");
     }
 
@@ -52,12 +52,14 @@ public class ArpScanner {
         return networkInterfaceProp;
     }
 
-    private void runArpCacheFallback() {
+    private Set<String> runArpCacheFallback() {
         File arpFile = new File("/proc/net/arp");
         if (!arpFile.exists() || !arpFile.canRead()) {
             LOG.error("Cannot read /proc/net/arp. System ARP table fallback unavailable.");
-            return;
+            return Collections.emptySet();
         }
+
+        Set<String> liveIps = new HashSet<>();
 
         try {
             List<String> lines = Files.readAllLines(arpFile.toPath());
@@ -70,16 +72,17 @@ public class ArpScanner {
                     String ip = parts[0];
                     String flags = parts[2];
                     String mac = parts[3];
-                    
+
                     // Filter out header placeholders and invalid/incomplete entries (0x0 flags)
                     if (!"00:00:00:00:00:00".equals(mac) && !"0x0".equals(flags) && mac.contains(":")) {
+                        liveIps.add(ip);
                         NetworkSighting sighting = new NetworkSighting();
                         sighting.ipAddress = ip;
                         sighting.macAddress = mac.toUpperCase();
                         sighting.source = "ARP_CACHE_FALLBACK";
                         sighting.observedAt = Instant.now();
                         sighting.rawMetadata = "{\"flags\":\"" + flags + "\"}";
-                        
+
                         sightingQueue.offer(sighting);
                         count++;
                     }
@@ -89,5 +92,6 @@ public class ArpScanner {
         } catch (IOException e) {
             LOG.error("Failed to read system ARP cache", e);
         }
+        return liveIps;
     }
 }
