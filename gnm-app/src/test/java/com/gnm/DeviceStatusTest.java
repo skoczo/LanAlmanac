@@ -65,9 +65,8 @@ public class DeviceStatusTest extends AbstractE2ETest {
             .when().put("/api/settings/DEVICE_OFFLINE_MISSED_PROBES_THRESHOLD")
             .then().statusCode(200);
 
-        // When: We stop the ne-linux-server container
-        ProcessBuilder pbStop = new ProcessBuilder("docker", "compose", "-f", "../docker-compose.e2e.yml", "stop",
-                "ne-linux-server");
+        // When: We stop the ne-linux-server container (handling Testcontainers' dynamic project prefixes)
+        ProcessBuilder pbStop = new ProcessBuilder("bash", "-c", "docker stop -t 0 $(docker ps -q -f \"name=ne-linux-server\")");
         pbStop.start().waitFor();
 
         // Directly trigger probe-update with an empty live-IPs set (simulating a sweep

@@ -268,12 +268,12 @@ public class FingerprintEngine {
     @Transactional
     protected void saveSightingInTransaction(NetworkSighting sighting, FingerprintVector candidate, String resolvedHostname) {
         // 2. Look for existing identity
-        NetworkIdentity identity = NetworkIdentity.find("ipAddress = ?1 and macAddress = ?2", 
+        NetworkIdentity identity = NetworkIdentity.find("select n from NetworkIdentity n join fetch n.physicalDevice where n.ipAddress = ?1 and n.macAddress = ?2", 
                 sighting.ipAddress, sighting.macAddress).firstResult();
 
         if (identity == null) {
             // Check if there is an active identity on this IP first
-            NetworkIdentity activeIdOnIp = NetworkIdentity.find("ipAddress = ?1 and current = true", sighting.ipAddress).firstResult();
+            NetworkIdentity activeIdOnIp = NetworkIdentity.find("select n from NetworkIdentity n join fetch n.physicalDevice where n.ipAddress = ?1 and n.current = true", sighting.ipAddress).firstResult();
             if (activeIdOnIp != null) {
                 boolean sightingIsPlaceholder = sighting.macAddress == null || sighting.macAddress.equals("00:00:00:00:00:00") || sighting.macAddress.isEmpty();
                 boolean activeIsPlaceholder = activeIdOnIp.macAddress == null || activeIdOnIp.macAddress.equals("00:00:00:00:00:00") || activeIdOnIp.macAddress.isEmpty();
@@ -638,15 +638,16 @@ public class FingerprintEngine {
     }
 
     private void enforceIpUniqueness(String ipAddress, java.util.UUID exemptDeviceId) {
-        NetworkIdentity.flush(); // Ensure pending updates (like setting current = true) are visible to count
-        List<NetworkIdentity> activeIdentitiesOnIp = NetworkIdentity.list("ipAddress = ?1 and current = true", ipAddress);
+        List<NetworkIdentity> activeIdentitiesOnIp = NetworkIdentity.find("select n from NetworkIdentity n join fetch n.physicalDevice where n.ipAddress = ?1 and n.current = true", ipAddress).list();
         for (NetworkIdentity oldId : activeIdentitiesOnIp) {
             if (exemptDeviceId != null && exemptDeviceId.equals(oldId.physicalDevice.id)) {
                 continue;
             }
             oldId.current = false;
             oldId.persist();
-            NetworkIdentity.flush(); // Flush the current=false change so count works
+            
+            // Panache will auto-flush before the count query if necessary
+
             long activeCount = NetworkIdentity.count("physicalDevice.id = ?1 and current = true", oldId.physicalDevice.id);
             if (activeCount == 0) {
                 oldId.physicalDevice.status = DeviceStatus.OFFLINE;
@@ -1474,27 +1475,42 @@ public class FingerprintEngine {
                 device.persist();
             }
         } else {
-            // Device did NOT respond in this sweep cycle
-            device.consecutiveMissedProbes++;
-            LOG.debugf("Device %s (IP: %s) missed probe cycle. consecutiveMissedProbes=%d (threshold=%d)",
-                device.displayName, currentIp, device.consecutiveMissedProbes, effectiveThreshold);
-
-            if (device.consecutiveMissedProbes >= effectiveThreshold) {
-                device.status = DeviceStatus.OFFLINE;
-                device.persist();
-                String ip = currentIp != null ? currentIp : "0.0.0.0";
-                eventBroadcaster.fireAsync(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "OFFLINE", ip));
-                LOG.infof("Marked device %s as OFFLINE after %d consecutive missed ICMP probe cycles.",
-                    device.displayName, device.consecutiveMissedProbes);
+            // Double-check liveness before penalizing, in case it was missed by the sweep
+            boolean fallbackReachable = false;
+            if (currentIp != null) {
+                try {
+                    fallbackReachable = java.net.InetAddress.getByName(currentIp).isReachable(1500);
+                } catch (Exception ignored) {}
+            }
+            if (fallbackReachable) {
+                LOG.debugf("Device %s (IP: %s) missed primary sweep but responded to fallback ping. Resetting counter.", device.displayName, currentIp);
+                if (device.consecutiveMissedProbes > 0) {
+                    device.consecutiveMissedProbes = 0;
+                    device.persist();
+                }
             } else {
-                device.persist();
+                // Device did NOT respond in this sweep cycle and fallback failed
+                device.consecutiveMissedProbes++;
+                LOG.debugf("Device %s (IP: %s) missed probe cycle. consecutiveMissedProbes=%d (threshold=%d)",
+                    device.displayName, currentIp, device.consecutiveMissedProbes, effectiveThreshold);
+
+                if (device.consecutiveMissedProbes >= effectiveThreshold) {
+                    device.status = DeviceStatus.OFFLINE;
+                    device.persist();
+                    String ip = currentIp != null ? currentIp : "0.0.0.0";
+                    eventBroadcaster.fireAsync(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "OFFLINE", ip));
+                    LOG.infof("Marked device %s as OFFLINE after %d consecutive missed ICMP probe cycles.",
+                        device.displayName, device.consecutiveMissedProbes);
+                } else {
+                    device.persist();
+                }
             }
         }
     }
 
     @Transactional
     public void mergeMetadataByMacInTransaction(String macAddress, FingerprintVector candidate) {
-        NetworkIdentity identity = NetworkIdentity.find("macAddress = ?1 and current = true", macAddress).firstResult();
+        NetworkIdentity identity = NetworkIdentity.find("select n from NetworkIdentity n join fetch n.physicalDevice where n.macAddress = ?1 and n.current = true", macAddress).firstResult();
         if (identity != null && identity.physicalDevice != null) {
             FingerprintVector historical = FingerprintVector.find("physicalDevice.id = ?1", identity.physicalDevice.id).firstResult();
             if (historical != null) {
