@@ -41,6 +41,8 @@ public class FingerprintEngine {
     NetworkSightingQueue sightingQueue;
 
     private final java.util.concurrent.atomic.AtomicInteger activeProcessingCount = new java.util.concurrent.atomic.AtomicInteger(0);
+    private final java.util.concurrent.Semaphore processingConcurrency = new java.util.concurrent.Semaphore(20);
+    private final java.util.Map<String, java.time.Instant> lastDbUpdateTimes = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Inject
     SimilarityEngine similarityEngine;
@@ -92,6 +94,19 @@ public class FingerprintEngine {
         while (running) {
             try {
                 NetworkSighting sighting = sightingQueue.take();
+                
+                String debounceKey = sighting.ipAddress + "|" + sighting.macAddress;
+                java.time.Instant lastDbUpdate = lastDbUpdateTimes.get(debounceKey);
+                boolean hasRawMetadata = sighting.rawMetadata != null && !sighting.rawMetadata.equals("{}") && !sighting.rawMetadata.isEmpty() && !sighting.rawMetadata.equals("{\"protocol\":\"arp\"}");
+                boolean isIcmpSweep = "ICMP_SWEEP".equals(sighting.source);
+                boolean isManual = "MANUAL_DISCOVERY".equals(sighting.source);
+                
+                if (!hasRawMetadata && !isIcmpSweep && !isManual && lastDbUpdate != null && java.time.Instant.now().isBefore(lastDbUpdate.plusSeconds(10))) {
+                    continue; // Skip processing completely to protect DB and CPU
+                }
+                lastDbUpdateTimes.put(debounceKey, java.time.Instant.now());
+
+                processingConcurrency.acquire();
                 activeProcessingCount.incrementAndGet();
                 Thread.startVirtualThread(() -> {
                     try {
@@ -102,6 +117,7 @@ public class FingerprintEngine {
                         }
                     } finally {
                         activeProcessingCount.decrementAndGet();
+                        processingConcurrency.release();
                     }
                 });
             } catch (InterruptedException e) {
@@ -117,6 +133,7 @@ public class FingerprintEngine {
 
     public void flushAndClear() {
         sightingQueue.clear();
+        lastDbUpdateTimes.clear();
         while (activeProcessingCount.get() > 0) {
             try {
                 Thread.sleep(10);
@@ -316,7 +333,7 @@ public class FingerprintEngine {
             identity.persist();
 
             if (statusChanged) {
-                eventBroadcaster.fire(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "ONLINE", sighting.ipAddress));
+                eventBroadcaster.fireAsync(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "ONLINE", sighting.ipAddress));
             }
             return;
         }
