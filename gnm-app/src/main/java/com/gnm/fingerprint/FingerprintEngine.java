@@ -42,6 +42,7 @@ public class FingerprintEngine {
 
     private final java.util.concurrent.atomic.AtomicInteger activeProcessingCount = new java.util.concurrent.atomic.AtomicInteger(0);
     private final java.util.concurrent.Semaphore processingConcurrency = new java.util.concurrent.Semaphore(20);
+    private final java.util.concurrent.Semaphore activeScanConcurrency = new java.util.concurrent.Semaphore(5);
     private final java.util.Map<String, java.time.Instant> lastDbUpdateTimes = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Inject
@@ -106,7 +107,6 @@ public class FingerprintEngine {
                 }
                 lastDbUpdateTimes.put(debounceKey, java.time.Instant.now());
 
-                processingConcurrency.acquire();
                 activeProcessingCount.incrementAndGet();
                 Thread.startVirtualThread(() -> {
                     try {
@@ -117,7 +117,6 @@ public class FingerprintEngine {
                         }
                     } finally {
                         activeProcessingCount.decrementAndGet();
-                        processingConcurrency.release();
                     }
                 });
             } catch (InterruptedException e) {
@@ -151,16 +150,24 @@ public class FingerprintEngine {
     }
 
     protected void processSighting(NetworkSighting sighting) {
-        // Validate IP address - reject non-routable / unassigned / invalid IPs from creating identities or physical devices
         if (sighting == null || sighting.ipAddress == null || "0.0.0.0".equals(sighting.ipAddress) || "255.255.255.255".equals(sighting.ipAddress) || sighting.ipAddress.startsWith("127.")) {
             LOG.debug("Ignoring sighting with invalid or non-routable IP address: " + (sighting != null ? sighting.ipAddress : "null"));
             if (sighting != null && sighting.macAddress != null && !"00:00:00:00:00:00".equals(sighting.macAddress) && !sighting.macAddress.isEmpty()) {
                 FingerprintVector candidate = parseMetadata(sighting);
-                dbLock.lock();
                 try {
-                    self.mergeMetadataByMacInTransaction(sighting.macAddress, candidate);
-                } finally {
-                    dbLock.unlock();
+                    processingConcurrency.acquire();
+                    try {
+                        dbLock.lock();
+                        try {
+                            self.mergeMetadataByMacInTransaction(sighting.macAddress, candidate);
+                        } finally {
+                            dbLock.unlock();
+                        }
+                    } finally {
+                        processingConcurrency.release();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 }
             }
             return;
@@ -173,38 +180,49 @@ public class FingerprintEngine {
         // This prevents infinite loops where our active scan triggers a packet response, which triggers another sighting, which triggers another scan...
         java.time.Instant lastScan = lastScanTimes.get(sighting.ipAddress);
         boolean isTest = io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST;
-        boolean shouldScan = isTest || lastScan == null || java.time.Instant.now().isAfter(lastScan.plusSeconds(300));
+        boolean forceScan = System.getProperty("forceNetworkScan") != null;
+        boolean isManual = "MANUAL_DISCOVERY".equals(sighting.source);
+        boolean shouldScan = isTest || forceScan || isManual || lastScan == null || java.time.Instant.now().isAfter(lastScan.plusSeconds(300));
 
         String hostname = null;
         if (shouldScan) {
-            lastScanTimes.put(sighting.ipAddress, java.time.Instant.now());
-            
-            // Scan open ports dynamically on virtual threads to enrich the fingerprint vector
-            List<Integer> openPorts = scanOpenPorts(sighting.ipAddress);
-            if (!openPorts.isEmpty()) {
-                candidate.openPorts = openPorts;
-                
-                // Actively fetch SSH host keys for any open port that is commonly SSH
-                for (Integer port : openPorts) {
-                    if (port == 22 || port == 2222 || port == 2223 || port == 2224) {
-                        String sshKey = fetchSshHostKey(sighting.ipAddress, port);
-                        if (sshKey != null && !sshKey.isEmpty()) {
-                            candidate.sshHostKeys.add(sshKey);
-                            LOG.info("Automatically fetched SSH Host Key on port " + port + ": " + sshKey);
+            try {
+                activeScanConcurrency.acquire();
+                try {
+                    lastScanTimes.put(sighting.ipAddress, java.time.Instant.now());
+                    
+                    // Scan open ports dynamically on virtual threads to enrich the fingerprint vector
+                    List<Integer> openPorts = scanOpenPorts(sighting.ipAddress);
+                    if (!openPorts.isEmpty()) {
+                        candidate.openPorts = openPorts;
+                        
+                        // Actively fetch SSH host keys for any open port that is commonly SSH
+                        for (Integer port : openPorts) {
+                            if (port == 22 || port == 2222 || port == 2223 || port == 2224) {
+                                String sshKey = fetchSshHostKey(sighting.ipAddress, port);
+                                if (sshKey != null && !sshKey.isEmpty()) {
+                                    candidate.sshHostKeys.add(sshKey);
+                                    LOG.info("Automatically fetched SSH Host Key on port " + port + ": " + sshKey);
+                                }
+                            }
                         }
                     }
-                }
-            }
-            
-            // Actively fetch UPnP SSDP USN for hardware-tied fingerprinting
-            String usn = fetchUpnpUsn(sighting.ipAddress);
-            if (usn != null && !usn.isEmpty()) {
-                candidate.ssdpUsn = usn;
-                LOG.info("Automatically fetched UPnP SSDP USN: " + usn);
-            }
+                    
+                    // Actively fetch UPnP SSDP USN for hardware-tied fingerprinting
+                    String usn = fetchUpnpUsn(sighting.ipAddress);
+                    if (usn != null && !usn.isEmpty()) {
+                        candidate.ssdpUsn = usn;
+                        LOG.info("Automatically fetched UPnP SSDP USN: " + usn);
+                    }
 
-            // Resolve hostname outside of transaction to avoid timeout
-            hostname = resolveHostname(sighting.ipAddress, candidate.openPorts);
+                    // Resolve hostname outside of transaction to avoid timeout
+                    hostname = resolveHostname(sighting.ipAddress, candidate.openPorts);
+                } finally {
+                    activeScanConcurrency.release();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
 
         // Fallback to sighting metadata host if lookup fails
@@ -221,11 +239,20 @@ public class FingerprintEngine {
 
         candidate.hostname = hostname;
 
-        dbLock.lock();
         try {
-            self.saveSightingInTransaction(sighting, candidate, hostname);
-        } finally {
-            dbLock.unlock();
+            processingConcurrency.acquire();
+            try {
+                dbLock.lock();
+                try {
+                    self.saveSightingInTransaction(sighting, candidate, hostname);
+                } finally {
+                    dbLock.unlock();
+                }
+            } finally {
+                processingConcurrency.release();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
