@@ -268,10 +268,10 @@ public class FingerprintEngine {
             if (activeIdOnIp != null) {
                 boolean sightingIsPlaceholder = sighting.macAddress == null || sighting.macAddress.equals("00:00:00:00:00:00") || sighting.macAddress.isEmpty();
                 boolean activeIsPlaceholder = activeIdOnIp.macAddress == null || activeIdOnIp.macAddress.equals("00:00:00:00:00:00") || activeIdOnIp.macAddress.isEmpty();
+                boolean derivedMacMatch = isDerivedMacMatch(sighting.macAddress, activeIdOnIp.macAddress);
 
-                // Reuse activeIdOnIp if either sighting or active identity is a 00:00:00:00:00:00 placeholder.
-                // If both are real MACs, allow it to fall through to Similarity Engine for device correlation.
-                if (sightingIsPlaceholder || activeIsPlaceholder) {
+                // Reuse activeIdOnIp if placeholder OR if sighting MAC is derived from active MAC (e.g. VAP / randomized MAC on OpenWrt/Linux)
+                if (sightingIsPlaceholder || activeIsPlaceholder || derivedMacMatch) {
                     identity = activeIdOnIp;
                     if (!sightingIsPlaceholder && activeIsPlaceholder) {
                         // ARP scan upgraded a placeholder MAC to a real MAC — record this in the correlation history.
@@ -359,6 +359,9 @@ public class FingerprintEngine {
             device.persist();
             identity.persist();
 
+            // Enforce IP Uniqueness for this IP
+            enforceIpUniqueness(sighting.ipAddress, device.id);
+
             if (statusChanged) {
                 eventBroadcaster.fireAsync(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "ONLINE", sighting.ipAddress));
             }
@@ -373,18 +376,19 @@ public class FingerprintEngine {
         boolean matchedViaExactMac = false;
 
         for (FingerprintVector hist : allFingerprints) {
+            boolean macMismatch = false;
+            boolean exactMacMatch = false;
             // Strict Separation Rule: If the candidate MAC is globally unique (permanent hardware),
             // and the historical device has any globally unique MAC that is different, they CANNOT be merged.
             // This ensures two distinct physical devices (e.g. two different laptops) are never conflated.
             // Locally-administered MACs (randomized) are exempt from this rule.
-            boolean macMismatch = false;
-            boolean exactMacMatch = false;
-            if (isGloballyUniqueMac(sighting.macAddress) && hist.physicalDevice != null && hist.physicalDevice.identities != null) {
+            if (hist.physicalDevice != null && hist.physicalDevice.identities != null) {
                 for (NetworkIdentity id : hist.physicalDevice.identities) {
-                    if (isGloballyUniqueMac(id.macAddress)) {
-                        if (sighting.macAddress.equalsIgnoreCase(id.macAddress)) {
-                            exactMacMatch = true;
-                        } else {
+                    if (isDerivedMacMatch(sighting.macAddress, id.macAddress)) {
+                        exactMacMatch = true;
+                        break;
+                    } else if (isGloballyUniqueMac(sighting.macAddress) && isGloballyUniqueMac(id.macAddress)) {
+                        if (!sighting.macAddress.equalsIgnoreCase(id.macAddress)) {
                             macMismatch = true;
                             break;
                         }
@@ -417,18 +421,10 @@ public class FingerprintEngine {
                      ") to existing device: " + bestMatch.displayName + " (Confidence: " + Math.round(bestScore*100) + "%)");
             
             // Enforce IP Uniqueness: Deactivate current flag on ANY physical device currently claiming this IP
-            List<NetworkIdentity> activeIdentitiesOnIp = NetworkIdentity.list("ipAddress = ?1 and current = true", sighting.ipAddress);
-            for (NetworkIdentity oldId : activeIdentitiesOnIp) {
-                oldId.current = false;
-                oldId.persist();
-                if (!oldId.physicalDevice.id.equals(bestMatch.id)) {
-                    long activeCount = NetworkIdentity.count("physicalDevice.id = ?1 and current = true", oldId.physicalDevice.id);
-                    if (activeCount == 0) {
-                        oldId.physicalDevice.status = DeviceStatus.OFFLINE;
-                        oldId.physicalDevice.persist();
-                    }
-                }
-            }
+            enforceIpUniqueness(sighting.ipAddress, bestMatch.id);
+
+            // Auto-merge any existing duplicate PhysicalDevices sharing derived MACs
+            mergeDuplicateDevices(bestMatch, sighting.macAddress);
 
             // Deactivate all previous current flags for this device
             List<NetworkIdentity> oldIdentities = NetworkIdentity.list("physicalDevice.id", bestMatch.id);
@@ -524,16 +520,7 @@ public class FingerprintEngine {
                      "). Creating new physical device.");
             
             // Enforce IP Uniqueness: Deactivate current flag on ANY physical device currently claiming this IP
-            List<NetworkIdentity> activeIdentitiesOnIp = NetworkIdentity.list("ipAddress = ?1 and current = true", sighting.ipAddress);
-            for (NetworkIdentity oldId : activeIdentitiesOnIp) {
-                oldId.current = false;
-                oldId.persist();
-                long activeCount = NetworkIdentity.count("physicalDevice.id = ?1 and current = true", oldId.physicalDevice.id);
-                if (activeCount == 0) {
-                    oldId.physicalDevice.status = DeviceStatus.OFFLINE;
-                    oldId.physicalDevice.persist();
-                }
-            }
+            enforceIpUniqueness(sighting.ipAddress, null);
 
             PhysicalDevice newDevice = new PhysicalDevice();
             newDevice.displayName = resolvedHostname != null ? resolvedHostname : "Discovered Host " + sighting.ipAddress;
@@ -589,6 +576,73 @@ public class FingerprintEngine {
             correlationEvent.persist();
 
             eventBroadcaster.fireAsync(new DeviceEvent("NEW_DEVICE", newDevice.id.toString(), newDevice.displayName, "ONLINE", sighting.ipAddress));
+        }
+    }
+
+    private boolean isDerivedMacMatch(String mac1, String mac2) {
+        if (mac1 == null || mac2 == null) return false;
+        String clean1 = mac1.replace(":", "").replace("-", "").toUpperCase();
+        String clean2 = mac2.replace(":", "").replace("-", "").toUpperCase();
+        if (clean1.length() != 12 || clean2.length() != 12) return false;
+        if (clean1.equals("000000000000") || clean2.equals("000000000000")) return false;
+        
+        // Exact MAC match
+        if (clean1.equals(clean2)) return true;
+        
+        // Check if remaining 5 octets (NIC-specific bytes) match
+        if (!clean1.substring(2).equals(clean2.substring(2))) return false;
+        
+        // Compare first octets clearing the 0x02 (Locally Administered / VAP) bit
+        try {
+            int octet1 = Integer.parseInt(clean1.substring(0, 2), 16) & ~0x02;
+            int octet2 = Integer.parseInt(clean2.substring(0, 2), 16) & ~0x02;
+            return octet1 == octet2;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void mergeDuplicateDevices(PhysicalDevice targetDevice, String macAddress) {
+        List<NetworkIdentity> allIdentities = NetworkIdentity.listAll();
+        for (NetworkIdentity id : allIdentities) {
+            if (id.physicalDevice != null && !id.physicalDevice.id.equals(targetDevice.id)) {
+                if (isDerivedMacMatch(macAddress, id.macAddress)) {
+                    PhysicalDevice duplicate = id.physicalDevice;
+                    LOG.info("Auto-merging duplicate PhysicalDevice (" + duplicate.id + " / " + duplicate.displayName + ") into target device (" + targetDevice.id + " / " + targetDevice.displayName + ")");
+                    
+                    id.physicalDevice = targetDevice;
+                    id.current = false;
+                    id.persist();
+
+                    List<FingerprintVector> fps = FingerprintVector.list("physicalDevice.id", duplicate.id);
+                    for (FingerprintVector fp : fps) {
+                        fp.delete();
+                    }
+
+                    long remaining = NetworkIdentity.count("physicalDevice.id", duplicate.id);
+                    if (remaining == 0) {
+                        duplicate.delete();
+                    }
+                }
+            }
+        }
+    }
+
+    private void enforceIpUniqueness(String ipAddress, java.util.UUID exemptDeviceId) {
+        NetworkIdentity.flush(); // Ensure pending updates (like setting current = true) are visible to count
+        List<NetworkIdentity> activeIdentitiesOnIp = NetworkIdentity.list("ipAddress = ?1 and current = true", ipAddress);
+        for (NetworkIdentity oldId : activeIdentitiesOnIp) {
+            if (exemptDeviceId != null && exemptDeviceId.equals(oldId.physicalDevice.id)) {
+                continue;
+            }
+            oldId.current = false;
+            oldId.persist();
+            NetworkIdentity.flush(); // Flush the current=false change so count works
+            long activeCount = NetworkIdentity.count("physicalDevice.id = ?1 and current = true", oldId.physicalDevice.id);
+            if (activeCount == 0) {
+                oldId.physicalDevice.status = DeviceStatus.OFFLINE;
+                oldId.physicalDevice.persist();
+            }
         }
     }
 
