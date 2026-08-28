@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit;
 @ApplicationScoped
 public class JdkReverseLookupProbe implements NetworkProbe {
     private static final Logger LOG = Logger.getLogger(JdkReverseLookupProbe.class);
+    private static final ExecutorService EXECUTOR = Executors.newCachedThreadPool();
 
     @Override
     public int getTimeoutMs() {
@@ -27,9 +28,9 @@ public class JdkReverseLookupProbe implements NetworkProbe {
         try {
             InetAddress addr = InetAddress.getByName(context.getIpAddress());
             String host = null;
-            try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-                host = executor.submit(() -> addr.getCanonicalHostName()).get(2000, TimeUnit.MILLISECONDS);
-            }
+            try {
+                host = EXECUTOR.submit(() -> addr.getCanonicalHostName()).get(2000, TimeUnit.MILLISECONDS);
+            } catch (Exception e) {}
             if (host != null && !host.equals(context.getIpAddress()) && !host.isEmpty()) {
                 context.setResolvedHostname(host);
             }

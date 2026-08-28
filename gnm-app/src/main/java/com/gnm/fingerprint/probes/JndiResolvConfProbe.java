@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 @ApplicationScoped
 public class JndiResolvConfProbe implements NetworkProbe {
     private static final Logger LOG = Logger.getLogger(JndiResolvConfProbe.class);
+    private static final ExecutorService EXECUTOR = Executors.newCachedThreadPool();
 
     @Override
     public int getTimeoutMs() {
@@ -50,8 +51,8 @@ public class JndiResolvConfProbe implements NetworkProbe {
                     if (!firstDns.equals(ipAddress)) {
                         LOG.info("[Stage 2] Querying /etc/resolv.conf DNS server " + firstDns + " for IP " + ipAddress);
                         String resolved = null;
-                        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-                            resolved = executor.submit(() -> resolveViaJndi(ipAddress, firstDns)).get(400, TimeUnit.MILLISECONDS);
+                        try {
+                            resolved = EXECUTOR.submit(() -> resolveViaJndi(ipAddress, firstDns)).get(400, TimeUnit.MILLISECONDS);
                         } catch (Exception e) {}
                         if (resolved != null) {
                             context.setResolvedHostname(resolved);

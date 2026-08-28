@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 @ApplicationScoped
 public class JndiSubnetGatewayProbe implements NetworkProbe {
     private static final Logger LOG = Logger.getLogger(JndiSubnetGatewayProbe.class);
+    private static final ExecutorService EXECUTOR = Executors.newCachedThreadPool();
 
     @Override
     public int getTimeoutMs() {
@@ -33,8 +34,8 @@ public class JndiSubnetGatewayProbe implements NetworkProbe {
             String subnetGateway = ipAddress.substring(0, lastDot) + ".1";
             LOG.info("[Stage 1] Querying subnet gateway DNS server " + subnetGateway + " for IP " + ipAddress);
             String resolved = null;
-            try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-                resolved = executor.submit(() -> resolveViaJndi(ipAddress, subnetGateway)).get(400, TimeUnit.MILLISECONDS);
+            try {
+                resolved = EXECUTOR.submit(() -> resolveViaJndi(ipAddress, subnetGateway)).get(400, TimeUnit.MILLISECONDS);
             } catch (Exception e) {}
             if (resolved != null) {
                 context.setResolvedHostname(resolved);

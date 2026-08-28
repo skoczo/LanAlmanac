@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 @ApplicationScoped
 public class JndiDefaultGatewayProbe implements NetworkProbe {
     private static final Logger LOG = Logger.getLogger(JndiDefaultGatewayProbe.class);
+    private static final ExecutorService EXECUTOR = Executors.newCachedThreadPool();
 
     @Override
     public int getTimeoutMs() {
@@ -33,8 +34,8 @@ public class JndiDefaultGatewayProbe implements NetworkProbe {
         String defaultGateway = getDefaultGateway();
         if (defaultGateway != null && !defaultGateway.equals(ipAddress)) {
             String resolved = null;
-            try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-                resolved = executor.submit(() -> resolveViaJndi(ipAddress, defaultGateway)).get(400, TimeUnit.MILLISECONDS);
+            try {
+                resolved = EXECUTOR.submit(() -> resolveViaJndi(ipAddress, defaultGateway)).get(400, TimeUnit.MILLISECONDS);
             } catch (Exception e) {}
             if (resolved != null) {
                 context.setResolvedHostname(resolved);
