@@ -57,6 +57,7 @@ public class DeviceLivenessManager {
         }
     }
 
+    @jakarta.transaction.Transactional(jakarta.transaction.Transactional.TxType.REQUIRES_NEW)
     public void updateProbeCounterInTransaction(UUID deviceId, Set<String> liveIps, int threshold) {
         PhysicalDevice device = PhysicalDevice.findById(deviceId);
         if (device == null) return;

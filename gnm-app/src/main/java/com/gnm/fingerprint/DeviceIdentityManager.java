@@ -37,6 +37,7 @@ public class DeviceIdentityManager {
     public void lock() { dbLock.lock(); }
     public void unlock() { dbLock.unlock(); }
 
+    @jakarta.transaction.Transactional(jakarta.transaction.Transactional.TxType.REQUIRES_NEW)
     protected void saveSightingInTransaction(NetworkSighting sighting, FingerprintVector candidate, String resolvedHostname) {
         // 2. Look for existing identity
         NetworkIdentity identity = NetworkIdentity.find("select n from NetworkIdentity n join fetch n.physicalDevice where n.ipAddress = ?1 and n.macAddress = ?2", 
@@ -458,6 +459,7 @@ public class DeviceIdentityManager {
         }
     }
 
+    @jakarta.transaction.Transactional(jakarta.transaction.Transactional.TxType.REQUIRES_NEW)
     public void mergeMetadataByMacInTransaction(String macAddress, FingerprintVector candidate) {
         NetworkIdentity identity = NetworkIdentity.find("select n from NetworkIdentity n join fetch n.physicalDevice where n.macAddress = ?1 and n.current = true", macAddress).firstResult();
         if (identity != null && identity.physicalDevice != null) {
