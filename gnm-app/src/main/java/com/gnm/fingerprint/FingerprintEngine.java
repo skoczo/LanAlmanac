@@ -272,7 +272,7 @@ public class FingerprintEngine {
         }
     }
 
-    @Transactional
+
 
 
 
