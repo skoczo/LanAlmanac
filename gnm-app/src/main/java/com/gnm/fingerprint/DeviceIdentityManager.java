@@ -29,7 +29,6 @@ public class DeviceIdentityManager {
     @Inject Event<ThreatEvent> threatBroadcaster;
     @Inject SimilarityEngine similarityEngine;
     @Inject DeviceIdentityManager self;
-    @Inject ActiveProber activeProber;
     @Inject FingerprintEngine fingerprintEngine;
 
     @ConfigProperty(name = "gnm.fingerprint.merge-threshold", defaultValue = "0.75") Double mergeThreshold;
@@ -243,7 +242,7 @@ public class DeviceIdentityManager {
             bestMatch.persist();
             if (candidate.openPorts != null) {
                 try {
-                    activeProber.syncNetworkServices(bestMatch, candidate.openPorts);
+                    this.syncNetworkServices(bestMatch, candidate.openPorts);
                 } catch (Exception e) {
                     LOG.error("Failed to sync network services for bestMatch " + bestMatch.id, e);
                 }
@@ -349,7 +348,7 @@ public class DeviceIdentityManager {
 
             if (candidate.openPorts != null) {
                 try {
-                    activeProber.syncNetworkServices(newDevice, candidate.openPorts);
+                    this.syncNetworkServices(newDevice, candidate.openPorts);
                 } catch (Exception e) {
                     LOG.error("Failed to sync network services for device " + newDevice.id, e);
                 }
@@ -466,6 +465,53 @@ public class DeviceIdentityManager {
             FingerprintVector historical = FingerprintVector.find("physicalDevice.id = ?1", identity.physicalDevice.id).firstResult();
             if (historical != null) {
                 fingerprintEngine.mergeVectors(candidate, historical);
+            }
+        }
+    }
+
+    public void syncNetworkServices(PhysicalDevice device, java.util.List<Integer> openPorts) {
+        if (openPorts == null || openPorts.isEmpty()) return;
+
+        java.util.List<NetworkService> existingServices = NetworkService.list("physicalDevice.id", device.id);
+        java.util.List<Integer> existingPorts = existingServices.stream().map(s -> s.port).toList();
+
+        for (Integer port : openPorts) {
+            if (!existingPorts.contains(port)) {
+                NetworkService ns = new NetworkService();
+                ns.physicalDevice = device;
+                ns.port = port;
+                ns.protocol = "TCP";
+                ns.manageable = true;
+                ns.discovered = true;
+                ns.firstSeen = java.time.Instant.now();
+                ns.lastSeen = java.time.Instant.now();
+
+                if (port == 22 || port == 2222 || port == 2223 || port == 2224) {
+                    ns.serviceType = "SSH";
+                    ns.label = "SSH Service";
+                } else if (port == 80 || port == 8080 || port == 9000 || port == 8123) {
+                    ns.serviceType = "HTTP";
+                    ns.label = "Web UI";
+                } else if (port == 443 || port == 8443 || port == 8006) {
+                    ns.serviceType = "HTTPS";
+                    ns.label = "Secure Web UI";
+                } else if (port == 161) {
+                    ns.serviceType = "SNMP";
+                    ns.label = "SNMP Agent";
+                    ns.protocol = "UDP";
+                } else {
+                    ns.serviceType = "UNKNOWN";
+                    ns.label = "Discovered Port " + port;
+                    ns.manageable = false;
+                }
+
+                ns.persist();
+                LOG.info("Auto-created NetworkService for port " + port + " on device " + device.id);
+            } else {
+                existingServices.stream().filter(s -> s.port.equals(port)).findFirst().ifPresent(ns -> {
+                    ns.lastSeen = java.time.Instant.now();
+                    ns.persist();
+                });
             }
         }
     }

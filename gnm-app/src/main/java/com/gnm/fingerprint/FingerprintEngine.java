@@ -27,6 +27,10 @@ import org.apache.sshd.common.config.keys.KeyUtils;
 import org.apache.sshd.common.digest.BuiltinDigests;
 import java.util.concurrent.atomic.AtomicReference;
 
+import jakarta.enterprise.inject.Instance;
+import com.gnm.fingerprint.probes.NetworkProbe;
+import com.gnm.fingerprint.probes.ProbeContext;
+
 @ApplicationScoped
 public class FingerprintEngine {
 
@@ -35,6 +39,15 @@ public class FingerprintEngine {
     private final java.util.concurrent.locks.ReentrantLock dbLock = new java.util.concurrent.locks.ReentrantLock();
     private final java.util.Map<String, java.time.Instant> lastScanTimes = new java.util.concurrent.ConcurrentHashMap<>();
 
+    // Limits max concurrent network scans globally
+    private final java.util.concurrent.Semaphore activeScanConcurrency = new java.util.concurrent.Semaphore(5);
+
+    @Inject
+    Instance<NetworkProbe> networkProbes;
+
+    private List<NetworkProbe> sortedProbes = new ArrayList<>();
+    private int dynamicTimeoutMs = 60000; // default fallback
+
     private volatile boolean running = true;
     private java.util.concurrent.ExecutorService executorService;
     private java.util.concurrent.ScheduledExecutorService timeoutScheduler;
@@ -42,7 +55,6 @@ public class FingerprintEngine {
 
     @Inject NetworkSightingQueue sightingQueue;
     @Inject SimilarityEngine similarityEngine;
-    @Inject ActiveProber activeProber;
     @Inject DeviceIdentityManager identityManager;
     @Inject DeviceLivenessManager livenessManager;
 
@@ -90,6 +102,14 @@ public class FingerprintEngine {
         pollingThread = new Thread(this::runProcessingLoop);
         pollingThread.setName("SightingQueue-Poller");
         pollingThread.start();
+        
+        // Setup dynamic probes
+        for (NetworkProbe probe : networkProbes) {
+            sortedProbes.add(probe);
+        }
+        sortedProbes.sort(java.util.Comparator.comparingInt(NetworkProbe::getPriority));
+        dynamicTimeoutMs = sortedProbes.stream().mapToInt(NetworkProbe::getTimeoutMs).sum() + 2000; // +2s buffer
+        LOG.info("Configured " + sortedProbes.size() + " dynamic probes. Total max timeout calculated as: " + dynamicTimeoutMs + "ms");
     }
 
     public void stop(@Observes ShutdownEvent ev) {
@@ -133,15 +153,15 @@ public class FingerprintEngine {
                     }
                 });
 
-                // Enforce a hard 60-second timeout to prevent thread starvation
+                // Enforce dynamic timeout to prevent thread starvation
                 timeoutScheduler.schedule(() -> {
                     if (!future.isDone()) {
                         boolean cancelled = future.cancel(true);
                         if (cancelled) {
-                            LOG.warn("Hard timeout (60s) reached. Task cancelled for IP: " + sighting.ipAddress);
+                            LOG.warn("Dynamic timeout (" + dynamicTimeoutMs + "ms) reached. Task cancelled for IP: " + sighting.ipAddress);
                         }
                     }
-                }, 60, java.util.concurrent.TimeUnit.SECONDS);
+                }, dynamicTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -151,9 +171,8 @@ public class FingerprintEngine {
         }
     }
 
-    
     public int getActiveScanPermitsAvailable() {
-        return activeProber.getActiveScanPermitsAvailable();
+        return activeScanConcurrency.availablePermits();
     }
 
     public int getProcessingPermitsAvailable() {
@@ -215,35 +234,22 @@ public class FingerprintEngine {
         String hostname = null;
         if (shouldScan) {
             try {
-                activeProber.acquirePermit();
+                activeScanConcurrency.acquire();
                 try {
                     lastScanTimes.put(sighting.ipAddress, Instant.now());
                     
-                    // 1. Scan Ports
-                    List<Integer> openPorts = activeProber.scanOpenPorts(sighting.ipAddress);
-                    if (!openPorts.isEmpty()) {
-                        candidate.openPorts = openPorts;
-                        // For SSH, fetch host keys
-                        for (Integer port : openPorts) {
-                            if (port == 22 || port == 2222 || port == 2223 || port == 2224) {
-                                String sshKey = activeProber.fetchSshHostKey(sighting.ipAddress, port);
-                                if (sshKey != null && !sshKey.isEmpty()) {
-                                    candidate.sshHostKeys.add(sshKey);
-                                }
-                            }
+                    ProbeContext context = new ProbeContext(sighting.ipAddress, candidate);
+                    for (NetworkProbe probe : sortedProbes) {
+                        try {
+                            probe.execute(context);
+                        } catch (Exception e) {
+                            LOG.error("Probe " + probe.getClass().getSimpleName() + " failed for IP " + sighting.ipAddress, e);
                         }
                     }
+                    hostname = context.getResolvedHostname();
                     
-                    // 2. Fetch UPnP USN
-                    String usn = activeProber.fetchUpnpUsn(sighting.ipAddress);
-                    if (usn != null && !usn.isEmpty()) {
-                        candidate.ssdpUsn = usn;
-                    }
-
-                    // 3. Resolve Hostname based on open ports
-                    hostname = activeProber.resolveHostname(sighting.ipAddress, candidate.openPorts);
                 } finally {
-                    activeProber.releasePermit();
+                    activeScanConcurrency.release();
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
