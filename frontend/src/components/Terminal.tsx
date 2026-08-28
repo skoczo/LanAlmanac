@@ -51,6 +51,13 @@ export const Terminal: React.FC<TerminalProps> = ({ deviceId, credentialId, onCl
         if (!isDisposed && terminalRef.current && terminalRef.current.offsetWidth > 0) {
           try {
             fitAddon.fit()
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({ 
+                type: 'resize', 
+                cols: term.cols, 
+                rows: term.rows 
+              }))
+            }
           } catch (e) {
             // Ignore fit errors during transitions
           }
@@ -70,7 +77,15 @@ export const Terminal: React.FC<TerminalProps> = ({ deviceId, credentialId, onCl
       wsRef.current = ws
 
       ws.onopen = () => {
-        if (!isDisposed) term.focus()
+        if (!isDisposed) {
+          term.focus()
+          try {
+            fitAddon.fit()
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
+            }
+          } catch (e) {}
+        }
       }
 
       ws.onmessage = (event) => {
@@ -94,11 +109,17 @@ export const Terminal: React.FC<TerminalProps> = ({ deviceId, credentialId, onCl
     }, 50)
 
     const handleResize = () => {
-      if (fitAddonRef.current) {
-        fitAddonRef.current.fit()
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
-        }
+      if (fitAddonRef.current && xtermRef.current) {
+        try {
+          fitAddonRef.current.fit()
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ 
+              type: 'resize', 
+              cols: xtermRef.current.cols, 
+              rows: xtermRef.current.rows 
+            }))
+          }
+        } catch (e) {}
       }
     }
 
@@ -119,8 +140,8 @@ export const Terminal: React.FC<TerminalProps> = ({ deviceId, credentialId, onCl
   }, [deviceId, credentialId])
 
   return (
-    <div className="flex flex-col h-full bg-bg-base border border-border-subtle rounded-xl overflow-hidden shadow-2xl">
-      <div className="flex items-center justify-between px-4 py-2 bg-bg-surface-raised border-b border-border-subtle">
+    <div className="flex flex-col h-full bg-[#0a0e1a] border border-border-subtle rounded-xl overflow-hidden shadow-2xl p-2">
+      <div className="flex items-center justify-between px-3 py-2 bg-bg-surface-raised border-b border-border-subtle mb-2 rounded-t-lg">
         <div className="flex items-center gap-2">
           <div className="flex gap-1.5">
             <div className="w-3 h-3 rounded-full bg-accent-danger cursor-pointer hover:opacity-80" onClick={onClose} />
@@ -131,7 +152,7 @@ export const Terminal: React.FC<TerminalProps> = ({ deviceId, credentialId, onCl
         </div>
         {error && <span className="text-xs text-accent-danger">{error}</span>}
       </div>
-      <div className="flex-1 p-2 overflow-hidden" ref={terminalRef} />
+      <div className="flex-1 w-full h-full overflow-hidden p-0" ref={terminalRef} />
     </div>
   )
 }
