@@ -136,14 +136,20 @@ public class ActiveProber {
         LOG.info("[Stage 7] Querying standard JDK reverse lookup for IP: " + ipAddress);
         try {
             java.net.InetAddress addr = java.net.InetAddress.getByName(ipAddress);
-            String host = addr.getCanonicalHostName();
+            
+            // Wrap in a future with 2-second timeout to prevent OS resolver hangs
+            String host = null;
+            try (java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+                host = executor.submit(() -> addr.getCanonicalHostName()).get(2000, java.util.concurrent.TimeUnit.MILLISECONDS);
+            }
+            
             LOG.info("[Stage 7] JDK resolver returned " + host + " for IP " + ipAddress);
             if (host != null && !host.equals(ipAddress) && !host.isEmpty()) {
                 LOG.info("--> [Success Stage 7] Resolved hostname '" + host + "' for " + ipAddress + " via JDK Reverse Lookup");
                 return host;
             }
         } catch (Exception e) {
-            // Ignore
+            // Ignore (Timeout or resolution failure)
         }
 
         // Stage 8: ESPHome Native API fallback
@@ -398,8 +404,8 @@ public class ActiveProber {
                 httpsConn.setHostnameVerifier((hostname, session) -> true);
             }
 
-            conn.setConnectTimeout(1000);
-            conn.setReadTimeout(1000);
+            conn.setConnectTimeout(500);
+            conn.setReadTimeout(500);
             conn.setRequestMethod("GET");
             conn.setRequestProperty("User-Agent", "GNM-Scanner/1.0");
             
@@ -565,7 +571,7 @@ public class ActiveProber {
             for (int port : portsToScan) {
                 futures.add(executor.submit(() -> {
                     try (java.net.Socket socket = new java.net.Socket()) {
-                        socket.connect(new java.net.InetSocketAddress(ipAddress, port), 2000); // 2000ms timeout
+                        socket.connect(new java.net.InetSocketAddress(ipAddress, port), 1000); // 1000ms timeout for local LAN
                         return port;
                     } catch (Exception e) {
                         return null;
@@ -596,8 +602,8 @@ public class ActiveProber {
                 return false; // Reject key to immediately abort handshake
             });
             client.start();
-            try (ClientSession session = client.connect("fakeuser", ip, port).verify(15000).getSession()) {
-                session.auth().verify(15000); 
+            try (ClientSession session = client.connect("fakeuser", ip, port).verify(2000).getSession()) {
+                session.auth().verify(2000); 
             } catch (Exception e) {
                 // Expected to fail because we reject the server key, or auth fails
             }
