@@ -53,6 +53,19 @@ public class TerminalWebSocket {
     // Track active sessions to pipe input correctly and clean up on close
     private final Map<String, SshSessionContext> activeSessions = new ConcurrentHashMap<>();
 
+    private static class SetupResult {
+        String ipAddress;
+        String username;
+        Integer port;
+        byte[] encryptedPayload;
+        byte[] noncePayload;
+        CredentialType credentialType;
+        UUID serviceId;
+        String sshHostKey;
+        Boolean sshHostKeyTrusted;
+        UUID physicalDeviceId;
+    }
+
     @OnOpen
     public void onOpen(WebSocketConnection connection, @PathParam("deviceId") String deviceIdStr, @PathParam("credentialId") String credentialIdStr) {
         log.infof("Terminal WebSocket opened for device %s", deviceIdStr);
@@ -65,12 +78,6 @@ public class TerminalWebSocket {
 
         UUID deviceId = UUID.fromString(deviceIdStr);
         UUID credentialId = UUID.fromString(credentialIdStr);
-
-        class SetupResult {
-            String ipAddress;
-            Credential cred;
-            NetworkService finalService;
-        }
 
         SetupResult result = null;
         try {
@@ -118,8 +125,15 @@ public class TerminalWebSocket {
                 
                 SetupResult r = new SetupResult();
                 r.ipAddress = ipAddress;
-                r.cred = cred;
-                r.finalService = targetService;
+                r.username = cred.username;
+                r.port = port;
+                r.encryptedPayload = cred.encryptedPayload;
+                r.noncePayload = cred.noncePayload;
+                r.credentialType = cred.credentialType;
+                r.serviceId = targetService.id;
+                r.sshHostKey = targetService.sshHostKey;
+                r.sshHostKeyTrusted = targetService.sshHostKeyTrusted;
+                r.physicalDeviceId = device.id;
                 return r;
             });
         } catch (Exception e) {
@@ -132,18 +146,18 @@ public class TerminalWebSocket {
             return;
         }
 
-        final String ipAddress = result.ipAddress;
-        final Credential cred = result.cred;
-        final NetworkService finalService = result.finalService;
+        final SetupResult finalResult = result;
 
         // Start SSH connection in a virtual thread
-        log.infof("Starting SSH virtual thread for device %s (IP: %s)", deviceIdStr, ipAddress);
-        Thread.startVirtualThread(() -> connectSsh(connection, ipAddress, cred, finalService));
+        log.infof("Starting SSH virtual thread for device %s (IP: %s)", deviceIdStr, finalResult.ipAddress);
+        Thread.startVirtualThread(() -> connectSsh(connection, finalResult));
     }
 
-    private void connectSsh(WebSocketConnection connection, String ip, Credential cred, NetworkService service) {
-        log.infof("Setting up SSH client for %s@%s", cred.username, ip);
-        SshClient client = SshClient.setUpDefaultClient();
+    private void connectSsh(WebSocketConnection connection, SetupResult ctx) {
+        try {
+            log.infof("Entering connectSsh for ip: %s", ctx.ipAddress);
+            log.infof("Setting up SSH client for %s@%s", ctx.username, ctx.ipAddress);
+            SshClient client = SshClient.setUpDefaultClient();
         
         // Trust On First Use (TOFU) logic
         client.setServerKeyVerifier((clientSession, remoteAddress, serverKey) -> {
@@ -151,12 +165,12 @@ public class TerminalWebSocket {
                 String fingerprint = KeyUtils.getFingerPrint(BuiltinDigests.sha256, serverKey);
                 log.infof("Received server key fingerprint: %s", fingerprint);
 
-                if (service.sshHostKey == null || service.sshHostKey.isEmpty()) {
+                if (ctx.sshHostKey == null || ctx.sshHostKey.isEmpty()) {
                     // First use: store it but reject until trusted
                     QuarkusTransaction.requiringNew().run(() -> {
-                        NetworkService s = NetworkService.findById(service.id);
+                        NetworkService s = NetworkService.findById(ctx.serviceId);
                         if (s == null) {
-                            log.error("NetworkService not found by ID: " + service.id);
+                            log.error("NetworkService not found by ID: " + ctx.serviceId);
                             throw new RuntimeException("NetworkService not found");
                         }
                         s.sshHostKey = fingerprint;
@@ -171,17 +185,17 @@ public class TerminalWebSocket {
                     return false;
                 }
 
-            if (!service.sshHostKey.equals(fingerprint)) {
+            if (!ctx.sshHostKey.equals(fingerprint)) {
                 // Key changed! MITM or host re-installed
                 connection.sendTextAndAwait("\r\n[CRITICAL WARNING] REMOTE HOST IDENTIFICATION HAS CHANGED!\r\n");
                 connection.sendTextAndAwait("IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!\r\n");
                 connection.sendTextAndAwait("Someone could be eavesdropping on you right now (man-in-the-middle attack)!\r\n");
-                connection.sendTextAndAwait("Expected: " + service.sshHostKey + "\r\n");
+                connection.sendTextAndAwait("Expected: " + ctx.sshHostKey + "\r\n");
                 connection.sendTextAndAwait("Received: " + fingerprint + "\r\n");
                 
                 QuarkusTransaction.requiringNew().run(() -> {
                     String desc = "SSH Host Key mutation detected! Remote host identification has changed. Key: " + fingerprint;
-                    ThreatEvent existing = ThreatEvent.find("physicalDeviceId = ?1 and description = ?2 and resolved = false", service.physicalDevice.id, desc).firstResult();
+                    ThreatEvent existing = ThreatEvent.find("physicalDeviceId = ?1 and description = ?2 and resolved = false", ctx.physicalDeviceId, desc).firstResult();
                     if (existing != null) {
                         existing.detectedAt = Instant.now();
                         existing.persist();
@@ -190,8 +204,8 @@ public class TerminalWebSocket {
                         ThreatEvent threat = new ThreatEvent();
                         threat.severity = "HIGH";
                         threat.description = desc;
-                        threat.physicalDeviceId = service.physicalDevice.id;
-                        threat.ipAddress = ip;
+                        threat.physicalDeviceId = ctx.physicalDeviceId;
+                        threat.ipAddress = ctx.ipAddress;
                         threat.detectedAt = Instant.now();
                         threat.persist();
                         threatBroadcaster.fire(threat);
@@ -201,7 +215,7 @@ public class TerminalWebSocket {
                 return false;
             }
 
-            if (service.sshHostKeyTrusted == null || !service.sshHostKeyTrusted) {
+            if (ctx.sshHostKeyTrusted == null || !ctx.sshHostKeyTrusted) {
                 connection.sendTextAndAwait("\r\n[Security] Host key is known but NOT TRUSTED.\r\n");
                 connection.sendTextAndAwait("[Security] Please explicitly trust this key in the UI before connecting.\r\n");
                 return false;
@@ -217,16 +231,16 @@ public class TerminalWebSocket {
         client.start();
 
         try {
-            int port = cred.port != null ? cred.port : 22;
-            log.infof("Connecting to %s@%s:%d", cred.username, ip, port);
-            connection.sendTextAndAwait(String.format("Connecting to %s@%s port %d...\r\n", cred.username, ip, port));
+            int port = ctx.port != null ? ctx.port : 22;
+            log.infof("Connecting to %s@%s:%d", ctx.username, ctx.ipAddress, port);
+            connection.sendTextAndAwait(String.format("Connecting to %s@%s port %d...\r\n", ctx.username, ctx.ipAddress, port));
             
-            ClientSession session = client.connect(cred.username, ip, port).verify(10000).getSession();
+            ClientSession session = client.connect(ctx.username, ctx.ipAddress, port).verify(10000).getSession();
 
             log.info("Reading secret from vault...");
             String secret;
             try {
-                secret = new String(vaultEngine.decrypt(cred.encryptedPayload, cred.noncePayload), StandardCharsets.UTF_8);
+                secret = new String(vaultEngine.decrypt(ctx.encryptedPayload, ctx.noncePayload), StandardCharsets.UTF_8);
             } catch (Exception e) {
                 connection.sendTextAndAwait("\r\n[CRITICAL ERROR] Failed to decrypt credential payload.\r\n");
                 connection.sendTextAndAwait("This usually means the vault master key was reset, but the database kept the old encrypted data.\r\n");
@@ -234,10 +248,10 @@ public class TerminalWebSocket {
                 throw new RuntimeException("Decryption failed", e);
             }
             
-            if (cred.credentialType == CredentialType.PASSWORD) {
+            if (ctx.credentialType == CredentialType.PASSWORD) {
                 log.info("Adding password identity");
                 session.addPasswordIdentity(secret);
-            } else if (cred.credentialType == CredentialType.SSH_KEY) {
+            } else if (ctx.credentialType == CredentialType.SSH_KEY) {
                 log.info("Adding SSH key identity (fallback password)");
                 connection.sendTextAndAwait("Warning: Advanced SSH_KEY parsing might require more config. Trying password...\r\n");
                 session.addPasswordIdentity(secret);
@@ -298,6 +312,12 @@ public class TerminalWebSocket {
             connection.close();
             cleanup(connection.id());
             try { client.stop(); } catch (Exception ignored) {}
+        }
+        } catch (Throwable t) {
+            log.error("CRITICAL FATAL ERROR IN CONNECTSSH: ", t);
+            connection.sendTextAndAwait("\r\nCRITICAL INTERNAL ERROR\r\n");
+            connection.close();
+            cleanup(connection.id());
         }
     }
 
