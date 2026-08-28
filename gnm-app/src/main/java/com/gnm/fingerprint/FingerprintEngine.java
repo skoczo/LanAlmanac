@@ -316,9 +316,16 @@ public class FingerprintEngine {
                 boolean isRandomizedMac = !isPlaceholderMac && !isGloballyUniqueMac(sighting.macAddress);
 
                 // Defer creating NEW physical devices for 0-signal background sightings (placeholder or randomized MAC) until fingerprint metadata arrives.
-                if (!isManual && !hasMetadata && (isPlaceholderMac || isRandomizedMac)) {
-                    LOG.debug("Deferring new device creation for 0-signal background sighting on IP " + sighting.ipAddress + " (MAC: " + sighting.macAddress + ")");
-                    return;
+                // However, a placeholder MAC MUST always be deferred in background scans, because without a MAC we cannot track it across IPs.
+                if (!isManual) {
+                    if (isPlaceholderMac) {
+                        LOG.debug("Deferring new device creation: placeholder MAC on IP " + sighting.ipAddress);
+                        return;
+                    }
+                    if (isRandomizedMac && !hasMetadata) {
+                        LOG.debug("Deferring new device creation: 0-signal randomized MAC on IP " + sighting.ipAddress);
+                        return;
+                    }
                 }
             }
         }
@@ -523,8 +530,13 @@ public class FingerprintEngine {
             }
 
             // No match -> Create new device
-            LOG.info("No matching fingerprint found for sighting (" + sighting.ipAddress + " / " + sighting.macAddress + 
-                     "). Creating new physical device.");
+            if (bestMatch != null) {
+                LOG.info(String.format("Creating new physical device for sighting (%s / %s). Best match was '%s' but confidence score (%d%%) was below merge threshold (%d%%).",
+                        sighting.ipAddress, sighting.macAddress, bestMatch.displayName, Math.round(bestScore * 100), Math.round(mergeThreshold * 100)));
+            } else {
+                LOG.info(String.format("Creating new physical device for sighting (%s / %s). No existing devices had any matching fingerprint features.",
+                        sighting.ipAddress, sighting.macAddress));
+            }
             
             // Enforce IP Uniqueness: Deactivate current flag on ANY physical device currently claiming this IP
             enforceIpUniqueness(sighting.ipAddress, null);
@@ -1476,10 +1488,19 @@ public class FingerprintEngine {
             // Double-check liveness before penalizing, in case it was missed by the sweep
             boolean fallbackReachable = false;
             if (currentIp != null) {
+                Process p = null;
                 try {
-                    Process p = new ProcessBuilder("ping", "-c", "1", "-W", "1", currentIp).start();
-                    fallbackReachable = p.waitFor(1500, java.util.concurrent.TimeUnit.MILLISECONDS) && p.exitValue() == 0;
-                } catch (Exception ignored) {}
+                    p = new ProcessBuilder("ping", "-c", "1", "-W", "1", currentIp).start();
+                    boolean finished = p.waitFor(1500, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    if (finished) {
+                        fallbackReachable = (p.exitValue() == 0);
+                    }
+                } catch (Exception ignored) {
+                } finally {
+                    if (p != null) {
+                        p.destroyForcibly();
+                    }
+                }
             }
             if (fallbackReachable) {
                 LOG.debugf("Device %s (IP: %s) missed primary sweep but responded to fallback ping. Resetting counter.", device.displayName, currentIp);
