@@ -316,9 +316,7 @@ public class FingerprintEngine {
                 boolean isRandomizedMac = !isPlaceholderMac && !isGloballyUniqueMac(sighting.macAddress);
 
                 // Defer creating NEW physical devices for 0-signal background sightings (placeholder or randomized MAC) until fingerprint metadata arrives.
-                // Exception: ICMP_SWEEP confirmed the host is reachable - that is itself a sufficient signal to create a device entry.
-                boolean isIcmpConfirmed = "ICMP_SWEEP".equals(sighting.source);
-                if (!isManual && !isIcmpConfirmed && !hasMetadata && (isPlaceholderMac || isRandomizedMac)) {
+                if (!isManual && !hasMetadata && (isPlaceholderMac || isRandomizedMac)) {
                     LOG.debug("Deferring new device creation for 0-signal background sighting on IP " + sighting.ipAddress + " (MAC: " + sighting.macAddress + ")");
                     return;
                 }
