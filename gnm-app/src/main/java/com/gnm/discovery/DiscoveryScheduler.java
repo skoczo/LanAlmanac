@@ -34,9 +34,12 @@ public class DiscoveryScheduler {
             return;
         }
         LOG.info("Application starting. Initializing passive packet capturing thread...");
-        Thread.startVirtualThread(() -> {
+        Thread t = new Thread(() -> {
             passivePacketListener.startCapture();
         });
+        t.setName("PassivePacketListener");
+        t.setDaemon(true);
+        t.start();
     }
 
     public void onStop(@Observes ShutdownEvent ev) {

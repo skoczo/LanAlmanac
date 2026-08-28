@@ -126,10 +126,13 @@ public class PassivePacketListener {
         if ("gnm.listen.interface".equals(event.getKey())) {
             LOG.info("Network interface setting changed to " + event.getValue() + ". Restarting sniffer...");
             stop();
-            Thread.startVirtualThread(() -> {
+            Thread t = new Thread(() -> {
                 running = true;
                 startCapture();
             });
+            t.setName("PassivePacketListener-Restarted");
+            t.setDaemon(true);
+            t.start();
         }
     }
 
