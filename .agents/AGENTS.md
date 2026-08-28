@@ -16,3 +16,5 @@
 - Refer to `docs/architecture.md` for detailed architectural decisions, database schemas, and module breakdowns.
 
 Whenever you make changes to the backend, you must always run /home/skoczo/workspace/GreatNetworkManager/run_tests.sh to verify your changes before finishing.
+
+Don't use scripts to fix code. Just change code we are wasting tokens on script creation and still script is not working well.

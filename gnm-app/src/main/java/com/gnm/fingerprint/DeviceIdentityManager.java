@@ -24,9 +24,14 @@ import org.apache.sshd.common.digest.BuiltinDigests;
 @ApplicationScoped
 public class DeviceIdentityManager {
     private static final Logger LOG = Logger.getLogger(DeviceIdentityManager.class);
+
     @Inject Event<FingerprintEngine.DeviceEvent> eventBroadcaster;
+    @Inject Event<ThreatEvent> threatBroadcaster;
     @Inject SimilarityEngine similarityEngine;
     @Inject DeviceIdentityManager self;
+    @Inject ActiveProber activeProber;
+    @Inject FingerprintEngine fingerprintEngine;
+
     @ConfigProperty(name = "gnm.fingerprint.merge-threshold", defaultValue = "0.75") Double mergeThreshold;
     private final java.util.concurrent.locks.ReentrantLock dbLock = new java.util.concurrent.locks.ReentrantLock();
     public void lock() { dbLock.lock(); }
@@ -132,8 +137,8 @@ public class DeviceIdentityManager {
             // Merge matching candidate signals to historical vector
             FingerprintVector historical = FingerprintVector.find("physicalDevice.id = ?1", device.id).firstResult();
             if (historical != null) {
-                checkSignatureMutations(candidate, historical, sighting);
-                mergeVectors(candidate, historical);
+                fingerprintEngine.checkSignatureMutations(candidate, historical, sighting);
+                fingerprintEngine.mergeVectors(candidate, historical);
             }
             
             device.persist();
@@ -143,7 +148,7 @@ public class DeviceIdentityManager {
             enforceIpUniqueness(sighting.ipAddress, device.id);
 
             if (statusChanged) {
-                eventBroadcaster.fireAsync(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "ONLINE", sighting.ipAddress));
+                eventBroadcaster.fireAsync(new FingerprintEngine.DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "ONLINE", sighting.ipAddress));
             }
             return;
         }
@@ -231,13 +236,13 @@ public class DeviceIdentityManager {
             
             FingerprintVector historical = FingerprintVector.find("physicalDevice.id = ?1", bestMatch.id).firstResult();
             if (historical != null) {
-                checkSignatureMutations(candidate, historical, sighting);
-                mergeVectors(candidate, historical);
+                fingerprintEngine.checkSignatureMutations(candidate, historical, sighting);
+                fingerprintEngine.mergeVectors(candidate, historical);
             }
             bestMatch.persist();
             if (candidate.openPorts != null) {
                 try {
-                    syncNetworkServices(bestMatch, candidate.openPorts);
+                    activeProber.syncNetworkServices(bestMatch, candidate.openPorts);
                 } catch (Exception e) {
                     LOG.error("Failed to sync network services for bestMatch " + bestMatch.id, e);
                 }
@@ -266,7 +271,7 @@ public class DeviceIdentityManager {
             correlationEvent.timestamp = sighting.observedAt;
             correlationEvent.persist();
 
-            eventBroadcaster.fireAsync(new DeviceEvent("STATUS_CHANGE", bestMatch.id.toString(), bestMatch.displayName, "ONLINE", sighting.ipAddress));
+            eventBroadcaster.fireAsync(new FingerprintEngine.DeviceEvent("STATUS_CHANGE", bestMatch.id.toString(), bestMatch.displayName, "ONLINE", sighting.ipAddress));
         } else {
             GlobalSetting modeSetting = GlobalSetting.findById("APP_MODE");
             String appMode = modeSetting != null ? modeSetting.value : "DISCOVERY";
@@ -343,7 +348,7 @@ public class DeviceIdentityManager {
 
             if (candidate.openPorts != null) {
                 try {
-                    syncNetworkServices(newDevice, candidate.openPorts);
+                    activeProber.syncNetworkServices(newDevice, candidate.openPorts);
                 } catch (Exception e) {
                     LOG.error("Failed to sync network services for device " + newDevice.id, e);
                 }
@@ -360,7 +365,7 @@ public class DeviceIdentityManager {
             correlationEvent.timestamp = sighting.observedAt;
             correlationEvent.persist();
 
-            eventBroadcaster.fireAsync(new DeviceEvent("NEW_DEVICE", newDevice.id.toString(), newDevice.displayName, "ONLINE", sighting.ipAddress));
+            eventBroadcaster.fireAsync(new FingerprintEngine.DeviceEvent("NEW_DEVICE", newDevice.id.toString(), newDevice.displayName, "ONLINE", sighting.ipAddress));
         }
     }
 
@@ -458,7 +463,7 @@ public class DeviceIdentityManager {
         if (identity != null && identity.physicalDevice != null) {
             FingerprintVector historical = FingerprintVector.find("physicalDevice.id = ?1", identity.physicalDevice.id).firstResult();
             if (historical != null) {
-                mergeVectors(candidate, historical);
+                fingerprintEngine.mergeVectors(candidate, historical);
             }
         }
     }

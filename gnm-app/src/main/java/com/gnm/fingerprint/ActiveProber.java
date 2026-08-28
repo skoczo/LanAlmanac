@@ -26,13 +26,11 @@ public class ActiveProber {
     private static final Logger LOG = Logger.getLogger(ActiveProber.class);
     private final java.util.concurrent.Semaphore activeScanConcurrency = new java.util.concurrent.Semaphore(5);
     public void acquirePermit() throws InterruptedException { activeScanConcurrency.acquire(); }
+    public int getActiveScanPermitsAvailable() { return activeScanConcurrency.availablePermits(); }
     public void releasePermit() { activeScanConcurrency.release(); }
 
-    public int getActiveScanPermitsAvailable() {
-        return activeScanConcurrency.availablePermits();
-    }
 
-    private String resolveHostname(String ipAddress, List<Integer> openPorts) {
+    public String resolveHostname(String ipAddress, List<Integer> openPorts) {
         if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST && !Boolean.getBoolean("forceNetworkScan")) {
             return null; // Skip slow network lookups during regular tests
         }
@@ -346,7 +344,7 @@ public class ActiveProber {
         return null;
     }
 
-    private String fetchUpnpUsn(String ipAddress) {
+    public String fetchUpnpUsn(String ipAddress) {
         try (java.net.DatagramSocket socket = new java.net.DatagramSocket()) {
             socket.setSoTimeout(500);
 
@@ -508,7 +506,7 @@ public class ActiveProber {
         return null;
     }
 
-    private void syncNetworkServices(PhysicalDevice device, List<Integer> openPorts) {
+    public void syncNetworkServices(PhysicalDevice device, List<Integer> openPorts) {
         if (openPorts == null || openPorts.isEmpty()) return;
 
         List<NetworkService> existingServices = NetworkService.list("physicalDevice.id", device.id);
@@ -555,7 +553,7 @@ public class ActiveProber {
         }
     }
 
-    private List<Integer> scanOpenPorts(String ipAddress) {
+    public List<Integer> scanOpenPorts(String ipAddress) {
         if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST && !Boolean.getBoolean("forceNetworkScan")) {
             return new ArrayList<>(); // Skip slow port scanning during regular tests
         }
@@ -589,7 +587,7 @@ public class ActiveProber {
         return openPorts;
     }
 
-    private String fetchSshHostKey(String ip, int port) {
+    public String fetchSshHostKey(String ip, int port) {
         AtomicReference<String> hostKeyRef = new AtomicReference<>();
         try (SshClient client = SshClient.setUpDefaultClient()) {
             client.setServerKeyVerifier((clientSession, remoteAddress, serverKey) -> {

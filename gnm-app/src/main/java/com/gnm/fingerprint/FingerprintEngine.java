@@ -151,6 +151,22 @@ public class FingerprintEngine {
         }
     }
 
+    
+    public int getActiveScanPermitsAvailable() {
+        return activeProber.getActiveScanPermitsAvailable();
+    }
+
+    public int getProcessingPermitsAvailable() {
+        if (executorService instanceof java.util.concurrent.ThreadPoolExecutor) {
+            return ((java.util.concurrent.ThreadPoolExecutor) executorService).getQueue().remainingCapacity();
+        }
+        return 0;
+    }
+
+    public void updateProbeCounters(java.util.Set<String> liveIps) {
+        livenessManager.updateProbeCounters(liveIps);
+    }
+
     public void flushAndClear() {
         sightingQueue.clear();
         lastDbUpdateTimes.clear();
@@ -304,7 +320,7 @@ public class FingerprintEngine {
         return v;
     }
 
-    private void checkSignatureMutations(FingerprintVector candidate, FingerprintVector historical, NetworkSighting sighting) {
+    public void checkSignatureMutations(FingerprintVector candidate, FingerprintVector historical, NetworkSighting sighting) {
         GlobalSetting modeSetting = GlobalSetting.findById("APP_MODE");
         String appMode = modeSetting != null ? modeSetting.value : "DISCOVERY";
 
@@ -382,7 +398,7 @@ public class FingerprintEngine {
 
 
 
-    private void mergeVectors(FingerprintVector source, FingerprintVector dest) {
+    public void mergeVectors(FingerprintVector source, FingerprintVector dest) {
         if (source.dhcpOption55 != null) dest.dhcpOption55 = source.dhcpOption55;
         if (source.dhcpOption60 != null) dest.dhcpOption60 = source.dhcpOption60;
         if (source.tcpFingerprint != null) dest.tcpFingerprint = source.tcpFingerprint;
@@ -415,19 +431,5 @@ public class FingerprintEngine {
         }
         dest.capturedAt = Instant.now();
         dest.persist();
-    }
-
-
-
-
-    /**
-     * Called by DiscoveryScheduler after each ICMP sweep cycle completes.
-     * Increments consecutiveMissedProbes for ONLINE devices whose current IP was
-     * NOT found in the sweep, and resets the counter for devices that responded.
-     * Marks a device OFFLINE only when the counter reaches the configured threshold.
-     */
-
-    @Transactional(Transactional.TxType.REQUIRES_NEW)
-
-    @Transactional
+}
 }

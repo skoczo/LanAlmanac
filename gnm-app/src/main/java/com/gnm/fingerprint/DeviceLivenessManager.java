@@ -94,7 +94,7 @@ public class DeviceLivenessManager {
             if (device.status != DeviceStatus.ONLINE) {
                 device.status = DeviceStatus.ONLINE;
                 device.lastSeen = Instant.now();
-                eventBroadcaster.fireAsync(new DeviceEvent("ONLINE", device.id.toString(), device.displayName, "ONLINE", currentIp));
+                eventBroadcaster.fireAsync(new FingerprintEngine.DeviceEvent("ONLINE", device.id.toString(), device.displayName, "ONLINE", currentIp));
             }
             device.persist();
         } else {
@@ -135,7 +135,7 @@ public class DeviceLivenessManager {
                     device.status = DeviceStatus.OFFLINE;
                     device.persist();
                     String ip = currentIp != null ? currentIp : "0.0.0.0";
-                    eventBroadcaster.fireAsync(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "OFFLINE", ip));
+                    eventBroadcaster.fireAsync(new FingerprintEngine.DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "OFFLINE", ip));
                     LOG.infof("Marked device %s as OFFLINE after %d consecutive missed ICMP probe cycles.",
                         device.displayName, device.consecutiveMissedProbes);
                 } else {
