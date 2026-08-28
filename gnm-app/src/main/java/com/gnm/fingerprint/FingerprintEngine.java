@@ -36,25 +36,18 @@ public class FingerprintEngine {
     private final java.util.Map<String, java.time.Instant> lastScanTimes = new java.util.concurrent.ConcurrentHashMap<>();
 
     private volatile boolean running = true;
+    private java.util.concurrent.ExecutorService executorService;
+    private java.util.concurrent.ScheduledExecutorService timeoutScheduler;
+    private Thread pollingThread;
 
-    @Inject
-    NetworkSightingQueue sightingQueue;
+    @Inject NetworkSightingQueue sightingQueue;
+    @Inject SimilarityEngine similarityEngine;
+    @Inject ActiveProber activeProber;
+    @Inject DeviceIdentityManager identityManager;
+    @Inject DeviceLivenessManager livenessManager;
 
     private final java.util.concurrent.atomic.AtomicInteger activeProcessingCount = new java.util.concurrent.atomic.AtomicInteger(0);
-    private final java.util.concurrent.Semaphore processingConcurrency = new java.util.concurrent.Semaphore(20);
-    private final java.util.concurrent.Semaphore activeScanConcurrency = new java.util.concurrent.Semaphore(5);
     private final java.util.Map<String, java.time.Instant> lastDbUpdateTimes = new java.util.concurrent.ConcurrentHashMap<>();
-
-    @Inject
-    SimilarityEngine similarityEngine;
-
-    public int getActiveScanPermitsAvailable() {
-        return activeScanConcurrency.availablePermits();
-    }
-
-    public int getProcessingPermitsAvailable() {
-        return processingConcurrency.availablePermits();
-    }
 
     @Inject
     Event<DeviceEvent> eventBroadcaster;
@@ -84,19 +77,27 @@ public class FingerprintEngine {
         }
     }
 
-    private Thread workerThread;
-
     public void start(@Observes StartupEvent ev) {
-        LOG.info("Starting background Fingerprint Processing Engine worker thread...");
-        workerThread = Thread.startVirtualThread(this::runProcessingLoop);
+        LOG.info("Starting background Fingerprint Processing Engine with ThreadPoolExecutor...");
+        executorService = new java.util.concurrent.ThreadPoolExecutor(
+                20, 20, 
+                0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+                new java.util.concurrent.LinkedBlockingQueue<>(1000),
+                java.util.concurrent.Executors.defaultThreadFactory(),
+                new java.util.concurrent.ThreadPoolExecutor.DiscardPolicy()
+        );
+        timeoutScheduler = java.util.concurrent.Executors.newScheduledThreadPool(1);
+        pollingThread = new Thread(this::runProcessingLoop);
+        pollingThread.setName("SightingQueue-Poller");
+        pollingThread.start();
     }
 
     public void stop(@Observes ShutdownEvent ev) {
         LOG.info("Stopping Fingerprint Processing Engine...");
         running = false;
-        if (workerThread != null) {
-            workerThread.interrupt();
-        }
+        if (pollingThread != null) pollingThread.interrupt();
+        if (executorService != null) executorService.shutdownNow();
+        if (timeoutScheduler != null) timeoutScheduler.shutdownNow();
     }
 
     private void runProcessingLoop() {
@@ -106,8 +107,6 @@ public class FingerprintEngine {
                 
                 String debounceKey = sighting.ipAddress + "|" + sighting.macAddress;
                 java.time.Instant lastDbUpdate = lastDbUpdateTimes.get(debounceKey);
-                // ARP scanner emits rawMetadata like {"flags":"0x2","iface":"eth0"} — no real fingerprint data.
-                // Treat these as metadata-free so they fall under the 10-second debounce window.
                 boolean isArpScanOnly = sighting.rawMetadata != null
                     && sighting.rawMetadata.contains("\"flags\":")
                     && !sighting.rawMetadata.contains("\"host\"")
@@ -121,37 +120,33 @@ public class FingerprintEngine {
                 boolean isManual = "MANUAL_DISCOVERY".equals(sighting.source);
                 
                 if (!hasRawMetadata && !isIcmpSweep && !isManual && lastDbUpdate != null && java.time.Instant.now().isBefore(lastDbUpdate.plusSeconds(10))) {
-                    continue; // Skip processing completely to protect DB and CPU
+                    continue; 
                 }
 
-                // Non-blocking: if all worker slots are busy, skip this sighting to prevent thread accumulation.
-                // The sighting will be re-discovered in the next scan cycle (every 30-60s).
-                if (!processingConcurrency.tryAcquire()) {
-                    LOG.debugf("Processing concurrency limit reached, dropping sighting for %s to protect CPU", sighting.ipAddress);
-                    continue;
-                }
                 lastDbUpdateTimes.put(debounceKey, java.time.Instant.now());
 
-                activeProcessingCount.incrementAndGet();
-                Thread.startVirtualThread(() -> {
+                java.util.concurrent.Future<?> future = executorService.submit(() -> {
                     try {
                         processSighting(sighting);
                     } catch (Exception e) {
-                        if (running) {
-                            LOG.error("Error processing network sighting event in virtual thread", e);
-                        }
-                    } finally {
-                        activeProcessingCount.decrementAndGet();
-                        processingConcurrency.release();
+                        if (running) LOG.error("Error processing network sighting event in executor thread", e);
                     }
                 });
+
+                // Enforce a hard 60-second timeout to prevent thread starvation
+                timeoutScheduler.schedule(() -> {
+                    if (!future.isDone()) {
+                        boolean cancelled = future.cancel(true);
+                        if (cancelled) {
+                            LOG.warn("Hard timeout (60s) reached. Task cancelled for IP: " + sighting.ipAddress);
+                        }
+                    }
+                }, 60, java.util.concurrent.TimeUnit.SECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
-                if (running) {
-                    LOG.error("Error taking sighting from queue", e);
-                }
+                if (running) LOG.error("Error taking sighting from queue", e);
             }
         }
     }
@@ -180,12 +175,11 @@ public class FingerprintEngine {
             LOG.debug("Ignoring sighting with invalid or non-routable IP address: " + (sighting != null ? sighting.ipAddress : "null"));
             if (sighting != null && sighting.macAddress != null && !"00:00:00:00:00:00".equals(sighting.macAddress) && !sighting.macAddress.isEmpty()) {
                 FingerprintVector candidate = parseMetadata(sighting);
-                // Permit is already held by the caller (runProcessingLoop). No nested acquire needed.
-                dbLock.lock();
+                identityManager.lock();
                 try {
-                    self.mergeMetadataByMacInTransaction(sighting.macAddress, candidate);
+                    identityManager.mergeMetadataByMacInTransaction(sighting.macAddress, candidate);
                 } finally {
-                    dbLock.unlock();
+                    identityManager.unlock();
                 }
             }
             return;
@@ -205,38 +199,35 @@ public class FingerprintEngine {
         String hostname = null;
         if (shouldScan) {
             try {
-                activeScanConcurrency.acquire();
+                activeProber.acquirePermit();
                 try {
-                    lastScanTimes.put(sighting.ipAddress, java.time.Instant.now());
+                    lastScanTimes.put(sighting.ipAddress, Instant.now());
                     
-                    // Scan open ports dynamically on virtual threads to enrich the fingerprint vector
-                    List<Integer> openPorts = scanOpenPorts(sighting.ipAddress);
+                    // 1. Scan Ports
+                    List<Integer> openPorts = activeProber.scanOpenPorts(sighting.ipAddress);
                     if (!openPorts.isEmpty()) {
                         candidate.openPorts = openPorts;
-                        
-                        // Actively fetch SSH host keys for any open port that is commonly SSH
+                        // For SSH, fetch host keys
                         for (Integer port : openPorts) {
                             if (port == 22 || port == 2222 || port == 2223 || port == 2224) {
-                                String sshKey = fetchSshHostKey(sighting.ipAddress, port);
+                                String sshKey = activeProber.fetchSshHostKey(sighting.ipAddress, port);
                                 if (sshKey != null && !sshKey.isEmpty()) {
                                     candidate.sshHostKeys.add(sshKey);
-                                    LOG.info("Automatically fetched SSH Host Key on port " + port + ": " + sshKey);
                                 }
                             }
                         }
                     }
                     
-                    // Actively fetch UPnP SSDP USN for hardware-tied fingerprinting
-                    String usn = fetchUpnpUsn(sighting.ipAddress);
+                    // 2. Fetch UPnP USN
+                    String usn = activeProber.fetchUpnpUsn(sighting.ipAddress);
                     if (usn != null && !usn.isEmpty()) {
                         candidate.ssdpUsn = usn;
-                        LOG.info("Automatically fetched UPnP SSDP USN: " + usn);
                     }
 
-                    // Resolve hostname outside of transaction to avoid timeout
-                    hostname = resolveHostname(sighting.ipAddress, candidate.openPorts);
+                    // 3. Resolve Hostname based on open ports
+                    hostname = activeProber.resolveHostname(sighting.ipAddress, candidate.openPorts);
                 } finally {
-                    activeScanConcurrency.release();
+                    activeProber.releasePermit();
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -257,890 +248,27 @@ public class FingerprintEngine {
 
         candidate.hostname = hostname;
 
-        dbLock.lock();
+        identityManager.lock();
         try {
-            self.saveSightingInTransaction(sighting, candidate, hostname);
+            identityManager.saveSightingInTransaction(sighting, candidate, hostname);
         } finally {
-            dbLock.unlock();
+            identityManager.unlock();
         }
     }
 
     @Transactional
-    protected void saveSightingInTransaction(NetworkSighting sighting, FingerprintVector candidate, String resolvedHostname) {
-        // 2. Look for existing identity
-        NetworkIdentity identity = NetworkIdentity.find("select n from NetworkIdentity n join fetch n.physicalDevice where n.ipAddress = ?1 and n.macAddress = ?2", 
-                sighting.ipAddress, sighting.macAddress).firstResult();
 
-        if (identity == null) {
-            // Check if there is an active identity on this IP first
-            NetworkIdentity activeIdOnIp = NetworkIdentity.find("select n from NetworkIdentity n join fetch n.physicalDevice where n.ipAddress = ?1 and n.current = true", sighting.ipAddress).firstResult();
-            if (activeIdOnIp != null) {
-                boolean sightingIsPlaceholder = sighting.macAddress == null || sighting.macAddress.equals("00:00:00:00:00:00") || sighting.macAddress.isEmpty();
-                boolean activeIsPlaceholder = activeIdOnIp.macAddress == null || activeIdOnIp.macAddress.equals("00:00:00:00:00:00") || activeIdOnIp.macAddress.isEmpty();
-                boolean derivedMacMatch = isDerivedMacMatch(sighting.macAddress, activeIdOnIp.macAddress);
 
-                // Reuse activeIdOnIp if placeholder OR if sighting MAC is derived from active MAC (e.g. VAP / randomized MAC on OpenWrt/Linux)
-                if (sightingIsPlaceholder || activeIsPlaceholder || derivedMacMatch) {
-                    identity = activeIdOnIp;
-                    if (!sightingIsPlaceholder && activeIsPlaceholder) {
-                        // ARP scan upgraded a placeholder MAC to a real MAC — record this in the correlation history.
-                        String oldMac = identity.macAddress;
-                        identity.macAddress = sighting.macAddress;
-                        LOG.info("MAC address resolved for IP " + sighting.ipAddress + ": " + oldMac + " -> " + sighting.macAddress);
-                        FingerprintCorrelationEvent macEvent = new FingerprintCorrelationEvent();
-                        macEvent.physicalDevice = identity.physicalDevice;
-                        macEvent.ipAddress = sighting.ipAddress;
-                        macEvent.macAddress = sighting.macAddress;
-                        macEvent.hostname = identity.hostname;
-                        macEvent.decisionType = "MAC_RESOLVED";
-                        macEvent.confidenceScore = 0.9;
-                        macEvent.details = "MAC address resolved from ARP scan: " + sighting.macAddress
-                                + (isGloballyUniqueMac(sighting.macAddress) ? " (globally unique)" : " (locally administered / randomized)");
-                        macEvent.timestamp = sighting.observedAt;
-                        macEvent.persist();
-                    }
-                }
-            }
 
-            if (identity == null) {
-                boolean isTestMode = io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST;
-                boolean isManual = isTestMode || "MANUAL_DISCOVERY".equals(sighting.source);
 
-                boolean hasMetadata = (candidate.hostname != null && !candidate.hostname.isEmpty())
-                        || (candidate.dhcpOption55 != null && !candidate.dhcpOption55.isEmpty())
-                        || (candidate.dhcpOption60 != null && !candidate.dhcpOption60.isEmpty())
-                        || (candidate.openPorts != null && !candidate.openPorts.isEmpty())
-                        || (candidate.sshHostKeys != null && !candidate.sshHostKeys.isEmpty());
 
-                boolean isPlaceholderMac = sighting.macAddress == null || sighting.macAddress.isEmpty() || "00:00:00:00:00:00".equals(sighting.macAddress);
-                boolean isRandomizedMac = !isPlaceholderMac && !isGloballyUniqueMac(sighting.macAddress);
 
-                // Defer creating NEW physical devices for 0-signal background sightings (placeholder or randomized MAC) until fingerprint metadata arrives.
-                // However, a placeholder MAC MUST always be deferred in background scans, because without a MAC we cannot track it across IPs.
-                if (!isManual) {
-                    if (isPlaceholderMac) {
-                        LOG.debug("Deferring new device creation: placeholder MAC on IP " + sighting.ipAddress);
-                        return;
-                    }
-                    if (isRandomizedMac && !hasMetadata) {
-                        LOG.debug("Deferring new device creation: 0-signal randomized MAC on IP " + sighting.ipAddress);
-                        return;
-                    }
-                }
-            }
-        }
 
-        if (identity != null) {
-            // Identity exists -> update timestamps
-            identity.lastSeen = sighting.observedAt;
-            
-            // Check if hostname needs to be updated/resolved (Only if NOT MANAGED)
-            if (identity.physicalDevice.managementState != com.gnm.model.enums.ManagementState.MANAGED && (identity.hostname == null || identity.hostname.isEmpty())) {
-                if (resolvedHostname != null) {
-                    identity.hostname = resolvedHostname;
-                    if (identity.physicalDevice.displayName.startsWith("Discovered Host ")) {
-                        identity.physicalDevice.displayName = resolvedHostname;
-                    }
-                }
-            }
 
-            PhysicalDevice device = identity.physicalDevice;
-            
-            boolean statusChanged = (device.status != DeviceStatus.ONLINE);
-            device.status = DeviceStatus.ONLINE;
-            device.lastSeen = sighting.observedAt;
-            device.consecutiveMissedProbes = 0; // Reset on any successful sighting
-            
-            // Ensure only this identity is marked current
-            List<NetworkIdentity> allIdentities = NetworkIdentity.list("physicalDevice.id", device.id);
-            for (NetworkIdentity oldId : allIdentities) {
-                if (oldId.id.equals(identity.id)) {
-                    oldId.current = true;
-                } else {
-                    oldId.current = false;
-                }
-                oldId.persist();
-            }
-            
-            // Merge matching candidate signals to historical vector
-            // Merge matching candidate signals to historical vector
-            FingerprintVector historical = FingerprintVector.find("physicalDevice.id = ?1", device.id).firstResult();
-            if (historical != null) {
-                checkSignatureMutations(candidate, historical, sighting);
-                mergeVectors(candidate, historical);
-            }
-            
-            device.persist();
-            identity.persist();
 
-            // Enforce IP Uniqueness for this IP
-            enforceIpUniqueness(sighting.ipAddress, device.id);
 
-            if (statusChanged) {
-                eventBroadcaster.fireAsync(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "ONLINE", sighting.ipAddress));
-            }
-            return;
-        }
 
-        // 3b. Match against existing devices using Similarity Engine
-        List<FingerprintVector> allFingerprints = FingerprintVector.list("select distinct f from FingerprintVector f left join fetch f.physicalDevice d left join fetch d.identities");
-        PhysicalDevice bestMatch = null;
-        double bestScore = 0.0;
-        List<String> bestDetails = new ArrayList<>();
-        boolean matchedViaExactMac = false;
 
-        for (FingerprintVector hist : allFingerprints) {
-            boolean macMismatch = false;
-            boolean exactMacMatch = false;
-            // Strict Separation Rule: If the candidate MAC is globally unique (permanent hardware),
-            // and the historical device has any globally unique MAC that is different, they CANNOT be merged.
-            // This ensures two distinct physical devices (e.g. two different laptops) are never conflated.
-            // Locally-administered MACs (randomized) are exempt from this rule.
-            if (hist.physicalDevice != null && hist.physicalDevice.identities != null) {
-                for (NetworkIdentity id : hist.physicalDevice.identities) {
-                    if (isDerivedMacMatch(sighting.macAddress, id.macAddress)) {
-                        exactMacMatch = true;
-                        break;
-                    } else if (isGloballyUniqueMac(sighting.macAddress) && isGloballyUniqueMac(id.macAddress)) {
-                        if (!sighting.macAddress.equalsIgnoreCase(id.macAddress)) {
-                            macMismatch = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (macMismatch) {
-                continue; // Enforce separate device profile for different globally-unique MACs
-            }
-
-            if (exactMacMatch) {
-                bestScore = 1.0;
-                bestMatch = hist.physicalDevice;
-                matchedViaExactMac = true;
-                break;
-            }
-
-            SimilarityEngine.SimilarityResult result = similarityEngine.calculateSimilarity(candidate, hist);
-            if (result.score > bestScore) {
-                bestScore = result.score;
-                bestDetails = result.details;
-                bestMatch = hist.physicalDevice;
-            }
-        }
-
-
-        // 4. Evaluate score thresholds
-        if (bestScore >= mergeThreshold && bestMatch != null) {
-            LOG.info("Matching new identity (" + sighting.ipAddress + " / " + sighting.macAddress + 
-                     ") to existing device: " + bestMatch.displayName + " (Confidence: " + Math.round(bestScore*100) + "%)");
-            
-            // Enforce IP Uniqueness: Deactivate current flag on ANY physical device currently claiming this IP
-            enforceIpUniqueness(sighting.ipAddress, bestMatch.id);
-
-            // Auto-merge any existing duplicate PhysicalDevices sharing derived MACs
-            mergeDuplicateDevices(bestMatch, sighting.macAddress);
-
-            // Deactivate all previous current flags for this device
-            List<NetworkIdentity> oldIdentities = NetworkIdentity.list("physicalDevice.id", bestMatch.id);
-            for (NetworkIdentity oldId : oldIdentities) {
-                oldId.current = false;
-                oldId.persist();
-            }
-
-            // Merge Identity
-            NetworkIdentity newId = new NetworkIdentity();
-            newId.physicalDevice = bestMatch;
-            newId.ipAddress = sighting.ipAddress;
-            newId.macAddress = sighting.macAddress;
-            newId.firstSeen = sighting.observedAt;
-            newId.lastSeen = sighting.observedAt;
-            newId.current = true;
-            newId.hostname = resolvedHostname;
-            newId.persist();
-
-            bestMatch.status = DeviceStatus.ONLINE;
-            bestMatch.lastSeen = sighting.observedAt;
-            bestMatch.consecutiveMissedProbes = 0;
-            bestMatch.confidenceScore = (bestMatch.confidenceScore + bestScore) / 2.0; // rolling average
-            
-            FingerprintVector historical = FingerprintVector.find("physicalDevice.id = ?1", bestMatch.id).firstResult();
-            if (historical != null) {
-                checkSignatureMutations(candidate, historical, sighting);
-                mergeVectors(candidate, historical);
-            }
-            bestMatch.persist();
-            if (candidate.openPorts != null) {
-                try {
-                    syncNetworkServices(bestMatch, candidate.openPorts);
-                } catch (Exception e) {
-                    LOG.error("Failed to sync network services for bestMatch " + bestMatch.id, e);
-                }
-            }
-
-            FingerprintCorrelationEvent correlationEvent = new FingerprintCorrelationEvent();
-            correlationEvent.physicalDevice = bestMatch;
-            correlationEvent.ipAddress = sighting.ipAddress;
-            correlationEvent.macAddress = sighting.macAddress;
-            correlationEvent.hostname = candidate.hostname;
-            if (matchedViaExactMac) {
-                correlationEvent.decisionType = "DIRECT_MATCH";
-                correlationEvent.details = "Direct MAC match on " + sighting.macAddress;
-            } else {
-                correlationEvent.decisionType = "SIMILARITY_MATCH";
-                StringBuilder sb = new StringBuilder();
-                sb.append("Matched existing device '").append(bestMatch.displayName)
-                  .append("' using Similarity Engine (Score: ").append(Math.round(bestScore * 100)).append("%)\n\n");
-                sb.append("Calculation Breakdown:\n");
-                for (String detail : bestDetails) {
-                    sb.append(detail).append("\n");
-                }
-                correlationEvent.details = sb.toString().trim();
-            }
-            correlationEvent.confidenceScore = bestScore;
-            correlationEvent.timestamp = sighting.observedAt;
-            correlationEvent.persist();
-
-            eventBroadcaster.fireAsync(new DeviceEvent("STATUS_CHANGE", bestMatch.id.toString(), bestMatch.displayName, "ONLINE", sighting.ipAddress));
-        } else {
-            GlobalSetting modeSetting = GlobalSetting.findById("APP_MODE");
-            String appMode = modeSetting != null ? modeSetting.value : "DISCOVERY";
-
-            if ("DETECTION".equals(appMode)) {
-                LOG.warn("IDS DETECTION MODE: Unknown device detected on network! Generating ThreatEvent.");
-                String desc = "Rogue Device Detected: Unauthorized access attempt from " + (resolvedHostname != null ? resolvedHostname : "Unknown");
-                ThreatEvent existing = ThreatEvent.find("ipAddress = ?1 and macAddress = ?2 and description = ?3", sighting.ipAddress, sighting.macAddress, desc).firstResult();
-                if (existing != null) {
-                    if (existing.resolved) {
-                        return; // Ignore if user already explicitly resolved this rogue device sighting
-                    }
-                    existing.detectedAt = Instant.now();
-                    existing.persist();
-                    threatBroadcaster.fireAsync(existing);
-                } else {
-                    ThreatEvent threat = new ThreatEvent();
-                    threat.severity = "CRITICAL";
-                    threat.description = desc;
-                    threat.ipAddress = sighting.ipAddress;
-                    threat.macAddress = sighting.macAddress;
-                    threat.detectedAt = Instant.now();
-                    threat.persist();
-                    threatBroadcaster.fireAsync(threat);
-                }
-                return; // Do NOT create device in detection mode!
-            }
-
-            // No match -> Create new device
-            if (bestMatch != null) {
-                LOG.info(String.format("Creating new physical device for sighting (%s / %s). Best match was '%s' but confidence score (%d%%) was below merge threshold (%d%%).",
-                        sighting.ipAddress, sighting.macAddress, bestMatch.displayName, Math.round(bestScore * 100), Math.round(mergeThreshold * 100)));
-            } else {
-                LOG.info(String.format("Creating new physical device for sighting (%s / %s). No existing devices had any matching fingerprint features.",
-                        sighting.ipAddress, sighting.macAddress));
-            }
-            
-            // Enforce IP Uniqueness: Deactivate current flag on ANY physical device currently claiming this IP
-            enforceIpUniqueness(sighting.ipAddress, null);
-
-            PhysicalDevice newDevice = new PhysicalDevice();
-            newDevice.displayName = resolvedHostname != null ? resolvedHostname : "Discovered Host " + sighting.ipAddress;
-            newDevice.deviceType = DeviceType.IOT; // Default type
-            newDevice.firstSeen = sighting.observedAt;
-            newDevice.lastSeen = sighting.observedAt;
-            newDevice.status = DeviceStatus.ONLINE;
-            newDevice.confidenceScore = 1.0;
-            newDevice.persistAndFlush();
-
-            NetworkIdentity newId = new NetworkIdentity();
-            newId.physicalDevice = newDevice;
-            newId.ipAddress = sighting.ipAddress;
-            newId.macAddress = sighting.macAddress;
-            newId.firstSeen = sighting.observedAt;
-            newId.lastSeen = sighting.observedAt;
-            newId.current = true;
-            newId.hostname = resolvedHostname;
-            newId.persistAndFlush();
-
-            FingerprintVector historical = new FingerprintVector();
-            historical.physicalDevice = newDevice;
-            historical.dhcpOption55 = candidate.dhcpOption55;
-            historical.dhcpOption60 = candidate.dhcpOption60;
-            historical.mdnsServices = candidate.mdnsServices;
-            historical.openPorts = candidate.openPorts;
-            historical.sshHostKeys = candidate.sshHostKeys;
-            historical.httpServerHeader = candidate.httpServerHeader;
-            historical.tlsJa4 = candidate.tlsJa4;
-            historical.tlsCertSubject = candidate.tlsCertSubject;
-            historical.ssdpUsn = candidate.ssdpUsn;
-            historical.hostname = resolvedHostname; // Persist hostname for later hostname-based merging
-            historical.capturedAt = Instant.now();
-            historical.persist();
-
-            if (candidate.openPorts != null) {
-                try {
-                    syncNetworkServices(newDevice, candidate.openPorts);
-                } catch (Exception e) {
-                    LOG.error("Failed to sync network services for device " + newDevice.id, e);
-                }
-            }
-
-            FingerprintCorrelationEvent correlationEvent = new FingerprintCorrelationEvent();
-            correlationEvent.physicalDevice = newDevice;
-            correlationEvent.ipAddress = sighting.ipAddress;
-            correlationEvent.macAddress = sighting.macAddress;
-            correlationEvent.hostname = resolvedHostname;
-            correlationEvent.decisionType = "NEW_DEVICE";
-            correlationEvent.confidenceScore = 1.0;
-            correlationEvent.details = "Device first discovered on network";
-            correlationEvent.timestamp = sighting.observedAt;
-            correlationEvent.persist();
-
-            eventBroadcaster.fireAsync(new DeviceEvent("NEW_DEVICE", newDevice.id.toString(), newDevice.displayName, "ONLINE", sighting.ipAddress));
-        }
-    }
-
-    private boolean isDerivedMacMatch(String mac1, String mac2) {
-        if (mac1 == null || mac2 == null) return false;
-        String clean1 = mac1.replace(":", "").replace("-", "").toUpperCase();
-        String clean2 = mac2.replace(":", "").replace("-", "").toUpperCase();
-        if (clean1.length() != 12 || clean2.length() != 12) return false;
-        if (clean1.equals("000000000000") || clean2.equals("000000000000")) return false;
-        
-        // Exact MAC match
-        if (clean1.equals(clean2)) return true;
-        
-        // Check if remaining 5 octets (NIC-specific bytes) match
-        if (!clean1.substring(2).equals(clean2.substring(2))) return false;
-        
-        // Compare first octets clearing the 0x02 (Locally Administered / VAP) bit
-        try {
-            int octet1 = Integer.parseInt(clean1.substring(0, 2), 16) & ~0x02;
-            int octet2 = Integer.parseInt(clean2.substring(0, 2), 16) & ~0x02;
-            return octet1 == octet2;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private void mergeDuplicateDevices(PhysicalDevice targetDevice, String macAddress) {
-        List<NetworkIdentity> allIdentities = NetworkIdentity.listAll();
-        for (NetworkIdentity id : allIdentities) {
-            if (id.physicalDevice != null && !id.physicalDevice.id.equals(targetDevice.id)) {
-                if (isDerivedMacMatch(macAddress, id.macAddress)) {
-                    PhysicalDevice duplicate = id.physicalDevice;
-                    LOG.info("Auto-merging duplicate PhysicalDevice (" + duplicate.id + " / " + duplicate.displayName + ") into target device (" + targetDevice.id + " / " + targetDevice.displayName + ")");
-                    
-                    id.physicalDevice = targetDevice;
-                    id.current = false;
-                    id.persist();
-
-                    List<FingerprintVector> fps = FingerprintVector.list("physicalDevice.id", duplicate.id);
-                    for (FingerprintVector fp : fps) {
-                        fp.delete();
-                    }
-
-                    long remaining = NetworkIdentity.count("physicalDevice.id", duplicate.id);
-                    if (remaining == 0) {
-                        duplicate.delete();
-                    }
-                }
-            }
-        }
-    }
-
-    private void enforceIpUniqueness(String ipAddress, java.util.UUID exemptDeviceId) {
-        List<NetworkIdentity> activeIdentitiesOnIp = NetworkIdentity.find("select n from NetworkIdentity n join fetch n.physicalDevice where n.ipAddress = ?1 and n.current = true", ipAddress).list();
-        for (NetworkIdentity oldId : activeIdentitiesOnIp) {
-            if (exemptDeviceId != null && exemptDeviceId.equals(oldId.physicalDevice.id)) {
-                continue;
-            }
-            oldId.current = false;
-            oldId.persist();
-            
-            // Panache will auto-flush before the count query if necessary
-
-            long activeCount = NetworkIdentity.count("physicalDevice.id = ?1 and current = true", oldId.physicalDevice.id);
-            if (activeCount == 0) {
-                oldId.physicalDevice.status = DeviceStatus.OFFLINE;
-                oldId.physicalDevice.persist();
-            }
-        }
-    }
-
-    private String resolveHostname(String ipAddress, List<Integer> openPorts) {
-        if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST && !Boolean.getBoolean("forceNetworkScan")) {
-            return null; // Skip slow network lookups during regular tests
-        }
-        LOG.info("Starting hostname resolution check for IP: " + ipAddress);
-
-        // Stage 1: Try local subnet gateway DNS (.1 address)
-        int lastDot = ipAddress.lastIndexOf('.');
-        if (lastDot > 0) {
-            String subnetGateway = ipAddress.substring(0, lastDot) + ".1";
-            LOG.info("[Stage 1] Querying subnet gateway DNS server " + subnetGateway + " for IP " + ipAddress);
-            String resolved = resolveViaJndi(ipAddress, subnetGateway);
-            if (resolved != null) {
-                LOG.info("--> [Success Stage 1] Resolved hostname '" + resolved + "' for " + ipAddress + " via Subnet Gateway DNS (" + subnetGateway + ")");
-                return resolved;
-            }
-        }
-
-        // Stage 1.5: Try DNS servers from /etc/resolv.conf (e.g. a custom DHCP/DNS server like OpenWRT)
-        try {
-            java.io.File resolvConf = new java.io.File("/etc/resolv.conf");
-            if (resolvConf.exists() && resolvConf.canRead()) {
-                for (String line : java.nio.file.Files.readAllLines(resolvConf.toPath())) {
-                    line = line.trim();
-                    if (line.startsWith("nameserver ")) {
-                        String ns = line.substring("nameserver ".length()).trim();
-                        // Skip loopback (Docker embedded DNS) and the .1 gateway we already tried
-                        if (ns.startsWith("127.") || ns.endsWith(".1")) continue;
-                        LOG.info("[Stage 1.5] Querying resolv.conf DNS server " + ns + " for IP " + ipAddress);
-                        String resolved = resolveViaJndi(ipAddress, ns);
-                        if (resolved != null) {
-                            LOG.info("--> [Success Stage 1.5] Resolved hostname '" + resolved + "' for " + ipAddress + " via resolv.conf DNS (" + ns + ")");
-                            return resolved;
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            LOG.warn("Error reading /etc/resolv.conf during Stage 1.5 DNS resolution: " + e.getMessage());
-        }
-        
-        // Stage 2: Try container default route gateway DNS
-        String defaultGateway = getDefaultGateway();
-        if (defaultGateway != null && !defaultGateway.equals(ipAddress)) {
-            LOG.info("[Stage 2] Querying container default route gateway DNS server " + defaultGateway + " for IP " + ipAddress);
-            String resolved = resolveViaJndi(ipAddress, defaultGateway);
-            if (resolved != null) {
-                LOG.info("--> [Success Stage 2] Resolved hostname '" + resolved + "' for " + ipAddress + " via Route Gateway DNS (" + defaultGateway + ")");
-                return resolved;
-            }
-        }
-
-        // Stage 3: Try NetBIOS Node Status unicast query (UDP port 137)
-        LOG.info("[Stage 3] Querying NetBIOS unicast DNS for IP: " + ipAddress);
-        String netbiosName = resolveViaNetbios(ipAddress);
-        if (netbiosName != null) {
-            LOG.info("--> [Success Stage 3] Resolved hostname '" + netbiosName + "' for " + ipAddress + " via NetBIOS Node Status");
-            return netbiosName;
-        }
-
-        // Stage 4: Try mDNS Multicast Query (UDP port 5353)
-        LOG.info("[Stage 4] Querying mDNS Multicast for IP: " + ipAddress);
-        String mdnsName = resolveViaMdns(ipAddress);
-        if (mdnsName != null) {
-            LOG.info("--> [Success Stage 4] Resolved hostname '" + mdnsName + "' for " + ipAddress + " via mDNS Multicast");
-            return mdnsName;
-        }
-
-        // Stage 4.5: Try UPnP SSDP Unicast (UDP port 1900)
-        LOG.info("[Stage 4.5] Querying UPnP SSDP Unicast for IP: " + ipAddress);
-        String upnpName = resolveViaUpnpUnicast(ipAddress);
-        if (upnpName != null) {
-            LOG.info("--> [Success Stage 4.5] Resolved hostname '" + upnpName + "' for " + ipAddress + " via UPnP SSDP");
-            return upnpName;
-        }
-
-        // Stage 5: Try TLS Certificate Common Name (CN) extraction (Dynamic Open Ports + Fallback)
-        LOG.info("[Stage 5] Querying TLS Certificate CN for IP: " + ipAddress);
-        List<Integer> portsToTry = (openPorts != null && !openPorts.isEmpty()) 
-            ? openPorts 
-            : List.of(8006, 443, 8443);
-        for (int port : portsToTry) {
-            String cn = resolveViaTlsCert(ipAddress, port);
-            if (cn != null) {
-                LOG.info("--> [Success Stage 5] Resolved hostname '" + cn + "' for " + ipAddress + " via TLS Certificate CN on port " + port);
-                return cn;
-            }
-        }
-
-        // Stage 6: Try HTTP/HTTPS Title Scraping on common web ports
-        LOG.info("[Stage 6] Querying HTTP Title for IP: " + ipAddress);
-        List<Integer> httpPorts = List.of(80, 8080, 8000, 8123, 443, 8443, 8006);
-        for (int port : httpPorts) {
-            if (openPorts != null && !openPorts.isEmpty() && !openPorts.contains(port)) continue;
-            boolean https = port == 443 || port == 8443 || port == 8006;
-            String title = resolveViaHttpTitle(ipAddress, port, https);
-            if (title != null && !title.equalsIgnoreCase("NetAlmanac") && !title.toLowerCase().contains("network manager")) {
-                LOG.info("--> [Success Stage 6] Resolved hostname '" + title + "' for " + ipAddress + " via HTTP Title on port " + port);
-                return title;
-            }
-        }
-
-        // Stage 7: Standard JDK reverse lookup (slow, so done last)
-        LOG.info("[Stage 7] Querying standard JDK reverse lookup for IP: " + ipAddress);
-        try {
-            java.net.InetAddress addr = java.net.InetAddress.getByName(ipAddress);
-            String host = addr.getCanonicalHostName();
-            LOG.info("[Stage 7] JDK resolver returned " + host + " for IP " + ipAddress);
-            if (host != null && !host.equals(ipAddress) && !host.isEmpty()) {
-                LOG.info("--> [Success Stage 7] Resolved hostname '" + host + "' for " + ipAddress + " via JDK Reverse Lookup");
-                return host;
-            }
-        } catch (Exception e) {
-            // Ignore
-        }
-
-        // Stage 8: ESPHome Native API fallback
-        if (openPorts != null && openPorts.contains(6053)) {
-            LOG.info("--> [Success Stage 8] Resolved as ESPHome via port 6053 for " + ipAddress);
-            return "ESPHome Device";
-        }
-        
-        LOG.info("--> [Failed] Hostname resolution failed for IP: " + ipAddress);
-        return null;
-    }
-
-    private String resolveViaTlsCert(String ipAddress, int port) {
-        try {
-            javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
-                new javax.net.ssl.X509TrustManager() {
-                    public java.security.cert.X509Certificate[] getAcceptedIssuers() { return null; }
-                    public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-                    public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-                }
-            };
-
-            javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
-            sc.init(null, trustAllCerts, new java.security.SecureRandom());
-            
-            javax.net.ssl.SSLSocketFactory factory = sc.getSocketFactory();
-            try (javax.net.ssl.SSLSocket socket = (javax.net.ssl.SSLSocket) factory.createSocket()) {
-                socket.connect(new java.net.InetSocketAddress(ipAddress, port), 250); // Fast timeout for local networks
-                socket.setSoTimeout(250);
-                
-                socket.startHandshake();
-                
-                var certs = socket.getSession().getPeerCertificates();
-                if (certs != null && certs.length > 0 && certs[0] instanceof java.security.cert.X509Certificate) {
-                    java.security.cert.X509Certificate cert = (java.security.cert.X509Certificate) certs[0];
-                    String dn = cert.getSubjectX500Principal().getName();
-                    
-                    // Parse CN from DN
-                    for (String part : dn.split(",")) {
-                        part = part.trim();
-                        if (part.startsWith("CN=")) {
-                            String cn = part.substring(3);
-                            if (!cn.isEmpty() && !cn.contains(" ") && !cn.equalsIgnoreCase("localhost")) {
-                                return cn;
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            // Port closed, timeout, or SSL handshake failed
-        }
-        return null;
-    }
-
-    private String resolveViaNetbios(String ipAddress) {
-        try (java.net.DatagramSocket socket = new java.net.DatagramSocket()) {
-            socket.setSoTimeout(150); // Fast timeout for LAN unicast
-            
-            // 50-byte NetBIOS Node Status Query Packet
-            byte[] query = new byte[50];
-            query[0] = 0x00; query[1] = 0x01; // Transaction ID
-            query[2] = 0x00; query[3] = 0x00; // Flags: Query
-            query[4] = 0x00; query[5] = 0x01; // Questions: 1
-            query[12] = 0x20;                 // Name Length (32 bytes)
-            
-            // Encoded "*" wildcard name space
-            query[13] = 0x43; query[14] = 0x4b;
-            for (int i = 15; i < 45; i++) {
-                query[i] = 0x41;
-            }
-            query[45] = 0x00;                 // Terminator
-            query[46] = 0x00; query[47] = 0x21; // Type: NBSTAT (33)
-            query[48] = 0x00; query[49] = 0x01; // Class: IN (1)
-            
-            java.net.InetAddress addr = java.net.InetAddress.getByName(ipAddress);
-            java.net.DatagramPacket request = new java.net.DatagramPacket(query, query.length, addr, 137);
-            socket.send(request);
-            
-            byte[] responseBuffer = new byte[1024];
-            java.net.DatagramPacket response = new java.net.DatagramPacket(responseBuffer, responseBuffer.length);
-            socket.receive(response);
-            
-            // Parse response bytes (minimal NetBIOS Node Status header + payload length is 57 bytes)
-            if (response.getLength() >= 57) {
-                int numNames = responseBuffer[56] & 0xFF;
-                int offset = 57;
-                for (int i = 0; i < numNames; i++) {
-                    if (offset + 18 > response.getLength()) break;
-                    
-                    // Extract 15-byte ASCII NetBIOS name
-                    StringBuilder nameBuilder = new StringBuilder();
-                    for (int j = 0; j < 15; j++) {
-                        char c = (char) responseBuffer[offset + j];
-                        if (c > 31 && c < 127 && c != ' ') {
-                            nameBuilder.append(c);
-                        }
-                    }
-                    int type = responseBuffer[offset + 15] & 0xFF;
-                    offset += 18;
-                    
-                    // NetBIOS unique name (Workstation Service type 0x00)
-                    if (type == 0x00 && nameBuilder.length() > 0) {
-                        return nameBuilder.toString().trim();
-                    }
-                }
-            }
-        } catch (Exception e) {
-            // NetBIOS query timed out or target has no NetBIOS active
-        }
-        return null;
-    }
-
-    private String resolveViaMdns(String ipAddress) {
-        try (java.net.DatagramSocket socket = new java.net.DatagramSocket()) {
-            socket.setSoTimeout(500);
-
-            // Construct an mDNS reverse DNS query (PTR for IP.in-addr.arpa)
-            String[] octets = ipAddress.split("\\.");
-            if (octets.length != 4) return null;
-            String arpa = octets[3] + "." + octets[2] + "." + octets[1] + "." + octets[0] + ".in-addr.arpa";
-
-            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-            java.io.DataOutputStream dos = new java.io.DataOutputStream(baos);
-            
-            dos.writeShort(0x1234); // Transaction ID
-            dos.writeShort(0x0000); // Flags: standard query
-            dos.writeShort(0x0001); // Questions: 1
-            dos.writeShort(0x0000); // Answer RRs: 0
-            dos.writeShort(0x0000); // Authority RRs: 0
-            dos.writeShort(0x0000); // Additional RRs: 0
-            
-            for (String part : arpa.split("\\.")) {
-                dos.writeByte(part.length());
-                dos.writeBytes(part);
-            }
-            dos.writeByte(0); // Root terminator
-            dos.writeShort(0x000C); // Type: PTR
-            dos.writeShort(0x0001); // Class: IN
-
-            byte[] query = baos.toByteArray();
-            java.net.InetAddress addr = java.net.InetAddress.getByName("224.0.0.251");
-            java.net.DatagramPacket request = new java.net.DatagramPacket(query, query.length, addr, 5353);
-            socket.send(request);
-
-            byte[] responseBuffer = new byte[1024];
-            java.net.DatagramPacket response = new java.net.DatagramPacket(responseBuffer, responseBuffer.length);
-            socket.receive(response);
-
-            String payload = new String(responseBuffer, 0, response.getLength(), java.nio.charset.StandardCharsets.US_ASCII);
-            java.util.regex.Matcher m = java.util.regex.Pattern.compile("([\\w-]{1,63})\\.local").matcher(payload);
-            if (m.find()) {
-                return m.group(1);
-            }
-        } catch (Exception e) {
-            // Ignore timeout
-        }
-        return null;
-    }
-
-    private String resolveViaUpnpUnicast(String ipAddress) {
-        try (java.net.DatagramSocket socket = new java.net.DatagramSocket()) {
-            socket.setSoTimeout(500);
-
-            String query = "M-SEARCH * HTTP/1.1\r\n" +
-                           "Host: 239.255.255.250:1900\r\n" +
-                           "Man: \"ssdp:discover\"\r\n" +
-                           "ST: ssdp:all\r\n" +
-                           "MX: 1\r\n\r\n";
-
-            byte[] requestBytes = query.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            java.net.InetAddress addr = java.net.InetAddress.getByName(ipAddress);
-            java.net.DatagramPacket request = new java.net.DatagramPacket(requestBytes, requestBytes.length, addr, 1900);
-            socket.send(request);
-
-            byte[] responseBuffer = new byte[2048];
-            java.net.DatagramPacket response = new java.net.DatagramPacket(responseBuffer, responseBuffer.length);
-            socket.receive(response);
-
-            String responseString = new String(responseBuffer, 0, response.getLength(), java.nio.charset.StandardCharsets.UTF_8);
-            
-            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?i)Server:\\s*(.*?)\r\n").matcher(responseString);
-            if (m.find()) {
-                String server = m.group(1).trim();
-                if (!server.isEmpty() && !server.equalsIgnoreCase("UPnP/1.0")) {
-                    return server.split(" ")[0].trim();
-                }
-            }
-            
-            java.util.regex.Matcher m2 = java.util.regex.Pattern.compile("(?i)USN:\\s*(.*?)\r\n").matcher(responseString);
-            if (m2.find()) {
-                String usn = m2.group(1).trim();
-                return usn.length() > 30 ? usn.substring(0, 30) : usn;
-            }
-        } catch (Exception e) {
-            // Ignore timeout
-        }
-        return null;
-    }
-
-    private String fetchUpnpUsn(String ipAddress) {
-        try (java.net.DatagramSocket socket = new java.net.DatagramSocket()) {
-            socket.setSoTimeout(500);
-
-            String query = "M-SEARCH * HTTP/1.1\r\n" +
-                           "Host: 239.255.255.250:1900\r\n" +
-                           "Man: \"ssdp:discover\"\r\n" +
-                           "ST: ssdp:all\r\n" +
-                           "MX: 1\r\n\r\n";
-
-            byte[] requestBytes = query.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            java.net.InetAddress addr = java.net.InetAddress.getByName(ipAddress);
-            java.net.DatagramPacket request = new java.net.DatagramPacket(requestBytes, requestBytes.length, addr, 1900);
-            socket.send(request);
-
-            byte[] responseBuffer = new byte[2048];
-            java.net.DatagramPacket response = new java.net.DatagramPacket(responseBuffer, responseBuffer.length);
-            socket.receive(response);
-
-            String responseString = new String(responseBuffer, 0, response.getLength(), java.nio.charset.StandardCharsets.UTF_8);
-            
-            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?i)USN:\\s*(.*?)\r\n").matcher(responseString);
-            if (m.find()) {
-                String usn = m.group(1).trim();
-                return usn;
-            }
-        } catch (Exception e) {
-            // Ignore timeout
-        }
-        return null;
-    }
-
-    private String resolveViaHttpTitle(String ipAddress, int port, boolean https) {
-        try {
-            String protocol = https ? "https" : "http";
-            java.net.URL url = new java.net.URI(protocol + "://" + ipAddress + ":" + port + "/").toURL();
-            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-            
-            // Bypass SSL verification for HTTPS IoT devices
-            if (https && conn instanceof javax.net.ssl.HttpsURLConnection) {
-                javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) conn;
-                javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
-                    new javax.net.ssl.X509TrustManager() {
-                        public java.security.cert.X509Certificate[] getAcceptedIssuers() { return null; }
-                        public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-                        public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
-                    }
-                };
-                javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
-                sc.init(null, trustAllCerts, new java.security.SecureRandom());
-                httpsConn.setSSLSocketFactory(sc.getSocketFactory());
-                httpsConn.setHostnameVerifier((hostname, session) -> true);
-            }
-
-            conn.setConnectTimeout(1000);
-            conn.setReadTimeout(1000);
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("User-Agent", "GNM-Scanner/1.0");
-            
-            conn.connect();
-            String serverHeader = conn.getHeaderField("Server");
-            int code = conn.getResponseCode();
-
-            if (code == 200 || code == 401 || code == 403 || code == 301 || code == 302 || code == 307 || code == 308) {
-                java.io.InputStream stream = (code >= 400) ? conn.getErrorStream() : conn.getInputStream();
-                if (stream != null) {
-                    try (java.io.BufferedReader in = new java.io.BufferedReader(new java.io.InputStreamReader(stream))) {
-                        String inputLine;
-                        StringBuilder content = new StringBuilder();
-                        int bytesRead = 0;
-                        while ((inputLine = in.readLine()) != null && bytesRead < 16384) {
-                            content.append(inputLine).append("\n");
-                            bytesRead += inputLine.length();
-                        }
-                        
-                        String fullContent = content.toString();
-                        
-                        // JSON fallback for Tasmota/Shelly/ESPHome web servers
-                        if (fullContent.trim().startsWith("{")) {
-                            java.util.regex.Matcher jm = java.util.regex.Pattern.compile("\"(?:hostname|name|device_name|id)\"\\s*:\\s*\"([^\"]+)\"", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(fullContent);
-                            if (jm.find()) {
-                                return jm.group(1).trim();
-                            }
-                        }
-                        
-                        // DOTALL regex to catch <title> tags spanning multiple lines
-                        java.util.regex.Matcher m = java.util.regex.Pattern.compile("<title.*?>\\s*(.*?)\\s*</title>", java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.DOTALL).matcher(fullContent);
-                        if (m.find()) {
-                            String title = m.group(1).trim();
-                            if (!title.isEmpty() && !title.equalsIgnoreCase("Document") && !title.equalsIgnoreCase("Index") && !title.equalsIgnoreCase("Web Server")) {
-                                return title;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Fallback: If no valid title was found but a descriptive Server header exists
-            if (serverHeader != null && !serverHeader.isEmpty() && !serverHeader.equalsIgnoreCase("nginx") && !serverHeader.toLowerCase().contains("lighttpd")) {
-                return serverHeader.split(" ")[0].trim();
-            }
-        } catch (Exception e) {
-            // Port closed or not HTTP
-        }
-        return null;
-    }
-
-    private String resolveViaJndi(String ipAddress, String dnsServer) {
-        try {
-            java.util.Hashtable<String, String> env = new java.util.Hashtable<>();
-            env.put("java.naming.factory.initial", "com.sun.jndi.dns.DnsContextFactory");
-            env.put("java.naming.provider.url", "dns://" + dnsServer);
-            env.put("com.sun.jndi.dns.timeout.initial", "400"); // 400ms timeout
-            env.put("com.sun.jndi.dns.timeout.retries", "1");
-            
-            javax.naming.directory.DirContext ctx = new javax.naming.directory.InitialDirContext(env);
-            
-            String[] parts = ipAddress.split("\\.");
-            if (parts.length == 4) {
-                String reverseIp = parts[3] + "." + parts[2] + "." + parts[1] + "." + parts[0] + ".in-addr.arpa";
-                javax.naming.directory.Attributes attrs = ctx.getAttributes(reverseIp, new String[] { "PTR" });
-                var attribute = attrs.get("PTR");
-                if (attribute != null) {
-                    String val = attribute.get().toString();
-                    if (val.endsWith(".")) {
-                        val = val.substring(0, val.length() - 1);
-                    }
-                    return val;
-                }
-            }
-        } catch (Exception e) {
-            LOG.info("  | JNDI query to " + dnsServer + " for IP " + ipAddress + " failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
-        }
-        return null;
-    }
-
-    private String getDefaultGateway() {
-        try {
-            java.io.File file = new java.io.File("/proc/net/route");
-            if (file.exists() && file.canRead()) {
-                java.util.List<String> lines = java.nio.file.Files.readAllLines(file.toPath());
-                for (int i = 1; i < lines.size(); i++) {
-                    String[] parts = lines.get(i).trim().split("\\s+");
-                    if (parts.length >= 3) {
-                        String dest = parts[1];
-                        String gatewayHex = parts[2];
-                        if ("00000000".equals(dest) && !"00000000".equals(gatewayHex)) {
-                            long val = Long.parseLong(gatewayHex, 16);
-                            return ((val & 0xFF)) + "." +
-                                   ((val >> 8) & 0xFF) + "." +
-                                   ((val >> 16) & 0xFF) + "." +
-                                   ((val >> 24) & 0xFF);
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            LOG.debug("Error reading /proc/net/route for default gateway: " + e.getMessage());
-        }
-        return null;
-    }
 
     private FingerprintVector parseMetadata(NetworkSighting sighting) {
         FingerprintVector v = new FingerprintVector();
@@ -1253,52 +381,6 @@ public class FingerprintEngine {
     }
 
 
-    private void syncNetworkServices(PhysicalDevice device, List<Integer> openPorts) {
-        if (openPorts == null || openPorts.isEmpty()) return;
-
-        List<NetworkService> existingServices = NetworkService.list("physicalDevice.id", device.id);
-        List<Integer> existingPorts = existingServices.stream().map(s -> s.port).toList();
-
-        for (Integer port : openPorts) {
-            if (!existingPorts.contains(port)) {
-                NetworkService ns = new NetworkService();
-                ns.physicalDevice = device;
-                ns.port = port;
-                ns.protocol = "TCP";
-                ns.manageable = true;
-                ns.discovered = true;
-                ns.firstSeen = Instant.now();
-                ns.lastSeen = Instant.now();
-                
-                if (port == 22 || port == 2222 || port == 2223 || port == 2224) {
-                    ns.serviceType = "SSH";
-                    ns.label = "SSH Service";
-                } else if (port == 80 || port == 8080 || port == 9000 || port == 8123) {
-                    ns.serviceType = "HTTP";
-                    ns.label = "Web UI";
-                } else if (port == 443 || port == 8443 || port == 8006) {
-                    ns.serviceType = "HTTPS";
-                    ns.label = "Secure Web UI";
-                } else if (port == 161) {
-                    ns.serviceType = "SNMP";
-                    ns.label = "SNMP Agent";
-                    ns.protocol = "UDP";
-                } else {
-                    ns.serviceType = "UNKNOWN";
-                    ns.label = "Discovered Port " + port;
-                    ns.manageable = false;
-                }
-                
-                ns.persist();
-                LOG.info("Auto-created NetworkService for port " + port + " on device " + device.id);
-            } else {
-                existingServices.stream().filter(s -> s.port.equals(port)).findFirst().ifPresent(ns -> {
-                    ns.lastSeen = Instant.now();
-                    ns.persist();
-                });
-            }
-        }
-    }
 
     private void mergeVectors(FingerprintVector source, FingerprintVector dest) {
         if (source.dhcpOption55 != null) dest.dhcpOption55 = source.dhcpOption55;
@@ -1335,82 +417,8 @@ public class FingerprintEngine {
         dest.persist();
     }
 
-    private boolean isGloballyUniqueMac(String macAddress) {
-        if (macAddress == null || macAddress.length() < 2) {
-            return false;
-        }
-        try {
-            String cleanMac = macAddress.replace(":", "").replace("-", "");
-            if (cleanMac.equals("000000000000") || cleanMac.isEmpty()) {
-                return false; // All-zeros or empty is an invalid placeholder, not globally unique
-            }
-            if (cleanMac.length() < 2) {
-                return false;
-            }
-            String firstOctetHex = cleanMac.substring(0, 2);
-            int firstOctet = Integer.parseInt(firstOctetHex, 16);
-            // 0x02 is the locally administered bit. If 0, it is globally unique.
-            return (firstOctet & 0x02) == 0;
-        } catch (Exception e) {
-            return false;
-        }
-    }
 
-    private List<Integer> scanOpenPorts(String ipAddress) {
-        if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST && !Boolean.getBoolean("forceNetworkScan")) {
-            return new ArrayList<>(); // Skip slow port scanning during regular tests
-        }
-        int[] portsToScan = { 22, 80, 443, 1883, 3000, 5000, 5001, 5555, 6053, 8000, 8008, 8080, 8090, 8006, 8123, 8443, 9090, 9443, 10000 };
-        List<Integer> openPorts = new ArrayList<>();
-        
-        try (java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
-            List<java.util.concurrent.Future<Integer>> futures = new ArrayList<>();
-            for (int port : portsToScan) {
-                futures.add(executor.submit(() -> {
-                    try (java.net.Socket socket = new java.net.Socket()) {
-                        socket.connect(new java.net.InetSocketAddress(ipAddress, port), 2000); // 2000ms timeout
-                        return port;
-                    } catch (Exception e) {
-                        return null;
-                    }
-                }));
-            }
-            
-            for (var future : futures) {
-                try {
-                    Integer p = future.get();
-                    if (p != null) {
-                        openPorts.add(p);
-                    }
-                } catch (Exception e) {
-                    // Ignore
-                }
-            }
-        }
-        return openPorts;
-    }
 
-    private String fetchSshHostKey(String ip, int port) {
-        AtomicReference<String> hostKeyRef = new AtomicReference<>();
-        try (SshClient client = SshClient.setUpDefaultClient()) {
-            client.setServerKeyVerifier((clientSession, remoteAddress, serverKey) -> {
-                String fingerprint = KeyUtils.getFingerPrint(BuiltinDigests.sha256, serverKey);
-                hostKeyRef.set(fingerprint);
-                return false; // Reject key to immediately abort handshake
-            });
-            client.start();
-            try (ClientSession session = client.connect("fakeuser", ip, port).verify(15000).getSession()) {
-                session.auth().verify(15000); 
-            } catch (Exception e) {
-                // Expected to fail because we reject the server key, or auth fails
-            }
-        } catch (Exception e) {
-            LOG.error("Failed to fetch SSH host key from " + ip + ":" + port, e);
-        }
-        String key = hostKeyRef.get();
-        LOG.info("fetchSshHostKey(" + ip + ", " + port + ") returned: " + key);
-        return key;
-    }
 
     /**
      * Called by DiscoveryScheduler after each ICMP sweep cycle completes.
@@ -1418,133 +426,8 @@ public class FingerprintEngine {
      * NOT found in the sweep, and resets the counter for devices that responded.
      * Marks a device OFFLINE only when the counter reaches the configured threshold.
      */
-    public void updateProbeCounters(Set<String> liveIps) {
-        int threshold = 2;
-        try {
-            GlobalSetting setting = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew()
-                .call(() -> GlobalSetting.findById("DEVICE_OFFLINE_MISSED_PROBES_THRESHOLD"));
-            if (setting != null) {
-                try { threshold = Integer.parseInt(setting.value); } catch (Exception ignored) {}
-            }
-        } catch (Exception ignored) {}
-
-        final int finalThreshold = threshold;
-
-        List<PhysicalDevice> allDevices;
-        try {
-            allDevices = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew()
-                .call(() -> PhysicalDevice.listAll());
-        } catch (Exception e) {
-            LOG.error("Failed to list devices for probe counter update", e);
-            return;
-        }
-
-        for (PhysicalDevice device : allDevices) {
-            try {
-                self.updateProbeCounterInTransaction(device.id, liveIps, finalThreshold);
-            } catch (Exception e) {
-                LOG.error("Failed to update probe counter for device " + device.id, e);
-            }
-        }
-    }
 
     @Transactional(Transactional.TxType.REQUIRES_NEW)
-    public void updateProbeCounterInTransaction(UUID deviceId, Set<String> liveIps, int threshold) {
-        PhysicalDevice device = PhysicalDevice.findById(deviceId);
-        if (device == null) return;
-
-        // Determine the device's current IP address
-        String currentIp = device.identities.stream()
-            .filter(id -> id.current)
-            .map(id -> id.ipAddress)
-            .findFirst()
-            .orElse(null);
-
-        int effectiveThreshold = threshold;
-        int passiveWindowSeconds = 180;
-
-        if (device.deviceType == com.gnm.model.enums.DeviceType.PHONE) {
-            effectiveThreshold = Math.max(threshold, 10); // 10 missed cycles (10 minutes) for mobile devices in power-save mode
-            passiveWindowSeconds = 600; // 10 minutes passive window
-        }
-
-        boolean seenInThisCycle = currentIp != null && liveIps.contains(currentIp);
-
-        if (!seenInThisCycle && device.lastSeen != null) {
-            // Check if we have seen this device recently (e.g. passively via ARP or UDP broadcasts)
-            if (device.lastSeen.isAfter(Instant.now().minusSeconds(passiveWindowSeconds))) {
-                seenInThisCycle = true;
-                LOG.debugf("Device %s missed active probe but was seen passively recently at %s.", device.displayName, device.lastSeen);
-            }
-        }
-
-        if (seenInThisCycle) {
-            // Device responded — reset the counter and bring online if offline
-            if (device.consecutiveMissedProbes > 0) {
-                device.consecutiveMissedProbes = 0;
-            }
-            if (device.status != DeviceStatus.ONLINE) {
-                device.status = DeviceStatus.ONLINE;
-                device.lastSeen = Instant.now();
-                eventBroadcaster.fireAsync(new DeviceEvent("ONLINE", device.id.toString(), device.displayName, "ONLINE", currentIp));
-            }
-            device.persist();
-        } else {
-            if (device.status == DeviceStatus.OFFLINE) {
-                return; // Already offline, no need to do fallback ping or increment counter
-            }
-
-            // Double-check liveness before penalizing, in case it was missed by the sweep
-            boolean fallbackReachable = false;
-            if (currentIp != null) {
-                Process p = null;
-                try {
-                    p = new ProcessBuilder("ping", "-n", "-c", "1", "-W", "1", currentIp).start();
-                    boolean finished = p.waitFor(1500, java.util.concurrent.TimeUnit.MILLISECONDS);
-                    if (finished) {
-                        fallbackReachable = (p.exitValue() == 0);
-                    }
-                } catch (Exception ignored) {
-                } finally {
-                    if (p != null) {
-                        p.destroyForcibly();
-                    }
-                }
-            }
-            if (fallbackReachable) {
-                LOG.debugf("Device %s (IP: %s) missed primary sweep but responded to fallback ping. Resetting counter.", device.displayName, currentIp);
-                if (device.consecutiveMissedProbes > 0) {
-                    device.consecutiveMissedProbes = 0;
-                    device.persist();
-                }
-            } else {
-                // Device did NOT respond in this sweep cycle and fallback failed
-                device.consecutiveMissedProbes++;
-                LOG.debugf("Device %s (IP: %s) missed probe cycle. consecutiveMissedProbes=%d (threshold=%d)",
-                    device.displayName, currentIp, device.consecutiveMissedProbes, effectiveThreshold);
-
-                if (device.consecutiveMissedProbes >= effectiveThreshold) {
-                    device.status = DeviceStatus.OFFLINE;
-                    device.persist();
-                    String ip = currentIp != null ? currentIp : "0.0.0.0";
-                    eventBroadcaster.fireAsync(new DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "OFFLINE", ip));
-                    LOG.infof("Marked device %s as OFFLINE after %d consecutive missed ICMP probe cycles.",
-                        device.displayName, device.consecutiveMissedProbes);
-                } else {
-                    device.persist();
-                }
-            }
-        }
-    }
 
     @Transactional
-    public void mergeMetadataByMacInTransaction(String macAddress, FingerprintVector candidate) {
-        NetworkIdentity identity = NetworkIdentity.find("select n from NetworkIdentity n join fetch n.physicalDevice where n.macAddress = ?1 and n.current = true", macAddress).firstResult();
-        if (identity != null && identity.physicalDevice != null) {
-            FingerprintVector historical = FingerprintVector.find("physicalDevice.id = ?1", identity.physicalDevice.id).firstResult();
-            if (historical != null) {
-                mergeVectors(candidate, historical);
-            }
-        }
-    }
 }
