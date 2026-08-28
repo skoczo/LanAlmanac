@@ -127,7 +127,7 @@ public class IcmpSweeper {
         try {
             processPermits.acquire();
             try {
-                p = new ProcessBuilder("ping", "-c", "1", "-W", "1", ip)
+                p = new ProcessBuilder("ping", "-n", "-c", "1", "-W", "1", ip)
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .redirectError(ProcessBuilder.Redirect.DISCARD)
                     .start();

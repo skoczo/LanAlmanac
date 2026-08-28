@@ -1490,7 +1490,7 @@ public class FingerprintEngine {
             if (currentIp != null) {
                 Process p = null;
                 try {
-                    p = new ProcessBuilder("ping", "-c", "1", "-W", "1", currentIp).start();
+                    p = new ProcessBuilder("ping", "-n", "-c", "1", "-W", "1", currentIp).start();
                     boolean finished = p.waitFor(1500, java.util.concurrent.TimeUnit.MILLISECONDS);
                     if (finished) {
                         fallbackReachable = (p.exitValue() == 0);
