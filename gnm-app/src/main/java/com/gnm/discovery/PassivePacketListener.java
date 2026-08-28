@@ -33,6 +33,9 @@ public class PassivePacketListener {
     @Inject
     NetworkSightingQueue sightingQueue;
 
+    @Inject
+    com.gnm.service.SubnetFilter subnetFilter;
+
     @ConfigProperty(name = "gnm.listen.interface", defaultValue = "eth0")
     String networkInterfaceProp;
 
@@ -95,7 +98,9 @@ public class PassivePacketListener {
             while (running) {
                 Packet packet = handle.getNextPacket();
                 if (packet != null) {
-                    parsePacket(packet).ifPresent(sightingQueue::offer);
+                    parsePacket(packet)
+                        .filter(s -> subnetFilter.isIpInSubnet(s.ipAddress))
+                        .ifPresent(sightingQueue::offer);
                 }
             }
         } catch (Throwable e) {

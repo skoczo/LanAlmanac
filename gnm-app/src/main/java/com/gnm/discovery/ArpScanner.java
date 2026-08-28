@@ -25,6 +25,9 @@ public class ArpScanner {
     @Inject
     NetworkSightingQueue sightingQueue;
 
+    @Inject
+    com.gnm.service.SubnetFilter subnetFilter;
+
     @ConfigProperty(name = "gnm.listen.interface", defaultValue = "eth0")
     String networkInterfaceProp;
 
@@ -73,8 +76,8 @@ public class ArpScanner {
                     String flags = parts[2];
                     String mac = parts[3];
 
-                    // Filter out header placeholders and invalid/incomplete entries (0x0 flags)
-                    if (!"00:00:00:00:00:00".equals(mac) && !"0x0".equals(flags) && mac.contains(":")) {
+                    // Filter out header placeholders, invalid/incomplete entries (0x0 flags), and IPs outside gnm.subnet
+                    if (!"00:00:00:00:00:00".equals(mac) && !"0x0".equals(flags) && mac.contains(":") && subnetFilter.isIpInSubnet(ip)) {
                         liveIps.add(ip);
                         NetworkSighting sighting = new NetworkSighting();
                         sighting.ipAddress = ip;

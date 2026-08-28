@@ -57,6 +57,7 @@ public class FingerprintEngine {
     @Inject SimilarityEngine similarityEngine;
     @Inject DeviceIdentityManager identityManager;
     @Inject DeviceLivenessManager livenessManager;
+    @Inject com.gnm.service.SubnetFilter subnetFilter;
 
     private final java.util.concurrent.atomic.AtomicInteger activeProcessingCount = new java.util.concurrent.atomic.AtomicInteger(0);
     private final java.util.Map<String, java.time.Instant> lastDbUpdateTimes = new java.util.concurrent.ConcurrentHashMap<>();
@@ -103,6 +104,23 @@ public class FingerprintEngine {
         pollingThread.setName("SightingQueue-Poller");
         pollingThread.start();
         
+        // Cleanup legacy devices outside configured gnm.subnet
+        io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
+            try {
+                List<PhysicalDevice> allDevices = PhysicalDevice.listAll();
+                for (PhysicalDevice dev : allDevices) {
+                    boolean hasAllowedIp = dev.identities.stream()
+                        .anyMatch(id -> id.ipAddress != null && subnetFilter.isIpInSubnet(id.ipAddress));
+                    if (!hasAllowedIp && !dev.identities.isEmpty()) {
+                        LOG.infof("Cleaning up device %s (%s) because its IPs are outside configured gnm.subnet (%s)", dev.displayName, dev.id, subnetFilter.getSubnetConfig());
+                        dev.delete();
+                    }
+                }
+            } catch (Exception e) {
+                LOG.warn("Failed to cleanup devices outside gnm.subnet", e);
+            }
+        });
+
         // Setup dynamic probes
         for (NetworkProbe probe : networkProbes) {
             sortedProbes.add(probe);
@@ -124,6 +142,10 @@ public class FingerprintEngine {
         while (running) {
             try {
                 NetworkSighting sighting = sightingQueue.take();
+                if (sighting.ipAddress != null && !subnetFilter.isIpInSubnet(sighting.ipAddress)) {
+                    LOG.debugf("Ignoring sighting for IP %s as it is outside allowed subnet (%s)", sighting.ipAddress, subnetFilter.getSubnetConfig());
+                    continue;
+                }
                 
                 String debounceKey = sighting.ipAddress + "|" + sighting.macAddress;
                 java.time.Instant lastDbUpdate = lastDbUpdateTimes.get(debounceKey);
