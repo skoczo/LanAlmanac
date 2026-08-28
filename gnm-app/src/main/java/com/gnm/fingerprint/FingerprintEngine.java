@@ -152,16 +152,6 @@ public class FingerprintEngine {
                         if (running) LOG.error("Error processing network sighting event in executor thread", e);
                     }
                 });
-
-                // Enforce dynamic timeout to prevent thread starvation
-                timeoutScheduler.schedule(() -> {
-                    if (!future.isDone()) {
-                        boolean cancelled = future.cancel(true);
-                        if (cancelled) {
-                            LOG.warn("Dynamic timeout (" + dynamicTimeoutMs + "ms) reached. Task cancelled for IP: " + sighting.ipAddress);
-                        }
-                    }
-                }, dynamicTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -239,13 +229,26 @@ public class FingerprintEngine {
                     lastScanTimes.put(sighting.ipAddress, Instant.now());
                     
                     ProbeContext context = new ProbeContext(sighting.ipAddress, candidate);
-                    for (NetworkProbe probe : sortedProbes) {
-                        try {
-                            probe.execute(context);
-                        } catch (Exception e) {
-                            LOG.error("Probe " + probe.getClass().getSimpleName() + " failed for IP " + sighting.ipAddress, e);
+                    
+                    Thread currentThread = Thread.currentThread();
+                    java.util.concurrent.ScheduledFuture<?> timeoutFuture = timeoutScheduler.schedule(() -> {
+                        currentThread.interrupt();
+                        LOG.warn("Dynamic timeout (" + dynamicTimeoutMs + "ms) reached. Scanning cancelled for IP: " + sighting.ipAddress);
+                    }, dynamicTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    
+                    try {
+                        for (NetworkProbe probe : sortedProbes) {
+                            try {
+                                probe.execute(context);
+                            } catch (Exception e) {
+                                LOG.error("Probe " + probe.getClass().getSimpleName() + " failed for IP " + sighting.ipAddress, e);
+                            }
                         }
+                    } finally {
+                        timeoutFuture.cancel(false);
+                        Thread.interrupted(); // clear interrupted flag
                     }
+                    
                     hostname = context.getResolvedHostname();
                     
                 } finally {
