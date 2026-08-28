@@ -1479,7 +1479,8 @@ public class FingerprintEngine {
             boolean fallbackReachable = false;
             if (currentIp != null) {
                 try {
-                    fallbackReachable = java.net.InetAddress.getByName(currentIp).isReachable(1500);
+                    Process p = new ProcessBuilder("ping", "-c", "1", "-W", "1", currentIp).start();
+                    fallbackReachable = p.waitFor(1500, java.util.concurrent.TimeUnit.MILLISECONDS) && p.exitValue() == 0;
                 } catch (Exception ignored) {}
             }
             if (fallbackReachable) {

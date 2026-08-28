@@ -21,7 +21,10 @@ public class IcmpSweeper {
     private static final Logger LOG = Logger.getLogger(IcmpSweeper.class);
 
     // Hard deadline for a full /24 sweep — hosts that don't answer within this window are considered offline
-    private static final int SWEEP_TIMEOUT_SECONDS = 15;
+    private static final int SWEEP_TIMEOUT_SECONDS = 60;
+
+    // Limit concurrency to prevent fork bombs when calling native binaries
+    private static final java.util.concurrent.Semaphore processPermits = new java.util.concurrent.Semaphore(50);
 
     // Per-host timeouts — balance detection reliability vs sweep speed
     // 1500ms ping: covers high-latency IoT/WiFi devices (e.g. 650ms RTT on congested WiFi)
@@ -122,15 +125,20 @@ public class IcmpSweeper {
         // 1. Try system ping (-W 1 is the minimum on Linux; waitFor enforces our tighter timeout)
         Process p = null;
         try {
-            p = new ProcessBuilder("ping", "-c", "1", "-W", "1", ip)
-                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                .redirectError(ProcessBuilder.Redirect.DISCARD)
-                .start();
-            boolean completed = p.waitFor(PING_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-            if (completed && p.exitValue() == 0) {
-                return true;
-            } else if (!completed) {
-                p.destroyForcibly();
+            processPermits.acquire();
+            try {
+                p = new ProcessBuilder("ping", "-c", "1", "-W", "1", ip)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+                boolean completed = p.waitFor(PING_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                if (completed && p.exitValue() == 0) {
+                    return true;
+                } else if (!completed) {
+                    p.destroyForcibly();
+                }
+            } finally {
+                processPermits.release();
             }
         } catch (Exception e) {
             if (p != null && p.isAlive()) p.destroyForcibly();
@@ -153,15 +161,20 @@ public class IcmpSweeper {
         //    arping -C 1 sends exactly one ARP request and exits 0 if answered.
         Process arp = null;
         try {
-            arp = new ProcessBuilder("arping", "-c", "1", "-w", "1", "-I", getNetworkInterface(), ip)
-                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                .redirectError(ProcessBuilder.Redirect.DISCARD)
-                .start();
-            boolean completed = arp.waitFor(ARP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-            if (completed && arp.exitValue() == 0) {
-                return true;
-            } else if (!completed) {
-                arp.destroyForcibly();
+            processPermits.acquire();
+            try {
+                arp = new ProcessBuilder("arping", "-c", "1", "-w", "1", "-I", getNetworkInterface(), ip)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+                boolean completed = arp.waitFor(ARP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                if (completed && arp.exitValue() == 0) {
+                    return true;
+                } else if (!completed) {
+                    arp.destroyForcibly();
+                }
+            } finally {
+                processPermits.release();
             }
         } catch (Exception e) {
             if (arp != null && arp.isAlive()) arp.destroyForcibly();
