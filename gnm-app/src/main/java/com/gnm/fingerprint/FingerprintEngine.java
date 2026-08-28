@@ -1430,16 +1430,16 @@ public class FingerprintEngine {
 
         final int finalThreshold = threshold;
 
-        List<PhysicalDevice> onlineDevices;
+        List<PhysicalDevice> allDevices;
         try {
-            onlineDevices = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew()
-                .call(() -> PhysicalDevice.find("status", DeviceStatus.ONLINE).list());
+            allDevices = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew()
+                .call(() -> PhysicalDevice.listAll());
         } catch (Exception e) {
-            LOG.error("Failed to list online devices for probe counter update", e);
+            LOG.error("Failed to list devices for probe counter update", e);
             return;
         }
 
-        for (PhysicalDevice device : onlineDevices) {
+        for (PhysicalDevice device : allDevices) {
             try {
                 self.updateProbeCounterInTransaction(device.id, liveIps, finalThreshold);
             } catch (Exception e) {
@@ -1451,7 +1451,7 @@ public class FingerprintEngine {
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void updateProbeCounterInTransaction(UUID deviceId, Set<String> liveIps, int threshold) {
         PhysicalDevice device = PhysicalDevice.findById(deviceId);
-        if (device == null || device.status != DeviceStatus.ONLINE) return;
+        if (device == null) return;
 
         // Determine the device's current IP address
         String currentIp = device.identities.stream()
@@ -1479,12 +1479,21 @@ public class FingerprintEngine {
         }
 
         if (seenInThisCycle) {
-            // Device responded — reset the counter
+            // Device responded — reset the counter and bring online if offline
             if (device.consecutiveMissedProbes > 0) {
                 device.consecutiveMissedProbes = 0;
-                device.persist();
             }
+            if (device.status != DeviceStatus.ONLINE) {
+                device.status = DeviceStatus.ONLINE;
+                device.lastSeen = Instant.now();
+                eventBroadcaster.fireAsync(new DeviceEvent("ONLINE", device.id.toString(), device.displayName, "ONLINE", currentIp));
+            }
+            device.persist();
         } else {
+            if (device.status == DeviceStatus.OFFLINE) {
+                return; // Already offline, no need to do fallback ping or increment counter
+            }
+
             // Double-check liveness before penalizing, in case it was missed by the sweep
             boolean fallbackReachable = false;
             if (currentIp != null) {
