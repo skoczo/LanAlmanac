@@ -62,14 +62,20 @@ public class DeviceLivenessManager {
         PhysicalDevice device = PhysicalDevice.findById(deviceId);
         if (device == null) return;
 
-        // Determine the device's current IP address
+        // Collect all IP addresses associated with this device
+        List<String> deviceIps = device.identities.stream()
+            .map(id -> id.ipAddress)
+            .filter(ip -> ip != null && !ip.isBlank())
+            .distinct()
+            .toList();
+
         String currentIp = device.identities.stream()
             .filter(id -> id.current)
             .map(id -> id.ipAddress)
             .findFirst()
-            .orElse(null);
+            .orElse(deviceIps.isEmpty() ? null : deviceIps.get(0));
 
-        int effectiveThreshold = threshold;
+        int effectiveThreshold = threshold > 0 ? threshold : 2;
         int passiveWindowSeconds = 180;
 
         if (device.deviceType == com.gnm.model.enums.DeviceType.PHONE) {
@@ -77,7 +83,7 @@ public class DeviceLivenessManager {
             passiveWindowSeconds = 600; // 10 minutes passive window
         }
 
-        boolean seenInThisCycle = currentIp != null && liveIps.contains(currentIp);
+        boolean seenInThisCycle = deviceIps.stream().anyMatch(liveIps::contains);
 
         if (!seenInThisCycle && device.lastSeen != null) {
             // Check if we have seen this device recently (e.g. passively via ARP or UDP broadcasts)
@@ -95,7 +101,7 @@ public class DeviceLivenessManager {
             if (device.status != DeviceStatus.ONLINE) {
                 device.status = DeviceStatus.ONLINE;
                 device.lastSeen = Instant.now();
-                eventBroadcaster.fireAsync(new FingerprintEngine.DeviceEvent("ONLINE", device.id.toString(), device.displayName, "ONLINE", currentIp));
+                eventBroadcaster.fireAsync(new FingerprintEngine.DeviceEvent("ONLINE", device.id.toString(), device.displayName, "ONLINE", currentIp != null ? currentIp : "0.0.0.0"));
             }
             device.persist();
         } else {
@@ -105,23 +111,15 @@ public class DeviceLivenessManager {
 
             // Double-check liveness before penalizing, in case it was missed by the sweep
             boolean fallbackReachable = false;
-            if (currentIp != null) {
-                Process p = null;
-                try {
-                    p = new ProcessBuilder("ping", "-n", "-c", "1", "-W", "1", currentIp).start();
-                    boolean finished = p.waitFor(1500, java.util.concurrent.TimeUnit.MILLISECONDS);
-                    if (finished) {
-                        fallbackReachable = (p.exitValue() == 0);
-                    }
-                } catch (Exception ignored) {
-                } finally {
-                    if (p != null) {
-                        p.destroyForcibly();
-                    }
+            for (String ip : deviceIps) {
+                if (isHostFallbackReachable(ip, device)) {
+                    fallbackReachable = true;
+                    break;
                 }
             }
+
             if (fallbackReachable) {
-                LOG.debugf("Device %s (IP: %s) missed primary sweep but responded to fallback ping. Resetting counter.", device.displayName, currentIp);
+                LOG.debugf("Device %s (IP: %s) missed primary sweep but responded to fallback liveness check. Resetting counter.", device.displayName, currentIp);
                 if (device.consecutiveMissedProbes > 0) {
                     device.consecutiveMissedProbes = 0;
                     device.persist();
@@ -144,5 +142,62 @@ public class DeviceLivenessManager {
                 }
             }
         }
+    }
+
+    private boolean isHostFallbackReachable(String ip, PhysicalDevice device) {
+        // 1. Try quick system ICMP ping
+        Process p = null;
+        try {
+            p = new ProcessBuilder("ping", "-n", "-c", "1", "-W", "1", ip).start();
+            boolean finished = p.waitFor(1200, java.util.concurrent.TimeUnit.MILLISECONDS);
+            if (finished && p.exitValue() == 0) {
+                return true;
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (p != null) p.destroyForcibly();
+        }
+
+        // 2. Try TCP connect to registered service ports or common fallback ports
+        List<Integer> portsToTry = new ArrayList<>();
+        if (device.services != null) {
+            for (NetworkService s : device.services) {
+                if (s.port != null && s.port > 0) {
+                    portsToTry.add(s.port);
+                }
+            }
+        }
+        portsToTry.addAll(List.of(22, 80, 443, 445, 1883, 3000, 5000, 7125, 8000, 8006, 8080, 8123, 8443, 9000, 9443));
+
+        for (int port : portsToTry) {
+            try (java.net.Socket socket = new java.net.Socket()) {
+                socket.connect(new java.net.InetSocketAddress(ip, port), 200);
+                return true;
+            } catch (java.io.IOException e) {
+                if (e.getMessage() != null && e.getMessage().toLowerCase().contains("refused")) {
+                    return true;
+                }
+            }
+        }
+
+        // 3. Check system ARP cache (/proc/net/arp) directly
+        try {
+            java.io.File arpFile = new java.io.File("/proc/net/arp");
+            if (arpFile.exists() && arpFile.canRead()) {
+                List<String> lines = java.nio.file.Files.readAllLines(arpFile.toPath());
+                for (int i = 1; i < lines.size(); i++) {
+                    String[] parts = lines.get(i).trim().split("\\s+");
+                    if (parts.length >= 4 && ip.equals(parts[0])) {
+                        String flags = parts[2];
+                        String mac = parts[3];
+                        if (!"00:00:00:00:00:00".equals(mac) && !"0x0".equals(flags)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        return false;
     }
 }

@@ -32,7 +32,7 @@ public class IcmpSweeper {
     private static final int PING_TIMEOUT_MS  = 1500;
     private static final int PORT_TIMEOUT_MS  =   80;
     private static final int ARP_TIMEOUT_MS   =  800;  // arping covers Android Doze Mode devices
-    private static final int[] PROBE_PORTS    = { 22, 80, 443, 445 };
+    private static final int[] PROBE_PORTS    = { 22, 80, 443, 445, 1883, 3000, 5000, 7125, 8000, 8006, 8080, 8123, 8443, 9000, 9443 };
 
     @Inject
     NetworkSightingQueue sightingQueue;
