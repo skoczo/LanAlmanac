@@ -8,6 +8,9 @@ import javax.naming.directory.Attributes;
 import java.util.Hashtable;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 @ApplicationScoped
 public class JndiDefaultGatewayProbe implements NetworkProbe {
@@ -29,7 +32,10 @@ public class JndiDefaultGatewayProbe implements NetworkProbe {
         String ipAddress = context.getIpAddress();
         String defaultGateway = getDefaultGateway();
         if (defaultGateway != null && !defaultGateway.equals(ipAddress)) {
-            String resolved = resolveViaJndi(ipAddress, defaultGateway);
+            String resolved = null;
+            try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                resolved = executor.submit(() -> resolveViaJndi(ipAddress, defaultGateway)).get(400, TimeUnit.MILLISECONDS);
+            } catch (Exception e) {}
             if (resolved != null) {
                 context.setResolvedHostname(resolved);
             }

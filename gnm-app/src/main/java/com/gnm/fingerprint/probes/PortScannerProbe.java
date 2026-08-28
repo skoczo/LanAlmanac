@@ -47,7 +47,7 @@ public class PortScannerProbe implements NetworkProbe {
             
             for (var future : futures) {
                 try {
-                    Integer p = future.get();
+                    Integer p = future.get(1500, java.util.concurrent.TimeUnit.MILLISECONDS);
                     if (p != null) openPorts.add(p);
                 } catch (Exception e) {}
             }

@@ -6,6 +6,9 @@ import javax.naming.directory.DirContext;
 import javax.naming.directory.InitialDirContext;
 import javax.naming.directory.Attributes;
 import java.util.Hashtable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 @ApplicationScoped
 public class JndiSubnetGatewayProbe implements NetworkProbe {
@@ -29,7 +32,10 @@ public class JndiSubnetGatewayProbe implements NetworkProbe {
         if (lastDot > 0) {
             String subnetGateway = ipAddress.substring(0, lastDot) + ".1";
             LOG.info("[Stage 1] Querying subnet gateway DNS server " + subnetGateway + " for IP " + ipAddress);
-            String resolved = resolveViaJndi(ipAddress, subnetGateway);
+            String resolved = null;
+            try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                resolved = executor.submit(() -> resolveViaJndi(ipAddress, subnetGateway)).get(400, TimeUnit.MILLISECONDS);
+            } catch (Exception e) {}
             if (resolved != null) {
                 context.setResolvedHostname(resolved);
             }

@@ -8,6 +8,11 @@ import javax.naming.directory.Attributes;
 import java.util.Hashtable;
 import java.io.File;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 @ApplicationScoped
 public class JndiResolvConfProbe implements NetworkProbe {
@@ -30,20 +35,33 @@ public class JndiResolvConfProbe implements NetworkProbe {
         try {
             File resolvConf = new File("/etc/resolv.conf");
             if (resolvConf.exists() && resolvConf.canRead()) {
+                List<String> dnsServers = new ArrayList<>();
                 for (String line : Files.readAllLines(resolvConf.toPath())) {
                     line = line.trim();
                     if (line.startsWith("nameserver ")) {
                         String ns = line.substring("nameserver ".length()).trim();
-                        if (ns.startsWith("127.") || ns.endsWith(".1")) continue;
-                        String resolved = resolveViaJndi(ipAddress, ns);
+                        if (!ns.startsWith("127.") && !ns.endsWith(".1")) {
+                            dnsServers.add(ns);
+                        }
+                    }
+                }
+                if (!dnsServers.isEmpty()) {
+                    String firstDns = dnsServers.get(0);
+                    if (!firstDns.equals(ipAddress)) {
+                        LOG.info("[Stage 2] Querying /etc/resolv.conf DNS server " + firstDns + " for IP " + ipAddress);
+                        String resolved = null;
+                        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                            resolved = executor.submit(() -> resolveViaJndi(ipAddress, firstDns)).get(400, TimeUnit.MILLISECONDS);
+                        } catch (Exception e) {}
                         if (resolved != null) {
                             context.setResolvedHostname(resolved);
-                            return;
                         }
                     }
                 }
             }
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            LOG.warn("Failed to read /etc/resolv.conf: " + e.getMessage());
+        }
     }
     private String resolveViaJndi(String ipAddress, String dnsServer) {
         try {
