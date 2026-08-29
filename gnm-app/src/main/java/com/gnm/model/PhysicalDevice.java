@@ -62,6 +62,10 @@ public class PhysicalDevice extends PanacheEntityBase {
     @Column(name = "management_state", nullable = false)
     public ManagementState managementState = ManagementState.DISCOVERED;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "port_scan_state", nullable = false)
+    public com.gnm.model.enums.PortScanState portScanState = com.gnm.model.enums.PortScanState.PENDING;
+
     /**
      * Counts how many consecutive ICMP sweep cycles this device was NOT seen.
      * When this reaches the configured threshold, the device is marked OFFLINE.

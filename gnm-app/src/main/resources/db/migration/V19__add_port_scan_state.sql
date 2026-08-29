@@ -1,0 +1,1 @@
+ALTER TABLE physical_device ADD COLUMN port_scan_state VARCHAR(255) NOT NULL DEFAULT 'PENDING';
