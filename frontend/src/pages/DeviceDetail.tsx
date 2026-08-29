@@ -20,7 +20,8 @@ import {
   Trash2,
   GitMerge,
   Wifi,
-  Terminal as TerminalIcon
+  Terminal as TerminalIcon,
+  RefreshCcw
 } from 'lucide-react'
 import { Terminal } from '../components/Terminal'
 import { useNavigate } from '@tanstack/react-router'
@@ -106,6 +107,7 @@ interface Device {
   fingerprints: Fingerprint[]
   credentials: Credential[]
   services: NetworkService[]
+  portScanState: string
 }
 
 interface TelemetryPoint {
@@ -298,6 +300,16 @@ export const DeviceDetail: React.FC = () => {
     }
   }
 
+  const handleRescan = async () => {
+    try {
+      await apiClient(`/api/scanner/scan/${deviceId}`, { method: 'POST' })
+      const deviceData = await apiClient<Device>(`/api/devices/${deviceId}`)
+      setDevice(deviceData)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   const handleDeleteCred = async (credId: string) => {
     try {
       await apiClient(`/api/credentials/${credId}`, { method: 'DELETE' })
@@ -400,6 +412,14 @@ export const DeviceDetail: React.FC = () => {
               <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
                 {device.status}
               </span>
+              
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider ${
+                device.portScanState === 'FULLY_SCANNED' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' :
+                device.portScanState === 'SCAN_IN_PROGRESS' ? 'bg-blue-500/10 border border-blue-500/20 text-blue-400 animate-pulse' :
+                'bg-slate-500/10 border border-slate-500/20 text-slate-400'
+              }`}>
+                {device.portScanState?.replace(/_/g, ' ') || 'PENDING'}
+              </span>
             </div>
             <p className="text-xs text-text-secondary font-mono mt-0.5">
               {currentIdentity?.ipAddress || 'Unknown IP'} · {device.manufacturer} {device.model}
@@ -407,13 +427,25 @@ export const DeviceDetail: React.FC = () => {
           </div>
         </div>
 
-        <button
-          onClick={handleDeleteDevice}
-          className="p-2.5 rounded-xl bg-bg-surface border border-border-subtle hover:bg-accent-danger/10 text-text-secondary hover:text-accent-danger transition-all cursor-pointer"
-          title="Delete Device"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleRescan}
+            disabled={device.portScanState === 'SCAN_IN_PROGRESS'}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-bg-surface border border-border-subtle hover:bg-bg-surface-raised text-text-secondary hover:text-text-primary transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Rescan Ports"
+          >
+            <RefreshCcw className={`w-4 h-4 ${device.portScanState === 'SCAN_IN_PROGRESS' ? 'animate-spin' : ''}`} />
+            <span className="text-xs font-semibold uppercase tracking-wider">Rescan</span>
+          </button>
+          
+          <button
+            onClick={handleDeleteDevice}
+            className="p-2.5 rounded-xl bg-bg-surface border border-border-subtle hover:bg-accent-danger/10 text-text-secondary hover:text-accent-danger transition-all cursor-pointer"
+            title="Delete Device"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
     {/* Navigation tabs */}

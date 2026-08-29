@@ -15,6 +15,7 @@ import {
   Plus
 } from 'lucide-react'
 import { AddDeviceModal } from '../components/AddDeviceModal'
+import { ScannerProgressWidget } from '../components/ScannerProgressWidget'
 
 interface Identity {
   ipAddress: string
@@ -42,6 +43,7 @@ interface Device {
   managementState: string
   identities: Identity[]
   fingerprints: Fingerprint[]
+  portScanState: string
 }
 
 export const Devices: React.FC = () => {
@@ -237,6 +239,10 @@ export const Devices: React.FC = () => {
         </div>
       </div>
 
+      <div className="mb-6">
+        <ScannerProgressWidget />
+      </div>
+
       {/* Empty State */}
       {filteredDevices.length === 0 && (
         <div className="p-12 text-center border border-dashed border-border-subtle rounded-2xl bg-bg-surface/30">
@@ -254,7 +260,7 @@ export const Devices: React.FC = () => {
                 key={device.id}
                 to="/devices/$id"
                 params={{ id: device.id }}
-                className="bg-bg-surface border border-border-subtle hover:border-accent-primary/20 rounded-2xl p-5 shadow-md flex flex-col justify-between h-[210px] group transition-all duration-300 hover:-translate-y-1 hover:shadow-accent-primary/5 glow-primary"
+                className="bg-bg-surface border border-border-subtle hover:border-accent-primary/20 rounded-2xl p-5 shadow-md flex flex-col justify-between min-h-[230px] group transition-all duration-300 hover:-translate-y-1 hover:shadow-accent-primary/5 glow-primary"
               >
                 <div>
                   <div className="flex justify-between items-start">
@@ -292,17 +298,30 @@ export const Devices: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="border-t border-border-subtle pt-3.5 mt-4 flex items-center justify-between text-[11px] text-text-muted">
-                  <div className="flex flex-col">
-                    <span className="uppercase text-[9px] font-bold text-text-muted tracking-wider">Fingerprint</span>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <ShieldCheck className="w-3.5 h-3.5 text-accent-info" />
-                      <span className="font-semibold text-text-secondary">
-                        {Math.round(device.confidenceScore * 100)}% Match
-                      </span>
+                <div className="mt-4 flex flex-col gap-2">
+                  <div className="border-t border-border-subtle pt-3 flex items-center justify-between text-[11px] text-text-muted">
+                    <div className="flex flex-col">
+                      <span className="uppercase text-[9px] font-bold text-text-muted tracking-wider">Fingerprint</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-accent-info" />
+                        <span className="font-semibold text-text-secondary">
+                          {Math.round(device.confidenceScore * 100)}% Match
+                        </span>
+                      </div>
                     </div>
+                    <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-text-primary group-hover:translate-x-0.5 transition-all" />
                   </div>
-                  <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-text-primary group-hover:translate-x-0.5 transition-all" />
+                  
+                  <div className="border-t border-border-subtle pt-2 flex items-center justify-between text-[11px] text-text-muted">
+                    <span className="uppercase text-[9px] font-bold text-text-muted tracking-wider">Scan Status</span>
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider ${
+                      device.portScanState === 'FULLY_SCANNED' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' :
+                      device.portScanState === 'SCAN_IN_PROGRESS' ? 'bg-blue-500/10 border border-blue-500/20 text-blue-400 animate-pulse' :
+                      'bg-slate-500/10 border border-slate-500/20 text-slate-400'
+                    }`}>
+                      {device.portScanState?.replace(/_/g, ' ') || 'PENDING'}
+                    </span>
+                  </div>
                 </div>
               </Link>
             )
@@ -323,6 +342,7 @@ export const Devices: React.FC = () => {
                   <th className="py-4 px-6">Category</th>
                   <th className="py-4 px-6">Operating System</th>
                   <th className="py-4 px-6">Confidence</th>
+                  <th className="py-4 px-6">Scan Status</th>
                   <th className="py-4 px-6 text-right">Actions</th>
                 </tr>
               </thead>
@@ -380,13 +400,22 @@ export const Devices: React.FC = () => {
                                 device.confidenceScore >= 0.8 ? 'bg-accent-success' :
                                 device.confidenceScore >= 0.5 ? 'bg-accent-warning' : 'bg-accent-danger'
                               }`}
-                              style={{ width: `${device.confidenceScore * 100}%` }}
+                              style={{ width: `${Math.round(device.confidenceScore * 100)}%` }}
                             />
                           </div>
-                          <span className="font-semibold text-[10px]">
+                          <span className="text-xs font-semibold text-text-primary">
                             {Math.round(device.confidenceScore * 100)}%
                           </span>
                         </div>
+                      </td>
+                      <td className="py-4 px-6">
+                        <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                          device.portScanState === 'FULLY_SCANNED' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' :
+                          device.portScanState === 'SCAN_IN_PROGRESS' ? 'bg-blue-500/10 border border-blue-500/20 text-blue-400 animate-pulse' :
+                          'bg-slate-500/10 border border-slate-500/20 text-slate-400'
+                        }`}>
+                          {device.portScanState?.replace(/_/g, ' ') || 'PENDING'}
+                        </span>
                       </td>
                       <td className="py-4 px-6 text-right">
                         <Link
