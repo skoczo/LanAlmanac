@@ -13,8 +13,11 @@ import com.gnm.model.enums.ManagementState;
 import com.gnm.model.Credential;
 import com.gnm.model.PhysicalDevice;
 import com.gnm.model.NetworkIdentity;
-import com.gnm.model.NetworkSighting;
+import com.gnm.model.DeviceStatusHistory;
 import com.gnm.model.NetworkService;
+import com.gnm.model.PhysicalDevice;
+import com.gnm.model.SettingsData;
+import com.gnm.model.dto.SystemInfo;
 import com.gnm.model.Telemetry;
 import com.gnm.model.FingerprintCorrelationEvent;
 import com.gnm.model.enums.DeviceStatus;
@@ -372,5 +375,12 @@ public class DeviceResource {
     @Transactional
     public List<FingerprintCorrelationEvent> getCorrelationHistory(@PathParam("id") UUID id) {
         return FingerprintCorrelationEvent.list("physicalDevice.id = ?1 order by timestamp desc", id);
+    }
+
+    @GET
+    @Path("/{id}/status-history")
+    @Transactional
+    public List<DeviceStatusHistory> getDeviceStatusHistory(@PathParam("id") UUID id) {
+        return DeviceStatusHistory.find("physicalDevice.id = ?1 order by timestamp desc", id).list();
     }
 }

@@ -65,6 +65,14 @@ interface CorrelationEvent {
   timestamp: string
 }
 
+interface StatusHistoryEvent {
+  id: string
+  status: 'ONLINE' | 'OFFLINE'
+  ipAddress: string
+  timestamp: string
+}
+
+
 interface Credential {
   id: string
   label: string
@@ -125,8 +133,9 @@ export const DeviceDetail: React.FC = () => {
   const [device, setDevice] = useState<Device | null>(null)
   const [telemetry, setTelemetry] = useState<TelemetryPoint[]>([])
   const [correlationHistory, setCorrelationHistory] = useState<CorrelationEvent[]>([])
+  const [statusHistory, setStatusHistory] = useState<StatusHistoryEvent[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'identities' | 'fingerprint' | 'correlation' | 'services' | 'credentials' | 'monitor' | 'settings' | 'web console'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'identities' | 'fingerprint' | 'correlation' | 'status_history' | 'services' | 'credentials' | 'monitor' | 'settings' | 'web console'>('overview')
   const [newLabel, setNewLabel] = useState('')
   
   const { sealed, setShowUnsealModal } = useVault()
@@ -158,12 +167,14 @@ export const DeviceDetail: React.FC = () => {
     Promise.all([
       apiClient<Device>(`/api/devices/${deviceId}`),
       apiClient<TelemetryPoint[]>(`/api/devices/${deviceId}/telemetry`),
-      apiClient<CorrelationEvent[]>(`/api/devices/${deviceId}/correlation-history`).catch(() => [])
+      apiClient<CorrelationEvent[]>(`/api/devices/${deviceId}/correlation-history`).catch(() => []),
+      apiClient<StatusHistoryEvent[]>(`/api/devices/${deviceId}/status-history`).catch(() => [])
     ])
-      .then(([deviceData, telemetryData, correlationData]) => {
+      .then(([deviceData, telemetryData, correlationData, statusData]) => {
         setDevice(deviceData)
         setTelemetry(telemetryData)
         setCorrelationHistory(correlationData)
+        setStatusHistory(statusData)
         setLoading(false)
       })
       .catch((err) => {
@@ -450,7 +461,7 @@ export const DeviceDetail: React.FC = () => {
 
     {/* Navigation tabs */}
       <div className="flex items-center border-b border-border-subtle gap-2 overflow-x-auto">
-        {(['overview', 'identities', 'fingerprint', 'correlation', 'services', 'credentials', 'monitor', 'settings', 'web console'] as const).map((tab) => (
+        {(['overview', 'identities', 'fingerprint', 'correlation', 'status_history', 'services', 'credentials', 'monitor', 'settings', 'web console'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -1086,6 +1097,70 @@ export const DeviceDetail: React.FC = () => {
                     </button>
                   </div>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* STATUS HISTORY TAB */}
+        {activeTab === 'status_history' && (
+          <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg animate-fade-in">
+            <div className="flex items-center justify-between border-b border-border-subtle pb-4">
+              <div>
+                <h3 className="font-bold text-lg tracking-tight">Uptime & Status History</h3>
+                <p className="text-xs text-text-muted mt-1">
+                  Historical log of when this device was detected online or offline.
+                </p>
+              </div>
+              <Clock className="w-6 h-6 text-accent-success" />
+            </div>
+
+            {statusHistory.length === 0 ? (
+              <div className="text-center py-12 border-2 border-dashed border-border-subtle rounded-xl bg-bg-base/30">
+                <Clock className="w-8 h-8 text-text-muted mx-auto mb-2.5" />
+                <p className="text-sm text-text-secondary">No status history recorded yet.</p>
+                <p className="text-xs text-text-muted mt-1">Events will appear here when the device connects or disconnects.</p>
+              </div>
+            ) : (
+              <div className="relative pl-6 border-l-2 border-border-subtle/50 ml-4 space-y-8 mt-6">
+                {statusHistory.map((event) => {
+                  const isOnline = event.status === 'ONLINE'
+                  const colorClass = isOnline 
+                    ? 'text-accent-success bg-accent-success/10 border-accent-success/20' 
+                    : 'text-accent-danger bg-accent-danger/10 border-accent-danger/20'
+
+                  return (
+                    <div key={event.id} className="relative">
+                      {/* Timeline Dot */}
+                      <div className={`absolute -left-[35px] top-1.5 w-4 h-4 rounded-full border-2 border-bg-surface flex items-center justify-center ${colorClass.replace('text-', 'bg-').replace('bg-', '')}`}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-accent-success' : 'bg-accent-danger'}`} />
+                      </div>
+
+                      <div className="bg-bg-surface-raised border border-border-subtle rounded-xl p-4 shadow-sm hover:border-border-subtle/80 transition-colors">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${colorClass}`}>
+                              {event.status}
+                            </span>
+                            {event.ipAddress && (
+                              <span className="text-xs font-mono text-text-secondary border border-border-subtle bg-bg-base px-2 py-0.5 rounded">
+                                {event.ipAddress}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs font-semibold text-text-primary block">
+                              {new Date(event.timestamp).toLocaleDateString()}
+                            </span>
+                            <span className="text-[10px] text-text-muted font-mono">
+                              {new Date(event.timestamp).toLocaleTimeString()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
