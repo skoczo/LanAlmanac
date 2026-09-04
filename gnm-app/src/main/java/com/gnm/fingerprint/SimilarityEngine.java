@@ -39,6 +39,7 @@ public class SimilarityEngine {
         double weightedScoreSum = 0.0;
         double weightSum = 0.0;
         int signalCount = 0; // Track number of independent signals contributing to the score
+        boolean hasHighlyUniqueSignal = false;
 
         // 1. DHCP Option 55
         if (hasValue(candidate.dhcpOption55) && hasValue(historical.dhcpOption55)) {
@@ -100,7 +101,10 @@ public class SimilarityEngine {
             weightedScoreSum += score * W_SSH_KEY;
             weightSum += W_SSH_KEY;
             signalCount++;
-            if (score > 0) result.details.add(String.format("- SSH Host Keys matched (score: %.0f%%, weight: %.2f)", score * 100, W_SSH_KEY));
+            if (score > 0) {
+                result.details.add(String.format("- SSH Host Keys matched (score: %.0f%%, weight: %.2f)", score * 100, W_SSH_KEY));
+                if (score > 0.5) hasHighlyUniqueSignal = true;
+            }
         }
 
         // 8. HTTP Server Header
@@ -153,7 +157,10 @@ public class SimilarityEngine {
             weightedScoreSum += score * W_SSDP_USN;
             weightSum += W_SSDP_USN;
             signalCount++;
-            if (score > 0) result.details.add(String.format("- SSDP USN matched (score: %.0f%%, weight: %.2f)", score * 100, W_SSDP_USN));
+            if (score > 0) {
+                result.details.add(String.format("- SSDP USN matched (score: %.0f%%, weight: %.2f)", score * 100, W_SSDP_USN));
+                if (score > 0.5) hasHighlyUniqueSignal = true;
+            }
         }
 
         // Compute normalized similarity
@@ -162,8 +169,8 @@ public class SimilarityEngine {
         // Security: Require at least 2 independent signals for a high-confidence merge.
         // A single matching signal (e.g. hostname alone) is easily spoofed and must NOT
         // be sufficient to exceed the merge threshold (default 0.75).
-        // Cap single-signal scores at 0.5 to force multi-factor correlation.
-        if (signalCount < 2 && similarity > 0.5) {
+        // Cap single-signal scores at 0.5 to force multi-factor correlation, UNLESS it's a highly unique cryptographic/hardware signal.
+        if (signalCount < 2 && similarity > 0.5 && !hasHighlyUniqueSignal) {
             similarity = 0.5;
             result.details.add("! Score capped at 50% due to single-signal match");
         }

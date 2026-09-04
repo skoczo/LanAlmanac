@@ -26,6 +26,20 @@ elif [ "$1" == "restart" ]; then
     docker-compose up --build -d
     echo "Done!"
     exit 0
+elif [ "$1" == "stop-ne" ]; then
+    echo "=========================================================="
+    echo " Stopping Network Elements (Ubuntu, CentOS, Alpine, Android)"
+    echo "=========================================================="
+    docker-compose stop ne-ubuntu ne-centos ne-alpine ne-android
+    echo "Done!"
+    exit 0
+elif [ "$1" == "start-ne" ]; then
+    echo "=========================================================="
+    echo " Starting Network Elements (Ubuntu, CentOS, Alpine, Android)"
+    echo "=========================================================="
+    docker-compose start ne-ubuntu ne-centos ne-alpine ne-android
+    echo "Done!"
+    exit 0
 elif [ "$1" == "restart-ne" ] || [ "$1" == "restart-network-elements" ]; then
     echo "=========================================================="
     echo " Restarting Network Elements (Ubuntu, CentOS, Alpine, Android)"
@@ -55,6 +69,8 @@ echo " -> Access the GNM App GUI at: http://localhost:8080"
 echo " -> To view logs in real-time: ./start_sim.sh logs"
 echo " -> To shut down the environment: ./start_sim.sh stop"
 echo " -> To restart the environment: ./start_sim.sh restart"
+echo " -> To start only network elements: ./start_sim.sh start-ne"
+echo " -> To stop only network elements: ./start_sim.sh stop-ne"
 echo " -> To restart only network elements: ./start_sim.sh restart-ne"
 echo " -> To completely destroy it (including DB data): ./start_sim.sh clean"
 echo "=========================================================="
