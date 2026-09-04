@@ -42,7 +42,7 @@ public class ScannerResource {
     @Path("/scan-all")
     @Transactional
     public Response scanAllPending() {
-        List<PhysicalDevice> devices = PhysicalDevice.find("portScanState = 'PENDING'").list();
+        List<PhysicalDevice> devices = PhysicalDevice.find("portScanState = 'PENDING' and status = 'ONLINE'").list();
         for (PhysicalDevice device : devices) {
             scannerService.enqueueDevice(device.id);
         }

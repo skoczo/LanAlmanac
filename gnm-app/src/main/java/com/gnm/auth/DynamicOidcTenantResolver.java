@@ -2,7 +2,6 @@ package com.gnm.auth;
 
 import com.gnm.model.GlobalSetting;
 import io.quarkus.oidc.OidcTenantConfig;
-import io.quarkus.oidc.OidcTenantConfig.ApplicationType;
 import io.quarkus.oidc.TenantConfigResolver;
 import io.smallrye.mutiny.Uni;
 import io.vertx.ext.web.RoutingContext;
@@ -28,12 +27,22 @@ public class DynamicOidcTenantResolver implements TenantConfigResolver {
                     return null;
                 }
 
-                return OidcTenantConfig.builder()
+                // Read configurable role claim path (default: 'groups' for Authentik)
+                GlobalSetting roleClaimPath = GlobalSetting.findById("oidc.role.claim.path");
+                String claimPath = (roleClaimPath != null && !roleClaimPath.value.isBlank())
+                        ? roleClaimPath.value
+                        : "groups";
+
+                var builder = OidcTenantConfig.builder()
                         .tenantId("dynamic-oidc")
                         .authServerUrl(authUrl.value)
                         .clientId(clientId.value)
-                        .applicationType(io.quarkus.oidc.runtime.OidcTenantConfig.ApplicationType.SERVICE)
-                        .build();
+                        .applicationType(io.quarkus.oidc.runtime.OidcTenantConfig.ApplicationType.SERVICE);
+
+                // Configure role claim path for JWT role extraction
+                builder.roles().roleClaimPath(claimPath);
+
+                return builder.build();
             });
         }).runSubscriptionOn(io.smallrye.mutiny.infrastructure.Infrastructure.getDefaultWorkerPool());
     }

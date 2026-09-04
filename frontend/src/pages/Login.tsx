@@ -1,13 +1,21 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from '../lib/auth/auth-context'
 import { KeyRound, ShieldCheck, User } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 
 export const Login: React.FC = () => {
-  const { login, isOidcEnabled, oidcLogin } = useAuth()
-  const [username, setUsername] = useState('admin')
-  const [password, setPassword] = useState('admin')
+  const { login, isOidcEnabled, oidcLogin, isAuthenticated } = useAuth()
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate({ to: '/', replace: true })
+    }
+  }, [isAuthenticated, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,16 +32,18 @@ export const Login: React.FC = () => {
       })
 
       if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
         throw new Error(
-          response.status === 401
+          errorData?.error ||
+          (response.status === 401
             ? 'Invalid username or password'
-            : 'Server error. Please try again later.'
+            : 'Server error. Please try again later.')
         )
       }
 
       const data = await response.json()
-      login(data.token, data.username, data.roles)
-      // Redirect will be handled by the router
+      login(data.token, data.username, data.roles, data.mustChangePassword)
+      navigate({ to: '/', replace: true })
     } catch (err: any) {
       setError(err.message || 'Something went wrong')
     } finally {
@@ -101,6 +111,7 @@ export const Login: React.FC = () => {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
+                autoFocus
                 className="w-full bg-bg-surface-raised border border-border-subtle rounded-xl py-3 pl-10 pr-4 text-text-primary text-sm placeholder:text-text-muted focus:outline-none focus:border-accent-primary transition-colors"
                 placeholder="Enter username"
               />

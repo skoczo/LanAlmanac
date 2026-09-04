@@ -209,4 +209,33 @@ public class BackgroundScannerTest {
 
         return device.id;
     }
+
+    @Transactional
+    protected UUID createMockOfflineDevice(String ip) {
+        UUID deviceId = createMockDevice(ip, List.of());
+        PhysicalDevice device = PhysicalDevice.findById(deviceId);
+        device.status = DeviceStatus.OFFLINE;
+        device.persistAndFlush();
+        return deviceId;
+    }
+
+    @Test
+    public void testOfflineDeviceSkipped() throws InterruptedException {
+        // Given: An offline device
+        UUID deviceId = createMockOfflineDevice("192.168.1.60");
+
+        // When: We enqueue and process the device
+        scannerService.enqueueDevice(deviceId);
+
+        // Wait for scan processing to attempt
+        Thread.sleep(200);
+
+        // Then: Device scan state should be PENDING (skipped because it's offline)
+        PhysicalDevice finished = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().call(() -> {
+            PhysicalDevice.getEntityManager().clear();
+            return PhysicalDevice.findById(deviceId);
+        });
+        assertEquals(PortScanState.PENDING, finished.portScanState);
+        assertEquals(0, scannerService.getProgress().activeScans);
+    }
 }

@@ -66,11 +66,13 @@ public class SettingsResource {
         GlobalSetting enabled = GlobalSetting.findById("oidc.enabled");
         GlobalSetting url = GlobalSetting.findById("oidc.authority.url");
         GlobalSetting clientId = GlobalSetting.findById("oidc.client.id");
+        GlobalSetting roleClaimPath = GlobalSetting.findById("oidc.role.claim.path");
 
         return java.util.Map.of(
             "enabled", enabled != null && "true".equalsIgnoreCase(enabled.value) ? "true" : "false",
             "authority", url != null ? url.value : "",
-            "clientId", clientId != null ? clientId.value : ""
+            "clientId", clientId != null ? clientId.value : "",
+            "roleClaimPath", roleClaimPath != null && !roleClaimPath.value.isBlank() ? roleClaimPath.value : "groups"
         );
     }
 }

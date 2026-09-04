@@ -53,9 +53,9 @@ public class BackgroundScannerService {
     public void enqueuePendingDevices() {
         if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) return;
         
-        // Enqueue any devices that are still PENDING
+        // Enqueue any devices that are still PENDING and are ONLINE
         io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
-            java.util.List<PhysicalDevice> pending = PhysicalDevice.find("portScanState", PortScanState.PENDING).list();
+            java.util.List<PhysicalDevice> pending = PhysicalDevice.find("portScanState = ?1 and status = ?2", PortScanState.PENDING, com.gnm.model.enums.DeviceStatus.ONLINE).list();
             for (PhysicalDevice device : pending) {
                 enqueueDevice(device.id);
             }
@@ -118,6 +118,13 @@ public class BackgroundScannerService {
             PhysicalDevice device = PhysicalDevice.findById(deviceId);
             if (device == null) return null;
             
+            if (device.status == com.gnm.model.enums.DeviceStatus.OFFLINE) {
+                LOG.infof("Skipping port scan for device %s because it is OFFLINE", deviceId);
+                device.portScanState = PortScanState.PENDING;
+                device.persistAndFlush();
+                return null;
+            }
+            
             String ip = null;
             org.hibernate.Hibernate.initialize(device.identities);
             if (!device.identities.isEmpty()) {
@@ -131,7 +138,7 @@ public class BackgroundScannerService {
         });
 
         if (ipAddress == null || ipAddress.isBlank()) {
-            LOG.warnf("Cannot scan device %s because no IP is associated", deviceId);
+            LOG.warnf("Cannot scan device %s because no IP is associated or device is offline", deviceId);
             return;
         }
 

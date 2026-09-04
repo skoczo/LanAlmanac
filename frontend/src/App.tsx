@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import {
   createRootRoute,
   createRoute,
@@ -8,6 +9,7 @@ import {
 import { AuthProvider, useAuth } from './lib/auth/auth-context'
 import { VaultProvider } from './lib/vault/vault-context'
 import { Layout } from './components/Layout'
+import { ChangePasswordModal } from './components/ChangePasswordModal'
 import { Login } from './pages/Login'
 import { Dashboard } from './pages/Dashboard'
 import { Devices } from './pages/Devices'
@@ -19,7 +21,7 @@ import { Settings } from './pages/Settings'
 
 // 1. Root Router Guard Component
 const RootComponent = () => {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, mustChangePassword } = useAuth()
 
   if (!isAuthenticated) {
     return <Login />
@@ -27,6 +29,7 @@ const RootComponent = () => {
 
   return (
     <VaultProvider>
+      {mustChangePassword && <ChangePasswordModal />}
       <Layout>
         <Outlet />
       </Layout>
@@ -69,10 +72,20 @@ const vaultRoute = createRoute({
   component: Vault
 })
 
+import { useNavigate } from '@tanstack/react-router'
+
+const LoginRedirect = () => {
+  const navigate = useNavigate()
+  useEffect(() => {
+    navigate({ to: '/', replace: true })
+  }, [navigate])
+  return null
+}
+
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
-  component: Login
+  component: LoginRedirect
 })
 
 const alertsRoute = createRoute({
