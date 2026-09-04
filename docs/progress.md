@@ -1,6 +1,6 @@
-# NetAlmanac — Implementation Progress
+# LanAlmanac — Implementation Progress
 
-This document tracks the completion of developmental phases for the NetAlmanac project.
+This document tracks the completion of developmental phases for the LanAlmanac project.
 
 ---
 

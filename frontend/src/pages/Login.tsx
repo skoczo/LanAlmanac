@@ -63,7 +63,7 @@ export const Login: React.FC = () => {
             <ShieldCheck className="w-8 h-8" />
           </div>
           <h1 className="text-2xl font-bold bg-gradient-to-r from-text-primary to-text-secondary bg-clip-text text-transparent">
-            NetAlmanac
+            LanAlmanac
           </h1>
           <p className="text-sm text-text-secondary">
             Sign in to access your single pane of glass

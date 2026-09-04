@@ -82,7 +82,7 @@ public class HttpTitleProbe implements NetworkProbe {
                     Matcher m = Pattern.compile("<title>(.*?)</title>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(html.toString());
                     if (m.find()) {
                         String title = m.group(1).trim();
-                        if (!title.isEmpty() && !title.equalsIgnoreCase("NetAlmanac") && !title.toLowerCase().contains("network manager")) {
+                        if (!title.isEmpty() && !title.equalsIgnoreCase("LanAlmanac") && !title.toLowerCase().contains("network manager")) {
                             context.setResolvedHostname(title);
                             return;
                         }

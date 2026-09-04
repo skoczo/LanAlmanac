@@ -1,6 +1,6 @@
-# NetAlmanac
+# LanAlmanac
 
-NetAlmanac is a self-hosted LAN management tool designed as a **modular monolith** with a Quarkus JAX-RS/WebSocket backend and a premium React 19 + Tailwind v4 dark-mode SPA frontend dashboard.
+LanAlmanac is a self-hosted LAN management tool designed as a **modular monolith** with a Quarkus JAX-RS/WebSocket backend and a premium React 19 + Tailwind v4 dark-mode SPA frontend dashboard.
 
 ---
 

@@ -1,4 +1,4 @@
-# NetAlmanac — System Architecture & Deployment Plan
+# LanAlmanac — System Architecture & Deployment Plan
 
 > **Single Pane of Glass** for LAN management: auto-discovery, device fingerprinting, credential vault, remote access, and monitoring — all self-hosted.
 

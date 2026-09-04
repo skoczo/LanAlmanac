@@ -143,7 +143,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </div>
             {!isCollapsed && (
               <span className="font-bold text-base tracking-wide bg-gradient-to-r from-text-primary to-text-secondary bg-clip-text text-transparent truncate">
-                NetAlmanac
+                LanAlmanac
               </span>
             )}
           </div>
