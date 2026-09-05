@@ -91,7 +91,7 @@ public class ThreatResource {
     @Transactional
     public ThreatEvent approveDevice(@PathParam("id") UUID id) {
         ThreatEvent threat = ThreatEvent.findById(id);
-        if (threat != null && !threat.resolved) {
+        if (threat != null && threat.physicalDeviceId == null) {
             if (threat.description != null && threat.description.startsWith("Rogue Device Detected")) {
                 
                 PhysicalDevice newDevice = new PhysicalDevice();

@@ -311,7 +311,16 @@ export const Alerts: React.FC = () => {
                 )}
                 
                 {threat.resolved && !expandedNotes[threat.id] && (
-                  <div className="mt-2 pt-2 border-t border-border-subtle flex justify-end pl-9">
+                  <div className="mt-2 pt-2 border-t border-border-subtle flex justify-end pl-9 gap-3">
+                    {isRogueDevice && !threat.physicalDeviceId && (
+                      <button 
+                        onClick={() => handleApproveDevice(threat.id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-success/20 border border-accent-success/50 hover:bg-accent-success/30 text-accent-success text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors mr-auto"
+                      >
+                        <Network className="w-3.5 h-3.5" />
+                        Add to Baseline
+                      </button>
+                    )}
                     <button 
                         onClick={() => {
                           setExpandedNotes({ ...expandedNotes, [threat.id]: true })
