@@ -9,6 +9,11 @@ import java.util.Map;
 import java.util.UUID;
 import com.gnm.model.FingerprintVector;
 import com.gnm.model.NetworkService;
+import com.gnm.model.PhysicalDevice;
+import com.gnm.model.NetworkIdentity;
+import com.gnm.model.enums.DeviceType;
+import com.gnm.model.enums.DeviceStatus;
+import java.time.Instant;
 
 @Path("/api/threats")
 @Produces(MediaType.APPLICATION_JSON)
@@ -77,6 +82,50 @@ public class ThreatResource {
             }
             threat.resolved = true;
             threat.persist();
+        }
+        return threat;
+    }
+
+    @POST
+    @Path("/{id}/approve-device")
+    @Transactional
+    public ThreatEvent approveDevice(@PathParam("id") UUID id) {
+        ThreatEvent threat = ThreatEvent.findById(id);
+        if (threat != null && !threat.resolved) {
+            if (threat.description != null && threat.description.startsWith("Rogue Device Detected")) {
+                
+                PhysicalDevice newDevice = new PhysicalDevice();
+                newDevice.displayName = "Approved from IDS Alert: " + (threat.ipAddress != null ? threat.ipAddress : "Unknown");
+                newDevice.deviceType = DeviceType.UNKNOWN;
+                newDevice.firstSeen = threat.detectedAt != null ? threat.detectedAt : Instant.now();
+                newDevice.lastSeen = newDevice.firstSeen;
+                newDevice.status = DeviceStatus.ONLINE;
+                newDevice.confidenceScore = 1.0;
+                newDevice.persistAndFlush();
+                
+                NetworkIdentity newId = new NetworkIdentity();
+                newId.physicalDevice = newDevice;
+                newId.ipAddress = threat.ipAddress;
+                newId.macAddress = threat.macAddress;
+                newId.firstSeen = newDevice.firstSeen;
+                newId.lastSeen = newDevice.lastSeen;
+                newId.current = true;
+                
+                String desc = threat.description;
+                if (desc.contains("from ")) {
+                    String hostname = desc.substring(desc.indexOf("from ") + 5).trim();
+                    if (!hostname.equalsIgnoreCase("Unknown")) {
+                        newId.hostname = hostname;
+                        newDevice.displayName = hostname;
+                    }
+                }
+                
+                newId.persistAndFlush();
+
+                threat.physicalDeviceId = newDevice.id;
+                threat.resolved = true;
+                threat.persist();
+            }
         }
         return threat;
     }

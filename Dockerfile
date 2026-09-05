@@ -30,8 +30,8 @@ RUN ./gradlew :gnm-app:build -Dquarkus.package.type=fast-jar -x test --no-daemon
 # Stage 3: Runtime
 FROM eclipse-temurin:21-jre-alpine
 
-# Install libpcap for pcap4j (network scanning)
-RUN apk add --no-cache libpcap
+# Install libpcap for pcap4j (network scanning) and postgresql-client for backups
+RUN apk add --no-cache libpcap postgresql-client
 
 WORKDIR /app
 

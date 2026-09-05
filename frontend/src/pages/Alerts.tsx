@@ -60,6 +60,15 @@ export const Alerts: React.FC = () => {
     }
   }
 
+  const handleApproveDevice = async (id: string) => {
+    try {
+      await apiClient(`/api/threats/${id}/approve-device`, { method: 'POST' })
+      fetchData()
+    } catch (err) {
+      console.error('Failed to approve device', err)
+    }
+  }
+
   const handleAcceptSshKey = async (id: string) => {
     try {
       await apiClient(`/api/threats/${id}/accept-ssh-key`, { method: 'PUT' })
@@ -144,6 +153,7 @@ export const Alerts: React.FC = () => {
           {threats.map((threat) => {
             const isUnknownHostname = threat.description.includes('Hostname: Unknown') || threat.description.includes('from Unknown')
             const isSshMutation = threat.description.includes('SSH Host Key mutation detected')
+            const isRogueDevice = threat.description.startsWith('Rogue Device Detected')
             const hasSshKey = isSshMutation && threat.description.includes('Key: ')
             const isCritical = threat.severity === 'CRITICAL'
             const deviceName = threat.physicalDeviceId ? devices[threat.physicalDeviceId] || 'Unknown Device' : 'Unassociated'
@@ -266,6 +276,16 @@ export const Alerts: React.FC = () => {
                         >
                           <Key className="w-3.5 h-3.5" />
                           Accept New Key
+                        </button>
+                      )}
+
+                      {isRogueDevice && (
+                        <button 
+                          onClick={() => handleApproveDevice(threat.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-success hover:bg-accent-success/90 text-bg-base text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors mr-4"
+                        >
+                          <Network className="w-3.5 h-3.5" />
+                          Add to Baseline
                         </button>
                       )}
                       

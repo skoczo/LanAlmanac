@@ -279,4 +279,231 @@ public class BackupService {
         link.lastVerified = dto.lastVerified;
         return link;
     }
+
+    // --- NEW FULL BACKUP LOGIC (ZIP + AES-256-GCM) ---
+    private static final org.jboss.logging.Logger LOG = org.jboss.logging.Logger.getLogger(BackupService.class);
+
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "quarkus.datasource.jdbc.url")
+    String jdbcUrl;
+
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "quarkus.datasource.username")
+    String dbUser;
+
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "quarkus.datasource.password")
+    String dbPassword;
+
+    private static final int SALT_LENGTH = 16;
+    private static final int GCM_IV_LENGTH = 12;
+    private static final int GCM_TAG_LENGTH = 128;
+    private static final String KEYS_DIR = "keys";
+    private static final String DUMP_FILE_NAME = "database_dump.sql";
+
+    public java.nio.file.Path createBackup(String password) throws Exception {
+        java.nio.file.Path tempDir = java.nio.file.Files.createTempDirectory("gnm_backup_");
+        java.nio.file.Path dumpFile = tempDir.resolve(DUMP_FILE_NAME);
+        try {
+            runPgDump(dumpFile);
+            java.nio.file.Path zipFile = tempDir.resolve("backup.zip");
+            createZip(dumpFile, zipFile);
+            java.nio.file.Path encryptedFile = java.nio.file.Files.createTempFile("gnm_backup_", ".gnmbak");
+            encryptFile(zipFile, encryptedFile, password);
+            return encryptedFile;
+        } finally {
+            deleteDirectory(tempDir);
+        }
+    }
+
+    public void restoreBackup(java.nio.file.Path encryptedBackup, String password) throws Exception {
+        java.nio.file.Path tempDir = java.nio.file.Files.createTempDirectory("gnm_restore_");
+        java.nio.file.Path zipFile = tempDir.resolve("backup.zip");
+        try {
+            decryptFile(encryptedBackup, zipFile, password);
+            unzip(zipFile, tempDir);
+            java.nio.file.Path restoredKeysDir = tempDir.resolve(KEYS_DIR);
+            if (java.nio.file.Files.exists(restoredKeysDir)) {
+                java.nio.file.Path actualKeysDir = java.nio.file.Paths.get(KEYS_DIR);
+                if (java.nio.file.Files.exists(actualKeysDir)) {
+                    deleteDirectory(actualKeysDir);
+                }
+                java.nio.file.Files.move(restoredKeysDir, actualKeysDir, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                LOG.info("Restored keys directory.");
+            }
+            java.nio.file.Path dumpFile = tempDir.resolve(DUMP_FILE_NAME);
+            if (java.nio.file.Files.exists(dumpFile)) {
+                runPsqlRestore(dumpFile);
+                LOG.info("Restored database.");
+            } else {
+                throw new IllegalStateException("Backup does not contain database dump.");
+            }
+            LOG.info("Backup restored successfully. Restarting application...");
+            System.exit(0);
+        } finally {
+            deleteDirectory(tempDir);
+        }
+    }
+
+    private void runPgDump(java.nio.file.Path outputFile) throws Exception {
+        DbConnectionInfo info = parseJdbcUrl(jdbcUrl);
+        ProcessBuilder pb = new ProcessBuilder(
+                "pg_dump", "-h", info.host, "-p", String.valueOf(info.port), 
+                "-U", dbUser, "-d", info.dbName, "-f", outputFile.toAbsolutePath().toString(),
+                "-c", "--if-exists"
+        );
+        java.util.Map<String, String> env = pb.environment();
+        env.put("PGPASSWORD", dbPassword);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+        String output = new String(process.getInputStream().readAllBytes());
+        int exitCode = process.waitFor();
+        if (exitCode != 0) throw new RuntimeException("pg_dump failed with exit code " + exitCode + ": " + output);
+    }
+
+    private void runPsqlRestore(java.nio.file.Path inputFile) throws Exception {
+        DbConnectionInfo info = parseJdbcUrl(jdbcUrl);
+        ProcessBuilder pb = new ProcessBuilder(
+                "psql", "-h", info.host, "-p", String.valueOf(info.port), 
+                "-U", dbUser, "-d", info.dbName, "-f", inputFile.toAbsolutePath().toString(),
+                "-v", "ON_ERROR_STOP=1"
+        );
+        java.util.Map<String, String> env = pb.environment();
+        env.put("PGPASSWORD", dbPassword);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+        String output = new String(process.getInputStream().readAllBytes());
+        int exitCode = process.waitFor();
+        if (exitCode != 0) throw new RuntimeException("psql restore failed with exit code " + exitCode + ": " + output);
+    }
+
+    private void createZip(java.nio.file.Path dumpFile, java.nio.file.Path zipFile) throws Exception {
+        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(new java.io.FileOutputStream(zipFile.toFile()))) {
+            addFileToZip(dumpFile, DUMP_FILE_NAME, zos);
+            java.nio.file.Path keysDir = java.nio.file.Paths.get(KEYS_DIR);
+            if (java.nio.file.Files.exists(keysDir)) {
+                try (java.util.stream.Stream<java.nio.file.Path> stream = java.nio.file.Files.walk(keysDir)) {
+                    stream.filter(path -> !java.nio.file.Files.isDirectory(path)).forEach(path -> {
+                        try {
+                            String zipEntryName = keysDir.getParent() == null ? path.toString() : keysDir.getParent().relativize(path).toString();
+                            zipEntryName = zipEntryName.replace('\\', '/');
+                            addFileToZip(path, zipEntryName, zos);
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    private void addFileToZip(java.nio.file.Path file, String zipEntryName, java.util.zip.ZipOutputStream zos) throws Exception {
+        java.util.zip.ZipEntry zipEntry = new java.util.zip.ZipEntry(zipEntryName);
+        zos.putNextEntry(zipEntry);
+        java.nio.file.Files.copy(file, zos);
+        zos.closeEntry();
+    }
+
+    private void unzip(java.nio.file.Path zipFile, java.nio.file.Path destDir) throws Exception {
+        try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(new java.io.FileInputStream(zipFile.toFile()))) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                java.nio.file.Path resolvedPath = destDir.resolve(entry.getName()).normalize();
+                if (!resolvedPath.startsWith(destDir)) throw new RuntimeException("Zip slip vulnerability detected: " + entry.getName());
+                if (entry.isDirectory()) {
+                    java.nio.file.Files.createDirectories(resolvedPath);
+                } else {
+                    java.nio.file.Files.createDirectories(resolvedPath.getParent());
+                    java.nio.file.Files.copy(zis, resolvedPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
+    }
+
+    private void encryptFile(java.nio.file.Path inputFile, java.nio.file.Path outputFile, String password) throws Exception {
+        byte[] salt = new byte[SALT_LENGTH];
+        new java.security.SecureRandom().nextBytes(salt);
+        byte[] kekBytes = deriveKek(password, salt);
+        javax.crypto.SecretKey kek = new javax.crypto.spec.SecretKeySpec(kekBytes, "AES");
+        byte[] iv = new byte[GCM_IV_LENGTH];
+        new java.security.SecureRandom().nextBytes(iv);
+        javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+        javax.crypto.spec.GCMParameterSpec spec = new javax.crypto.spec.GCMParameterSpec(GCM_TAG_LENGTH, iv);
+        cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, kek, spec);
+        try (java.io.OutputStream fos = new java.io.FileOutputStream(outputFile.toFile());
+             javax.crypto.CipherOutputStream cos = new javax.crypto.CipherOutputStream(fos, cipher)) {
+            fos.write(salt);
+            fos.write(iv);
+            java.nio.file.Files.copy(inputFile, cos);
+        }
+    }
+
+    private void decryptFile(java.nio.file.Path inputFile, java.nio.file.Path outputFile, String password) throws Exception {
+        try (java.io.InputStream fis = new java.io.FileInputStream(inputFile.toFile())) {
+            byte[] salt = new byte[SALT_LENGTH];
+            if (fis.read(salt) != SALT_LENGTH) throw new IllegalArgumentException("Invalid backup file: missing salt");
+            byte[] iv = new byte[GCM_IV_LENGTH];
+            if (fis.read(iv) != GCM_IV_LENGTH) throw new IllegalArgumentException("Invalid backup file: missing IV");
+            byte[] kekBytes = deriveKek(password, salt);
+            javax.crypto.SecretKey kek = new javax.crypto.spec.SecretKeySpec(kekBytes, "AES");
+            javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+            javax.crypto.spec.GCMParameterSpec spec = new javax.crypto.spec.GCMParameterSpec(GCM_TAG_LENGTH, iv);
+            cipher.init(javax.crypto.Cipher.DECRYPT_MODE, kek, spec);
+            try (javax.crypto.CipherInputStream cis = new javax.crypto.CipherInputStream(fis, cipher)) {
+                java.nio.file.Files.copy(cis, outputFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.io.IOException e) {
+                if (e.getCause() instanceof javax.crypto.AEADBadTagException) {
+                    throw new IllegalArgumentException("Incorrect backup password", e);
+                }
+                throw e;
+            }
+        }
+    }
+
+    private byte[] deriveKek(String passcode, byte[] salt) {
+        org.bouncycastle.crypto.params.Argon2Parameters.Builder builder = new org.bouncycastle.crypto.params.Argon2Parameters.Builder(org.bouncycastle.crypto.params.Argon2Parameters.ARGON2_id)
+                .withVersion(org.bouncycastle.crypto.params.Argon2Parameters.ARGON2_VERSION_13)
+                .withIterations(3)
+                .withMemoryAsKB(65536)
+                .withParallelism(4)
+                .withSalt(salt);
+        org.bouncycastle.crypto.generators.Argon2BytesGenerator gen = new org.bouncycastle.crypto.generators.Argon2BytesGenerator();
+        gen.init(builder.build());
+        byte[] result = new byte[32];
+        gen.generateBytes(passcode.getBytes(java.nio.charset.StandardCharsets.UTF_8), result, 0, result.length);
+        return result;
+    }
+
+    private void deleteDirectory(java.nio.file.Path path) {
+        if (!java.nio.file.Files.exists(path)) return;
+        try {
+            java.nio.file.Files.walkFileTree(path, new java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+                @Override
+                public java.nio.file.FileVisitResult visitFile(java.nio.file.Path file, java.nio.file.attribute.BasicFileAttributes attrs) throws java.io.IOException {
+                    java.nio.file.Files.delete(file);
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+                @Override
+                public java.nio.file.FileVisitResult postVisitDirectory(java.nio.file.Path dir, java.io.IOException exc) throws java.io.IOException {
+                    java.nio.file.Files.delete(dir);
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+            });
+        } catch (java.io.IOException e) {
+            LOG.warn("Failed to cleanup temp directory: " + path, e);
+        }
+    }
+
+    private static class DbConnectionInfo {
+        String host;
+        int port;
+        String dbName;
+    }
+
+    private DbConnectionInfo parseJdbcUrl(String url) {
+        String cleanUrl = url.replace("jdbc:", "");
+        java.net.URI uri = java.net.URI.create(cleanUrl);
+        DbConnectionInfo info = new DbConnectionInfo();
+        info.host = uri.getHost();
+        info.port = uri.getPort() == -1 ? 5432 : uri.getPort();
+        info.dbName = uri.getPath().substring(1);
+        return info;
+    }
 }
