@@ -21,8 +21,27 @@ import java.time.Instant;
 public class ThreatResource {
 
     @GET
+    @Transactional
     public List<ThreatEvent> getThreats() {
-        return ThreatEvent.list("ORDER BY detectedAt DESC");
+        List<ThreatEvent> threats = ThreatEvent.list("ORDER BY detectedAt DESC");
+        for (ThreatEvent threat : threats) {
+            if (threat.physicalDeviceId == null) {
+                if (threat.macAddress != null && !threat.macAddress.isEmpty()) {
+                    NetworkIdentity identity = NetworkIdentity.find("macAddress = ?1", threat.macAddress).firstResult();
+                    if (identity != null && identity.physicalDevice != null) {
+                        threat.physicalDeviceId = identity.physicalDevice.id;
+                        threat.persist();
+                    }
+                } else if (threat.ipAddress != null && !threat.ipAddress.isEmpty()) {
+                    NetworkIdentity identity = NetworkIdentity.find("ipAddress = ?1", threat.ipAddress).firstResult();
+                    if (identity != null && identity.physicalDevice != null) {
+                        threat.physicalDeviceId = identity.physicalDevice.id;
+                        threat.persist();
+                    }
+                }
+            }
+        }
+        return threats;
     }
 
     @PUT
@@ -91,9 +110,27 @@ public class ThreatResource {
     @Transactional
     public ThreatEvent approveDevice(@PathParam("id") UUID id) {
         ThreatEvent threat = ThreatEvent.findById(id);
-        if (threat != null && threat.physicalDeviceId == null) {
-            if (threat.description != null && threat.description.startsWith("Rogue Device Detected")) {
-                
+        if (threat != null) {
+            PhysicalDevice targetDevice = null;
+            if (threat.physicalDeviceId != null) {
+                targetDevice = PhysicalDevice.findById(threat.physicalDeviceId);
+            }
+
+            if (targetDevice == null && threat.macAddress != null && !threat.macAddress.isEmpty()) {
+                NetworkIdentity existingId = NetworkIdentity.find("macAddress = ?1", threat.macAddress).firstResult();
+                if (existingId != null) {
+                    targetDevice = existingId.physicalDevice;
+                }
+            }
+
+            if (targetDevice == null && threat.ipAddress != null && !threat.ipAddress.isEmpty()) {
+                NetworkIdentity existingId = NetworkIdentity.find("ipAddress = ?1", threat.ipAddress).firstResult();
+                if (existingId != null) {
+                    targetDevice = existingId.physicalDevice;
+                }
+            }
+
+            if (targetDevice == null && threat.description != null && threat.description.startsWith("Rogue Device Detected")) {
                 PhysicalDevice newDevice = new PhysicalDevice();
                 newDevice.displayName = "Approved from IDS Alert: " + (threat.ipAddress != null ? threat.ipAddress : "Unknown");
                 newDevice.deviceType = DeviceType.UNKNOWN;
@@ -102,7 +139,7 @@ public class ThreatResource {
                 newDevice.status = DeviceStatus.ONLINE;
                 newDevice.confidenceScore = 1.0;
                 newDevice.persistAndFlush();
-                
+
                 NetworkIdentity newId = new NetworkIdentity();
                 newId.physicalDevice = newDevice;
                 newId.ipAddress = threat.ipAddress;
@@ -110,7 +147,7 @@ public class ThreatResource {
                 newId.firstSeen = newDevice.firstSeen;
                 newId.lastSeen = newDevice.lastSeen;
                 newId.current = true;
-                
+
                 String desc = threat.description;
                 if (desc.contains("from ")) {
                     String hostname = desc.substring(desc.indexOf("from ") + 5).trim();
@@ -119,12 +156,30 @@ public class ThreatResource {
                         newDevice.displayName = hostname;
                     }
                 }
-                
-                newId.persistAndFlush();
 
-                threat.physicalDeviceId = newDevice.id;
+                newId.persistAndFlush();
+                targetDevice = newDevice;
+            }
+
+            if (targetDevice != null) {
+                threat.physicalDeviceId = targetDevice.id;
                 threat.resolved = true;
                 threat.persist();
+
+                // Link all other threats for the same MAC or IP
+                if (threat.macAddress != null && !threat.macAddress.isEmpty()) {
+                    List<ThreatEvent> matching = ThreatEvent.list("macAddress = ?1 and physicalDeviceId is null", threat.macAddress);
+                    for (ThreatEvent t : matching) {
+                        t.physicalDeviceId = targetDevice.id;
+                        t.persist();
+                    }
+                } else if (threat.ipAddress != null && !threat.ipAddress.isEmpty()) {
+                    List<ThreatEvent> matching = ThreatEvent.list("ipAddress = ?1 and physicalDeviceId is null", threat.ipAddress);
+                    for (ThreatEvent t : matching) {
+                        t.physicalDeviceId = targetDevice.id;
+                        t.persist();
+                    }
+                }
             }
         }
         return threat;

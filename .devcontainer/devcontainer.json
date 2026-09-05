@@ -19,6 +19,22 @@
       "extensions": [
         "vscjava.vscode-java-pack",
         "redhat.java",
+        "vscjava.vscode-java-debug",
+        "vscjava.vscode-java-test",
+        "vscjava.vscode-gradle",
+        "redhat.vscode-quarkus",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss"
+      ]
+    },
+    "antigravity": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "redhat.java",
+        "vscjava.vscode-java-debug",
+        "vscjava.vscode-java-test",
+        "vscjava.vscode-gradle",
         "redhat.vscode-quarkus",
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",

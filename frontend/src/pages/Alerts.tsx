@@ -14,15 +14,23 @@ export interface ThreatEvent {
   notes?: string
 }
 
+interface DeviceIdentity {
+  ipAddress?: string
+  macAddress?: string
+}
+
 interface Device {
   id: string
   displayName: string
+  identities?: DeviceIdentity[]
 }
 
 export const Alerts: React.FC = () => {
   const { apiClient } = useAuth()
   const [threats, setThreats] = useState<ThreatEvent[]>([])
   const [devices, setDevices] = useState<{ [key: string]: string }>({})
+  const [macToDevId, setMacToDevId] = useState<{ [key: string]: string }>({})
+  const [ipToDevId, setIpToDevId] = useState<{ [key: string]: string }>({})
   const [loading, setLoading] = useState(true)
   
   const [hostnameEdits, setHostnameEdits] = useState<{ [key: string]: string }>({})
@@ -38,8 +46,22 @@ export const Alerts: React.FC = () => {
       setThreats(threatsData)
       
       const devMap: { [key: string]: string } = {}
-      devicesData.forEach(d => { devMap[d.id] = d.displayName })
+      const macMap: { [key: string]: string } = {}
+      const ipMap: { [key: string]: string } = {}
+
+      devicesData.forEach(d => {
+        devMap[d.id] = d.displayName
+        if (d.identities) {
+          d.identities.forEach(id => {
+            if (id.macAddress) macMap[id.macAddress.toLowerCase()] = d.id
+            if (id.ipAddress) ipMap[id.ipAddress] = d.id
+          })
+        }
+      })
+
       setDevices(devMap)
+      setMacToDevId(macMap)
+      setIpToDevId(ipMap)
     } catch (err) {
       console.error('Failed to fetch data', err)
     } finally {
@@ -156,7 +178,13 @@ export const Alerts: React.FC = () => {
             const isRogueDevice = threat.description.startsWith('Rogue Device Detected')
             const hasSshKey = isSshMutation && threat.description.includes('Key: ')
             const isCritical = threat.severity === 'CRITICAL'
-            const deviceName = threat.physicalDeviceId ? devices[threat.physicalDeviceId] || 'Unknown Device' : 'Unassociated'
+
+            const matchedDeviceId = threat.physicalDeviceId ||
+              (threat.macAddress ? macToDevId[threat.macAddress.toLowerCase()] : undefined) ||
+              (threat.ipAddress ? ipToDevId[threat.ipAddress] : undefined)
+
+            const isDeviceInBaseline = Boolean(matchedDeviceId)
+            const deviceName = matchedDeviceId ? devices[matchedDeviceId] || 'Unknown Device' : 'Unassociated'
 
             return (
               <div 
@@ -247,7 +275,7 @@ export const Alerts: React.FC = () => {
                   <div className="mt-3 pt-3 border-t border-border-subtle flex items-center justify-between pl-9 flex-wrap gap-3">
                     
                     <div className="flex items-center gap-3">
-                      {isUnknownHostname && threat.physicalDeviceId && (
+                      {isUnknownHostname && matchedDeviceId && (
                         <div className="flex items-center gap-3 mr-4">
                           <input
                             type="text"
@@ -256,11 +284,11 @@ export const Alerts: React.FC = () => {
                             value={hostnameEdits[threat.id] || ''}
                             onChange={(e) => setHostnameEdits({...hostnameEdits, [threat.id]: e.target.value})}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleSetHostnameAndResolve(threat)
+                              if (e.key === 'Enter') handleSetHostnameAndResolve({ ...threat, physicalDeviceId: matchedDeviceId })
                             }}
                           />
                           <button 
-                            onClick={() => handleSetHostnameAndResolve(threat)}
+                            onClick={() => handleSetHostnameAndResolve({ ...threat, physicalDeviceId: matchedDeviceId })}
                             disabled={!hostnameEdits[threat.id]}
                             className="px-3 py-1.5 bg-accent-primary hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-text-primary text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors"
                           >
@@ -279,7 +307,7 @@ export const Alerts: React.FC = () => {
                         </button>
                       )}
 
-                      {isRogueDevice && (
+                      {isRogueDevice && !isDeviceInBaseline && (
                         <button 
                           onClick={() => handleApproveDevice(threat.id)}
                           className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-success hover:bg-accent-success/90 text-bg-base text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors mr-4"
@@ -312,7 +340,7 @@ export const Alerts: React.FC = () => {
                 
                 {threat.resolved && !expandedNotes[threat.id] && (
                   <div className="mt-2 pt-2 border-t border-border-subtle flex justify-end pl-9 gap-3">
-                    {isRogueDevice && !threat.physicalDeviceId && (
+                    {isRogueDevice && !isDeviceInBaseline && (
                       <button 
                         onClick={() => handleApproveDevice(threat.id)}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-success/20 border border-accent-success/50 hover:bg-accent-success/30 text-accent-success text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors mr-auto"
