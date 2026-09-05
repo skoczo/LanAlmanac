@@ -1,5 +1,6 @@
 plugins {
     java
+    eclipse
     id("io.quarkus") version "3.38.0"
 }
 

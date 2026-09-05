@@ -17,7 +17,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 
 @Path("/api/backup")
-@RolesAllowed("admin")
+@RolesAllowed("gnm-admin")
 public class BackupResource {
 
     private static final Logger LOG = Logger.getLogger(BackupResource.class);

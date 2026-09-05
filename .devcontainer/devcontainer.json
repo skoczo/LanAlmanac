@@ -21,6 +21,7 @@
         "redhat.java",
         "vscjava.vscode-java-debug",
         "vscjava.vscode-java-test",
+        "vscjava.vscode-java-dependency",
         "vscjava.vscode-gradle",
         "redhat.vscode-quarkus",
         "dbaeumer.vscode-eslint",
@@ -34,6 +35,7 @@
         "redhat.java",
         "vscjava.vscode-java-debug",
         "vscjava.vscode-java-test",
+        "vscjava.vscode-java-dependency",
         "vscjava.vscode-gradle",
         "redhat.vscode-quarkus",
         "dbaeumer.vscode-eslint",
@@ -42,5 +44,5 @@
       ]
     }
   },
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y libpcap-dev"
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y libpcap-dev && ./gradlew eclipse"
 }

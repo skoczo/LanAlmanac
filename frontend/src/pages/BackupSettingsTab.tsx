@@ -1,31 +1,36 @@
 import { useState } from 'react'
 import { Download, Upload, AlertTriangle, Loader2 } from 'lucide-react'
+import { useAuth } from '../lib/auth/auth-context'
 
 export const BackupSettingsTab = () => {
+  const { token } = useAuth()
   const [backupPassword, setBackupPassword] = useState('')
   const [restorePassword, setRestorePassword] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [isRestoring, setIsRestoring] = useState(false)
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null)
 
+  const getAuthToken = () => token || localStorage.getItem('gnm_token')
+
   const handleBackup = () => {
     if (!backupPassword) {
       alert('Please enter a password for the backup.')
       return
     }
-    // API client expects JSON by default, but this is a file download.
-    // Easiest is to construct the URL and use window.open or a hidden anchor tag.
-    const token = localStorage.getItem('jwt')
+
+    const authToken = getAuthToken()
     const url = `/api/backup/download?password=${encodeURIComponent(backupPassword)}`
     
-    // We can fetch it to include Auth headers
     fetch(url, {
       headers: {
-        'Authorization': `Bearer ${token}`
+        ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
       }
     })
-    .then(response => {
-      if (!response.ok) throw new Error('Backup failed')
+    .then(async response => {
+      if (!response.ok) {
+        const errText = await response.text()
+        throw new Error(errText || `Backup failed with status ${response.status}`)
+      }
       return response.blob()
     })
     .then(blob => {
@@ -33,7 +38,6 @@ export const BackupSettingsTab = () => {
       const a = document.createElement('a')
       a.style.display = 'none'
       a.href = downloadUrl
-      // Get filename from response header if possible, or use a default
       a.download = `gnm_backup_${new Date().getTime()}.gnmbak`
       document.body.appendChild(a)
       a.click()
@@ -67,18 +71,20 @@ export const BackupSettingsTab = () => {
     formData.append('file', file)
     formData.append('password', restorePassword)
 
+    const authToken = getAuthToken()
+
     try {
       const response = await fetch('/api/backup/restore', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('jwt')}`
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
         },
         body: formData
       })
 
       if (!response.ok) {
         const errText = await response.text()
-        throw new Error(errText)
+        throw new Error(errText || `Restore failed with status ${response.status}`)
       }
 
       setRestoreMessage("Restore initiated. The system will restart shortly. Please refresh the page in a minute.")
