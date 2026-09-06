@@ -8,7 +8,6 @@ import {
   KeyRound,
   LogOut,
   Bell,
-  Search,
   ChevronLeft,
   ChevronRight,
   Wifi,
@@ -28,7 +27,6 @@ interface ToastMessage {
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, logout } = useAuth()
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const [searchTerm, setSearchTerm] = useState('')
   const [toasts, setToasts] = useState<ToastMessage[]>([])
   const [notificationHistory, setNotificationHistory] = useState<ToastMessage[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
@@ -204,22 +202,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         {/* Header */}
-        <header className="h-16 border-b border-border-subtle bg-bg-glass backdrop-blur-md flex items-center justify-between px-6 z-10">
-          <div className="flex items-center gap-4 flex-1 max-w-lg">
-            <div className="relative w-full">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-text-muted">
-                <Search className="w-4 h-4" />
-              </div>
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-bg-surface border border-border-subtle rounded-xl py-2 pl-9 pr-4 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-primary transition-colors"
-                placeholder="Search devices, IPs, services... (Ctrl+K)"
-              />
-            </div>
-          </div>
-
+        <header className="h-16 border-b border-border-subtle bg-bg-glass backdrop-blur-md flex items-center justify-end px-6 z-10">
           <div className="flex items-center gap-4">
             {/* System Status */}
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent-success/5 border border-accent-success/20 text-accent-success text-[10px] font-bold tracking-wider uppercase select-none glow-success">
