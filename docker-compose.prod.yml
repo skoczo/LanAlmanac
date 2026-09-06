@@ -42,6 +42,9 @@ services:
       - db
       - redis
     network_mode: host # Required for passive network packet capturing (if running on a dedicated Linux host)
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
     restart: unless-stopped
 
 volumes:

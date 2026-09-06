@@ -66,6 +66,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
     networks:
       gnm_sim_net:
         ipv4_address: 172.20.0.4

@@ -4,6 +4,10 @@
   "remoteUser": "vscode",
   "containerUser": "root",
   "updateRemoteUserUID": false,
+  "runArgs": [
+    "--cap-add=NET_RAW",
+    "--cap-add=NET_ADMIN"
+  ],
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
       "version": "22",

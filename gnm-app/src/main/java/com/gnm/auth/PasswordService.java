@@ -6,17 +6,20 @@ import org.bouncycastle.crypto.params.Argon2Parameters;
 
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Password hashing and verification using Argon2id via Bouncy Castle.
- * Produces self-contained hash strings: $argon2id$v=19$m=65536,t=3,p=1$salt$hash
+ * Produces self-contained hash strings:
+ * $argon2id$v=19$m=65536,t=3,p=1$salt$hash
  */
 @ApplicationScoped
 public class PasswordService {
 
     private static final int SALT_LENGTH = 16;
     private static final int HASH_LENGTH = 32;
-    private static final int MEMORY_KB = 65536;  // 64 MB
+    private static final int MEMORY_KB = 65536; // 64 MB
     private static final int ITERATIONS = 3;
     private static final int PARALLELISM = 1;
 
@@ -75,6 +78,8 @@ public class PasswordService {
 
             return constantTimeEquals(expectedHash, computedHash);
         } catch (Exception e) {
+            // log problem with password hashing
+            Logger.getLogger(PasswordService.class.getName()).log(Level.SEVERE, "Error verifying password", e);
             return false;
         }
     }
