@@ -48,7 +48,6 @@ This document tracks the completion of developmental phases for the LanAlmanac p
 ## ✅ Phase 4: Remote Access & Terminal UI (Completed)
 - [x] Create WebSocket SSH bridge server (Apache MINA SSHD + WebSocket Next).
 - [x] Build React browser terminal panel (`xterm.js` with WebGL rendering and split-pane resizers).
-- [x] Set up HTTP reverse proxy for iframe embedding of local web consoles.
 
 ---
 

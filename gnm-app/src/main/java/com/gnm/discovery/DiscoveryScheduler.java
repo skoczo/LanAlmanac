@@ -4,12 +4,12 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import io.quarkus.runtime.StartupEvent;
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.scheduler.Scheduled;
 import org.jboss.logging.Logger;
 import com.gnm.model.GlobalSetting;
 import com.gnm.fingerprint.FingerprintEngine;
-import jakarta.transaction.Transactional;
 
 @ApplicationScoped
 public class DiscoveryScheduler {
@@ -17,16 +17,16 @@ public class DiscoveryScheduler {
     private static final Logger LOG = Logger.getLogger(DiscoveryScheduler.class);
 
     @Inject
-    PassivePacketListener passivePacketListener;
+    private PassivePacketListener passivePacketListener;
 
     @Inject
-    IcmpSweeper icmpSweeper;
+    private IcmpSweeper icmpSweeper;
 
     @Inject
-    FingerprintEngine fingerprintEngine;
+    private FingerprintEngine fingerprintEngine;
 
     @Inject
-    ArpScanner arpScanner;
+    private ArpScanner arpScanner;
 
     public void onStart(@Observes StartupEvent ev) {
         if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) {
@@ -49,8 +49,12 @@ public class DiscoveryScheduler {
 
     @Scheduled(every = "${gnm.scan.icmp-interval:60s}", identity = "icmp-sweep-job")
     public void triggerIcmpSweep() {
-        if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) return;
-        GlobalSetting setting = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().call(() -> GlobalSetting.findById("ENABLE_ACTIVE_SCANNING"));
+        if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) {
+            return;
+        }
+
+        GlobalSetting setting = QuarkusTransaction.requiringNew()
+                .call(() -> GlobalSetting.findById("ENABLE_ACTIVE_SCANNING"));
         if (setting != null && "false".equalsIgnoreCase(setting.value)) {
             LOG.debug("Active scanning is disabled via settings. Skipping ICMP sweep.");
             return;
@@ -58,7 +62,8 @@ public class DiscoveryScheduler {
         LOG.debug("Scheduled trigger: running active ICMP sweep...");
         java.util.Set<String> liveIps = icmpSweeper.sweep();
 
-        // Also merge active system ARP cache IPs so Doze mode / non-ICMP hosts are counted as live
+        // Also merge active system ARP cache IPs so Doze mode / non-ICMP hosts are
+        // counted as live
         try {
             java.util.Set<String> arpIps = arpScanner.scan();
             if (arpIps != null) {
@@ -75,8 +80,12 @@ public class DiscoveryScheduler {
 
     @Scheduled(every = "${gnm.scan.arp-interval:30s}", identity = "arp-scan-job")
     public void triggerArpScan() {
-        if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) return;
-        GlobalSetting setting = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().call(() -> GlobalSetting.findById("ENABLE_ACTIVE_SCANNING"));
+        if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) {
+            return;
+        }
+
+        GlobalSetting setting = QuarkusTransaction.requiringNew()
+                .call(() -> GlobalSetting.findById("ENABLE_ACTIVE_SCANNING"));
         if (setting != null && "false".equalsIgnoreCase(setting.value)) {
             LOG.debug("Active scanning is disabled via settings. Skipping ARP scan.");
             return;

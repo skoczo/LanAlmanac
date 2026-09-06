@@ -260,12 +260,16 @@ public class FingerprintEngine {
                     
                     try {
                         for (NetworkProbe probe : sortedProbes) {
+                            if (context.getResolvedHostname() != null && probe.isHostnameProbe()) {
+                                continue;
+                            }
                             try {
                                 probe.execute(context);
                             } catch (Exception e) {
                                 LOG.error("Probe " + probe.getClass().getSimpleName() + " failed for IP " + sighting.ipAddress, e);
                             }
                         }
+
                     } finally {
                         timeoutFuture.cancel(false);
                         Thread.interrupted(); // clear interrupted flag

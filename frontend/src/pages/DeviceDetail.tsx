@@ -135,7 +135,7 @@ export const DeviceDetail: React.FC = () => {
   const [correlationHistory, setCorrelationHistory] = useState<CorrelationEvent[]>([])
   const [statusHistory, setStatusHistory] = useState<StatusHistoryEvent[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'identities' | 'fingerprint' | 'correlation' | 'status_history' | 'services' | 'credentials' | 'monitor' | 'settings' | 'web console'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'identities' | 'fingerprint' | 'correlation' | 'status_history' | 'services' | 'credentials' | 'monitor' | 'settings'>('overview')
   const [newLabel, setNewLabel] = useState('')
   
   const { sealed, setShowUnsealModal } = useVault()
@@ -461,7 +461,7 @@ export const DeviceDetail: React.FC = () => {
 
     {/* Navigation tabs */}
       <div className="flex items-center border-b border-border-subtle gap-2 overflow-x-auto">
-        {(['overview', 'identities', 'fingerprint', 'correlation', 'status_history', 'services', 'credentials', 'monitor', 'settings', 'web console'] as const).map((tab) => (
+        {(['overview', 'identities', 'fingerprint', 'correlation', 'status_history', 'services', 'credentials', 'monitor', 'settings'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -1504,18 +1504,7 @@ export const DeviceDetail: React.FC = () => {
             </div>
           </div>
         )}
-        {/* WEB CONSOLE TAB */}
-        {activeTab === 'web console' && (
-          <div className="bg-bg-surface border border-border-subtle rounded-2xl overflow-hidden shadow-lg h-[600px] flex flex-col">
-            <div className="bg-bg-surface-raised border-b border-border-subtle p-3 flex justify-between items-center">
-              <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Web Administration Console</span>
-              <a href={`/api/proxy/${deviceId}/`} target="_blank" rel="noreferrer" className="text-xs text-accent-primary hover:underline">
-                Open in new tab
-              </a>
-            </div>
-            <iframe src={`/api/proxy/${deviceId}/`} className="w-full flex-1 border-none bg-white" title="Web Console" />
-          </div>
-        )}
+
       </div>
     </div>
   )

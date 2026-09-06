@@ -20,13 +20,13 @@ public class UserBootstrap {
     private static final Logger LOG = Logger.getLogger(UserBootstrap.class);
 
     @Inject
-    PasswordService passwordService;
+    private PasswordService passwordService;
 
     @ConfigProperty(name = "gnm.auth.local.username", defaultValue = "admin")
-    String adminUsername;
+    private String adminUsername;
 
     @ConfigProperty(name = "gnm.auth.local.password", defaultValue = "admin")
-    String adminPassword;
+    private String adminPassword;
 
     @Transactional
     void onStart(@Observes StartupEvent ev) {

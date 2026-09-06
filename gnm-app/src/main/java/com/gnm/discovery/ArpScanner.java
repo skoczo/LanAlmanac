@@ -41,13 +41,13 @@ public class ArpScanner {
     private static final Logger LOG = Logger.getLogger(ArpScanner.class);
 
     @Inject
-    NetworkSightingQueue sightingQueue;
+    private NetworkSightingQueue sightingQueue;
 
     @Inject
-    com.gnm.service.SubnetFilter subnetFilter;
+    private com.gnm.service.SubnetFilter subnetFilter;
 
     @ConfigProperty(name = "gnm.listen.interface", defaultValue = "eth0")
-    String networkInterfaceProp;
+    private String networkInterfaceProp;
 
     public Set<String> scan() {
         String networkInterface = getListenInterface();
@@ -69,11 +69,13 @@ public class ArpScanner {
         try {
             nif = Pcaps.getDevByName(ifaceName);
         } catch (Throwable t) {
-            throw new UnsupportedOperationException("Libpcap native library or dev interface unavailable: " + t.getMessage(), t);
+            throw new UnsupportedOperationException(
+                    "Libpcap native library or dev interface unavailable: " + t.getMessage(), t);
         }
 
         if (nif == null) {
-            throw new UnsupportedOperationException("Network interface " + ifaceName + " not found in libpcap device list.");
+            throw new UnsupportedOperationException(
+                    "Network interface " + ifaceName + " not found in libpcap device list.");
         }
 
         NetworkInterface netIf = NetworkInterface.getByName(ifaceName);
@@ -90,33 +92,33 @@ public class ArpScanner {
         try {
             // Attempt to open live capture handle - tests NET_RAW / NET_ADMIN capabilities
             handle = nif.openLive(65535, PcapNetworkInterface.PromiscuousMode.PROMISCUOUS, 10);
-            
+
             // Set BPF filter to capture ARP replies only
             handle.setFilter("arp and arp[7] == 2", BpfProgram.BpfCompileMode.OPTIMIZE);
-            
+
             LOG.info("Raw socket privileges confirmed. Broadcasting ARP probes on " + ifaceName + "...");
 
             List<Inet4Address> targetIps = getTargetIps(localIp);
             for (Inet4Address targetIp : targetIps) {
                 ArpPacket.Builder arpBuilder = new ArpPacket.Builder();
                 arpBuilder
-                    .hardwareType(ArpHardwareType.ETHERNET)
-                    .protocolType(EtherType.IPV4)
-                    .hardwareAddrLength((byte) MacAddress.SIZE_IN_BYTES)
-                    .protocolAddrLength((byte) ByteArrays.INET4_ADDRESS_SIZE_IN_BYTES)
-                    .operation(ArpOperation.REQUEST)
-                    .srcHardwareAddr(localMac)
-                    .srcProtocolAddr(localIp)
-                    .dstHardwareAddr(MacAddress.ETHER_BROADCAST_ADDRESS)
-                    .dstProtocolAddr(targetIp);
+                        .hardwareType(ArpHardwareType.ETHERNET)
+                        .protocolType(EtherType.IPV4)
+                        .hardwareAddrLength((byte) MacAddress.SIZE_IN_BYTES)
+                        .protocolAddrLength((byte) ByteArrays.INET4_ADDRESS_SIZE_IN_BYTES)
+                        .operation(ArpOperation.REQUEST)
+                        .srcHardwareAddr(localMac)
+                        .srcProtocolAddr(localIp)
+                        .dstHardwareAddr(MacAddress.ETHER_BROADCAST_ADDRESS)
+                        .dstProtocolAddr(targetIp);
 
                 EthernetPacket.Builder etherBuilder = new EthernetPacket.Builder();
                 etherBuilder
-                    .dstAddr(MacAddress.ETHER_BROADCAST_ADDRESS)
-                    .srcAddr(localMac)
-                    .type(EtherType.ARP)
-                    .payloadBuilder(arpBuilder)
-                    .paddingAtBuild(true);
+                        .dstAddr(MacAddress.ETHER_BROADCAST_ADDRESS)
+                        .srcAddr(localMac)
+                        .type(EtherType.ARP)
+                        .payloadBuilder(arpBuilder)
+                        .paddingAtBuild(true);
 
                 Packet packet = etherBuilder.build();
                 handle.sendPacket(packet);
@@ -153,7 +155,8 @@ public class ArpScanner {
             if (handle != null && handle.isOpen()) {
                 try {
                     handle.close();
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                }
             }
         }
         return liveIps;
@@ -191,7 +194,8 @@ public class ArpScanner {
 
             for (String subnet : subnets) {
                 String trimmed = subnet.trim();
-                if (trimmed.isEmpty()) continue;
+                if (trimmed.isEmpty())
+                    continue;
 
                 String[] parts = trimmed.split("/");
                 String baseIpStr = parts[0];
@@ -204,9 +208,9 @@ public class ArpScanner {
 
                 byte[] bytes = base.getAddress();
                 int ipInt = ((bytes[0] & 0xFF) << 24) |
-                            ((bytes[1] & 0xFF) << 16) |
-                            ((bytes[2] & 0xFF) << 8)  |
-                             (bytes[3] & 0xFF);
+                        ((bytes[1] & 0xFF) << 16) |
+                        ((bytes[2] & 0xFF) << 8) |
+                        (bytes[3] & 0xFF);
 
                 int mask = (prefix == 0) ? 0 : 0xFFFFFFFF << (32 - prefix);
                 int networkInt = ipInt & mask;
@@ -217,10 +221,10 @@ public class ArpScanner {
 
                 for (int cur = startHost; cur <= endHost && totalCount < 1024; cur++) {
                     byte[] ipBytes = new byte[] {
-                        (byte) ((cur >> 24) & 0xFF),
-                        (byte) ((cur >> 16) & 0xFF),
-                        (byte) ((cur >> 8) & 0xFF),
-                        (byte) (cur & 0xFF)
+                            (byte) ((cur >> 24) & 0xFF),
+                            (byte) ((cur >> 16) & 0xFF),
+                            (byte) ((cur >> 8) & 0xFF),
+                            (byte) (cur & 0xFF)
                     };
                     InetAddress addr = InetAddress.getByAddress(ipBytes);
                     if (addr instanceof Inet4Address && !addr.equals(localIp)) {
@@ -241,10 +245,10 @@ public class ArpScanner {
             if (setting != null && setting.value != null && !setting.value.trim().isEmpty()) {
                 return setting.value.trim();
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         return subnetFilter.getSubnetConfig();
     }
-
 
     private String getListenInterface() {
         GlobalSetting setting = GlobalSetting.findById("gnm.listen.interface");
@@ -275,8 +279,10 @@ public class ArpScanner {
                     String flags = parts[2];
                     String mac = parts[3];
 
-                    // Filter out header placeholders, invalid/incomplete entries (0x0 flags), and IPs outside gnm.subnet
-                    if (!"00:00:00:00:00:00".equals(mac) && !"0x0".equals(flags) && mac.contains(":") && subnetFilter.isIpInSubnet(ip)) {
+                    // Filter out header placeholders, invalid/incomplete entries (0x0 flags), and
+                    // IPs outside gnm.subnet
+                    if (!"00:00:00:00:00:00".equals(mac) && !"0x0".equals(flags) && mac.contains(":")
+                            && subnetFilter.isIpInSubnet(ip)) {
                         liveIps.add(ip);
                         NetworkSighting sighting = new NetworkSighting();
                         sighting.ipAddress = ip;
