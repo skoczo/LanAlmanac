@@ -374,14 +374,24 @@ public class DeviceResource {
     @GET
     @Path("/{id}/correlation-history")
     @Transactional
-    public List<FingerprintCorrelationEvent> getCorrelationHistory(@PathParam("id") UUID id) {
-        return FingerprintCorrelationEvent.list("physicalDevice.id = ?1 order by timestamp desc", id);
+    public List<FingerprintCorrelationEvent> getCorrelationHistory(
+            @PathParam("id") UUID id,
+            @QueryParam("limit") @DefaultValue("50") int limit) {
+        int maxLimit = Math.min(Math.max(limit, 1), 100);
+        return FingerprintCorrelationEvent.find("physicalDevice.id = ?1 order by timestamp desc", id)
+                .page(0, maxLimit)
+                .list();
     }
 
     @GET
     @Path("/{id}/status-history")
     @Transactional
-    public List<DeviceStatusHistory> getDeviceStatusHistory(@PathParam("id") UUID id) {
-        return DeviceStatusHistory.find("physicalDevice.id = ?1 order by timestamp desc", id).list();
+    public List<DeviceStatusHistory> getDeviceStatusHistory(
+            @PathParam("id") UUID id,
+            @QueryParam("limit") @DefaultValue("50") int limit) {
+        int maxLimit = Math.min(Math.max(limit, 1), 100);
+        return DeviceStatusHistory.find("physicalDevice.id = ?1 order by timestamp desc", id)
+                .page(0, maxLimit)
+                .list();
     }
 }
