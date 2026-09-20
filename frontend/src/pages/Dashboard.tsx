@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { useAuth } from '../lib/auth/auth-context'
 import { Server, ShieldAlert, Wifi, WifiOff, LockOpen, PieChart as PieChartIcon } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
+import { DiscoveryDashboardWidget } from '../components/discovery/DiscoveryDashboardWidget'
 
 
 
@@ -193,6 +194,9 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Discovery Modules Dashboard */}
+      <DiscoveryDashboardWidget />
 
       {/* Graphs & Activity Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -32,7 +32,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 @QuarkusTest
-public class BackgroundScannerTest {
+public class BackgroundScannerTest extends AbstractE2ETest {
 
     @Inject
     BackgroundScannerService scannerService;

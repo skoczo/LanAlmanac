@@ -368,14 +368,16 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
     }
 
     protected void waitForSsh(String ip) throws Exception {
+        String host = environment.getServiceHost("ne-linux-server", 22);
+        int port = environment.getServicePort("ne-linux-server", 22);
         for (int i = 0; i < 50; i++) {
             try (java.net.Socket s = new java.net.Socket()) {
-                s.connect(new java.net.InetSocketAddress(ip, 22), 200);
+                s.connect(new java.net.InetSocketAddress(host, port), 200);
                 return; // Connected successfully
             } catch (Exception e) {
                 Thread.sleep(200);
             }
         }
-        throw new RuntimeException("SSH port never opened on " + ip);
+        throw new RuntimeException("SSH port never opened on " + host + ":" + port);
     }
 }

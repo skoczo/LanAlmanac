@@ -46,18 +46,38 @@ public class ArpScanner {
     @Inject
     private com.gnm.service.SubnetFilter subnetFilter;
 
+    @Inject
+    private DiscoveryModuleManager moduleManager;
+
     @ConfigProperty(name = "gnm.listen.interface", defaultValue = "eth0")
     private String networkInterfaceProp;
 
     public Set<String> scan() {
-        String networkInterface = getListenInterface();
-        LOG.info("Starting active ARP scan on interface: " + networkInterface);
+        String iface = getListenInterface();
+        LOG.info("Starting active ARP scan on interface: " + iface);
+        moduleManager.updateStatus(
+                DiscoveryModuleManager.ACTIVE_ARP_ID,
+                com.gnm.discovery.model.DiscoveryModuleStatus.Status.RUNNING,
+                "Executing active ARP scan on " + iface
+        );
 
         try {
-            return runPcapArpScan();
+            Set<String> liveIps = runPcapArpScan();
+            moduleManager.updateStatus(
+                    DiscoveryModuleManager.ACTIVE_ARP_ID,
+                    com.gnm.discovery.model.DiscoveryModuleStatus.Status.STOPPED,
+                    "Idle — waiting for scan"
+            );
+            moduleManager.updateLastDiscovered(
+                    DiscoveryModuleManager.ACTIVE_ARP_ID,
+                    "Discovered " + liveIps.size() + " live IP addresses"
+            );
+            return liveIps;
         } catch (Throwable e) {
-            LOG.info("Raw socket ARP scan: " + e.getMessage() + ". Using system ARP cache fallback.");
-            return runArpCacheFallback();
+            String errorMsg = "Missing RAW socket privileges (NET_RAW / NET_ADMIN in Docker) or interface " + iface + " is unavailable: " + e.getMessage();
+            LOG.error("Active ARP scan failed: " + errorMsg);
+            moduleManager.updateError(DiscoveryModuleManager.ACTIVE_ARP_ID, errorMsg);
+            return Collections.emptySet();
         }
     }
 

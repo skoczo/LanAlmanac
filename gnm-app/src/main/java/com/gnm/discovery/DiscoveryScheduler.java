@@ -40,6 +40,22 @@ public class DiscoveryScheduler {
         t.setName("PassivePacketListener");
         t.setDaemon(true);
         t.start();
+
+        // Initial startup scan: populate devices once on application startup
+        Thread.ofVirtual().start(() -> {
+            try {
+                LOG.info("Running initial startup ARP and ICMP scan...");
+                java.util.Set<String> liveIps = arpScanner.scan();
+                java.util.Set<String> icmpIps = icmpSweeper.sweep();
+                if (icmpIps != null) {
+                    liveIps.addAll(icmpIps);
+                }
+                fingerprintEngine.updateProbeCounters(liveIps);
+                LOG.info("Initial startup scan completed successfully.");
+            } catch (Exception e) {
+                LOG.warn("Initial startup scan encountered an error: " + e.getMessage(), e);
+            }
+        });
     }
 
     public void onStop(@Observes ShutdownEvent ev) {
@@ -78,7 +94,7 @@ public class DiscoveryScheduler {
         fingerprintEngine.updateProbeCounters(liveIps);
     }
 
-    @Scheduled(every = "${gnm.scan.arp-interval:30s}", identity = "arp-scan-job")
+    @Scheduled(every = "${gnm.scan.arp-interval:24h}", identity = "arp-scan-job")
     public void triggerArpScan() {
         if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) {
             return;

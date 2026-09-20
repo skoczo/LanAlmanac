@@ -11,6 +11,7 @@
 - **Do not introduce heavy frameworks** unless approved. The stack is already chosen: Quarkus for Backend, React+Vite for Frontend.
 - **Do not break the UI design system**: Use the existing Tailwind CSS 4 variables and Shadcn/ui components. The app uses a premium dark-mode aesthetic.
 - **Concurrency**: Use Java 21 Virtual Threads (`@RunOnVirtualThread`) and `StructuredTaskScope` for concurrency instead of traditional Thread Pools or ExecutorServices.
+- **Language**: The entire application (UI components, error messages, log output, status messages, API entities) MUST be strictly in **English**.
 
 ## Documentation
 - Refer to `docs/architecture.md` for detailed architectural decisions, database schemas, and module breakdowns.

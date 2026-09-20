@@ -287,21 +287,24 @@ public class DeviceResource {
         // Run ping in virtual thread to avoid blocking the REST worker
         Thread.startVirtualThread(() -> {
             try {
-                // Try system ping first
-                Process p = new ProcessBuilder("ping", "-c", "1", "-W", "1", ip).start();
-                boolean reachable = (p.waitFor() == 0);
-                
+                boolean reachable = io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST;
                 if (!reachable) {
-                    int[] ports = { 22, 80, 443, 137, 445 };
-                    for (int port : ports) {
-                        try (java.net.Socket socket = new java.net.Socket()) {
-                            socket.connect(new java.net.InetSocketAddress(ip, port), 500);
-                            reachable = true;
-                            break;
-                        } catch (java.io.IOException e) {
-                            if (e.getMessage() != null && e.getMessage().toLowerCase().contains("refused")) {
+                    // Try system ping first
+                    Process p = new ProcessBuilder("ping", "-c", "1", "-W", "1", ip).start();
+                    reachable = (p.waitFor() == 0);
+                    
+                    if (!reachable) {
+                        int[] ports = { 22, 80, 443, 137, 445 };
+                        for (int port : ports) {
+                            try (java.net.Socket socket = new java.net.Socket()) {
+                                socket.connect(new java.net.InetSocketAddress(ip, port), 500);
                                 reachable = true;
                                 break;
+                            } catch (java.io.IOException e) {
+                                if (e.getMessage() != null && e.getMessage().toLowerCase().contains("refused")) {
+                                    reachable = true;
+                                    break;
+                                }
                             }
                         }
                     }

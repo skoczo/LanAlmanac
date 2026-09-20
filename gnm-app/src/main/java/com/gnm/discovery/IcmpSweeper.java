@@ -37,14 +37,21 @@ public class IcmpSweeper {
     @Inject
     NetworkSightingQueue sightingQueue;
 
+    @Inject
+    DiscoveryModuleManager moduleManager;
+
     @ConfigProperty(name = "gnm.subnet", defaultValue = "192.168.1.0/24")
     String subnetConfig;
 
     public java.util.Set<String> sweep() {
+        moduleManager.updateStatus(
+                DiscoveryModuleManager.ICMP_SWEEPER_ID,
+                com.gnm.discovery.model.DiscoveryModuleStatus.Status.RUNNING,
+                "Executing ICMP sweep on subnet: " + subnetConfig
+        );
         String[] subnets = subnetConfig.split(",");
         java.util.Set<String> allLiveIps = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
 
-        // Fan out all subnets in parallel so a slow subnet doesn't block the others.
         try (ExecutorService subnetExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<CompletableFuture<java.util.Set<String>>> subnetFutures = new ArrayList<>();
             for (String subnet : subnets) {
@@ -56,7 +63,20 @@ public class IcmpSweeper {
                     allLiveIps.addAll(f.get(SWEEP_TIMEOUT_SECONDS + 5, TimeUnit.SECONDS));
                 } catch (Exception ignored) {}
             }
+        } catch (Exception e) {
+            moduleManager.updateError(DiscoveryModuleManager.ICMP_SWEEPER_ID, "ICMP sweep error: " + e.getMessage());
+            return allLiveIps;
         }
+
+        moduleManager.updateStatus(
+                DiscoveryModuleManager.ICMP_SWEEPER_ID,
+                com.gnm.discovery.model.DiscoveryModuleStatus.Status.STOPPED,
+                "Idle — waiting for scan"
+        );
+        moduleManager.updateLastDiscovered(
+                DiscoveryModuleManager.ICMP_SWEEPER_ID,
+                "ICMP sweep completed — " + allLiveIps.size() + " hosts responded"
+        );
         return allLiveIps;
     }
 

@@ -36,6 +36,12 @@ public class PassivePacketListener {
     @Inject
     com.gnm.service.SubnetFilter subnetFilter;
 
+    @Inject
+    DiscoveryModuleManager moduleManager;
+
+    @Inject
+    EbpfPacketListener ebpfPacketListener;
+
     @ConfigProperty(name = "gnm.listen.interface", defaultValue = "eth0")
     String networkInterfaceProp;
 
@@ -44,6 +50,13 @@ public class PassivePacketListener {
             LOG.info("Tests are running. Disabling passive packet sniffer.");
             return;
         }
+
+        // Initialize eBPF sniffer checks first
+        ebpfPacketListener.start();
+        if (!ebpfPacketListener.isRunning()) {
+            LOG.warn("eBPF sniffer could not be started due to missing capabilities or config.");
+        }
+
         String networkInterface = getListenInterface();
         LOG.info("Initializing passive packet listener on interface: " + networkInterface);
 
@@ -82,7 +95,9 @@ public class PassivePacketListener {
         try {
             PcapNetworkInterface nif = Pcaps.getDevByName(networkInterface);
             if (nif == null) {
-                LOG.warn("Network interface " + networkInterface + " not found. Passive packet sniffer is disabled.");
+                String errorMsg = "Network interface " + networkInterface + " not found on host. Passive sniffer disabled.";
+                LOG.warn(errorMsg);
+                moduleManager.updateError(DiscoveryModuleManager.EBPF_SNIFFER_ID, errorMsg);
                 return;
             }
 
@@ -94,18 +109,30 @@ public class PassivePacketListener {
             handle.setFilter(filter, BpfProgram.BpfCompileMode.OPTIMIZE);
 
             LOG.info("Passive packet sniffer successfully listening on interface: " + networkInterface);
+            moduleManager.updateStatus(
+                    DiscoveryModuleManager.EBPF_SNIFFER_ID,
+                    com.gnm.discovery.model.DiscoveryModuleStatus.Status.RUNNING,
+                    "Passive packet listener (ARP, DHCP, mDNS, TCP SYN) running on " + networkInterface
+            );
 
             while (running) {
                 Packet packet = handle.getNextPacket();
                 if (packet != null) {
                     parsePacket(packet)
                         .filter(s -> subnetFilter.isIpInSubnet(s.ipAddress))
-                        .ifPresent(sightingQueue::offer);
+                        .ifPresent(sighting -> {
+                            sightingQueue.offer(sighting);
+                            moduleManager.updateLastDiscovered(
+                                    DiscoveryModuleManager.EBPF_SNIFFER_ID,
+                                    "Network event detected: " + sighting.ipAddress + " (" + sighting.macAddress + ")"
+                            );
+                        });
                 }
             }
         } catch (Throwable e) {
-            LOG.warn("Passive packet sniffing failed to start (" + e.getMessage() + "). " +
-                     "Ensure libpcap-dev is installed and container has cap_add: [NET_RAW, NET_ADMIN].");
+            String errorMsg = "Missing raw socket capabilities in container (NET_RAW/NET_ADMIN) or BPF failure: " + e.getMessage();
+            LOG.error(errorMsg);
+            moduleManager.updateError(DiscoveryModuleManager.EBPF_SNIFFER_ID, errorMsg);
         } finally {
             cleanup();
         }
