@@ -319,7 +319,7 @@ export const Alerts: React.FC = () => {
                         </button>
                       )}
 
-                      {(isRogueDevice || !isDeviceInBaseline) && (
+                      {!isDeviceInBaseline && (
                         <div className="flex items-center gap-2 mr-4">
                           <input
                             type="text"
