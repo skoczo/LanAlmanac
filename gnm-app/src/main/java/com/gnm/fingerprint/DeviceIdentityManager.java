@@ -122,10 +122,11 @@ public class DeviceIdentityManager {
             device.lastSeen = sighting.observedAt;
             device.consecutiveMissedProbes = 0; // Reset on any successful sighting
             
-            // Ensure only this identity is marked current
+            // Keep identities current if seen recently (within last 30 minutes) to support multi-homed/dual-interface devices
+            java.time.Instant recentCutoff = java.time.Instant.now().minus(30, java.time.temporal.ChronoUnit.MINUTES);
             List<NetworkIdentity> allIdentities = NetworkIdentity.list("physicalDevice.id", device.id);
             for (NetworkIdentity oldId : allIdentities) {
-                if (oldId.id.equals(identity.id)) {
+                if (oldId.id.equals(identity.id) || (oldId.lastSeen != null && oldId.lastSeen.isAfter(recentCutoff))) {
                     oldId.current = true;
                 } else {
                     oldId.current = false;
@@ -229,6 +230,7 @@ public class DeviceIdentityManager {
             newId.hostname = resolvedHostname;
             newId.persist();
 
+            boolean statusChanged = (bestMatch.status != DeviceStatus.ONLINE);
             bestMatch.status = DeviceStatus.ONLINE;
             bestMatch.lastSeen = sighting.observedAt;
             bestMatch.consecutiveMissedProbes = 0;
@@ -271,7 +273,9 @@ public class DeviceIdentityManager {
             correlationEvent.timestamp = sighting.observedAt;
             correlationEvent.persist();
 
-            eventBroadcaster.fireAsync(new FingerprintEngine.DeviceEvent("STATUS_CHANGE", bestMatch.id.toString(), bestMatch.displayName, "ONLINE", sighting.ipAddress));
+            if (statusChanged) {
+                eventBroadcaster.fireAsync(new FingerprintEngine.DeviceEvent("STATUS_CHANGE", bestMatch.id.toString(), bestMatch.displayName, "ONLINE", sighting.ipAddress));
+            }
         } else {
             GlobalSetting modeSetting = GlobalSetting.findById("APP_MODE");
             String appMode = modeSetting != null ? modeSetting.value : "DISCOVERY";

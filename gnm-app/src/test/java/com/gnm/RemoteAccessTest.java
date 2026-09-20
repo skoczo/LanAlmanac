@@ -91,7 +91,7 @@ public class RemoteAccessTest extends AbstractE2ETest {
         WebSocket ws = HttpClient.newHttpClient().newWebSocketBuilder().buildAsync(URI.create(wsUri), listener).join();
 
         // Trigger a backend state change: Create a sighting
-        String ip = "192.168.100.20"; // Router sim
+        String ip = environment.getServiceHost("ne-linux-server", 22);
         waitForSsh(ip);
         String discoverPayload = "{\"ipAddress\": \"" + ip + "\"}";
         given()
@@ -201,7 +201,7 @@ public class RemoteAccessTest extends AbstractE2ETest {
                 NetworkService newNs = new NetworkService();
                 newNs.physicalDevice = pd;
                 newNs.serviceType = "SSH";
-                newNs.port = 22;
+                newNs.port = environment.getServicePort("ne-linux-server", 22);
                 newNs.protocol = "TCP";
                 newNs.firstSeen = java.time.Instant.now();
                 newNs.lastSeen = java.time.Instant.now();

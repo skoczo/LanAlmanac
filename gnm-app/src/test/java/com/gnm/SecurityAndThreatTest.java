@@ -96,7 +96,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
     public void testSshHostKeyChangeDetectedOnPeriodicScan() throws Exception {
         // Given: The ne-linux-server (192.168.100.10) is discovered and its original
         // key is "fake-old-key"
-        String ip = "192.168.100.10";
+        String ip = environment.getServiceHost("ne-linux-server", 22);
         setupFakeSshHostKey(ip, "fake-old-key");
 
         // Force port scanning in test environment
@@ -136,7 +136,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
     @TestSecurity(user = "admin", roles = "gnm-admin")
     public void testAlarmAutoMitigationOnHostKeyReversion() throws Exception {
         // Given: The device has an unresolved ThreatEvent for a key mismatch
-        String ip = "192.168.100.10";
+        String ip = environment.getServiceHost("ne-linux-server", 22);
         setupFakeSshHostKey(ip, "fake-old-key");
 
         // Let's trigger the mismatch first
@@ -205,7 +205,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
     @TestSecurity(user = "admin", roles = "gnm-admin")
     public void testConnectionBlockedAndAlarmRaisedOnManualConnect() throws Exception {
         // Given: We have a device with a fake trusted SSH key
-        String ip = "192.168.100.10";
+        String ip = environment.getServiceHost("ne-linux-server", 22);
         setupFakeSshHostKey(ip, "fake-old-key");
 
         NetworkIdentity id = NetworkIdentity.find("ipAddress", ip).firstResult();
@@ -289,6 +289,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
         cred.physicalDevice = pd;
         cred.label = "Mock Admin Credential";
         cred.username = "testuser";
+        cred.port = environment.getServicePort("ne-linux-server", 22);
         cred.credentialType = com.gnm.model.enums.CredentialType.PASSWORD;
         // Properly encrypt the mock payload
         com.gnm.service.VaultEngine.EncryptedRecord record = vaultEngine.encrypt("testpass".getBytes(StandardCharsets.UTF_8));
@@ -346,7 +347,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
             ns = new NetworkService();
             ns.physicalDevice = pd;
             ns.serviceType = "SSH";
-            ns.port = 22;
+            ns.port = environment.getServicePort("ne-linux-server", 22);
             ns.protocol = "TCP";
             ns.firstSeen = java.time.Instant.now();
             ns.lastSeen = java.time.Instant.now();
