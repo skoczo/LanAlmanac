@@ -23,7 +23,7 @@ public class ThreatResource {
     @GET
     @Transactional
     public List<ThreatEvent> getThreats() {
-        List<ThreatEvent> threats = ThreatEvent.list("ORDER BY detectedAt DESC");
+        List<ThreatEvent> threats = ThreatEvent.list("ORDER BY resolved ASC, detectedAt DESC");
         for (ThreatEvent threat : threats) {
             if (threat.macAddress != null && !threat.macAddress.isEmpty()) {
                 NetworkIdentity identity = NetworkIdentity.find("macAddress = ?1", threat.macAddress).firstResult();
@@ -43,6 +43,12 @@ public class ThreatResource {
                 }
             }
         }
+        threats.sort((t1, t2) -> {
+            int resComp = Boolean.compare(t1.resolved, t2.resolved);
+            if (resComp != 0) return resComp;
+            if (t1.detectedAt == null || t2.detectedAt == null) return 0;
+            return t2.detectedAt.compareTo(t1.detectedAt);
+        });
         return threats;
     }
 
