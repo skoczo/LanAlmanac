@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth/auth-context'
-import { ShieldAlert, CheckCircle, ShieldCheck, MessageSquare, Key, Network, AlertOctagon } from 'lucide-react'
+import { ShieldAlert, CheckCircle, ShieldCheck, MessageSquare, Key, Network, AlertOctagon, RotateCcw } from 'lucide-react'
 
 export interface ThreatEvent {
   id: string
@@ -30,7 +30,6 @@ export const Alerts: React.FC = () => {
   const [threats, setThreats] = useState<ThreatEvent[]>([])
   const [devices, setDevices] = useState<{ [key: string]: string }>({})
   const [macToDevId, setMacToDevId] = useState<{ [key: string]: string }>({})
-  const [ipToDevId, setIpToDevId] = useState<{ [key: string]: string }>({})
   const [loading, setLoading] = useState(true)
   
   const [hostnameEdits, setHostnameEdits] = useState<{ [key: string]: string }>({})
@@ -47,21 +46,18 @@ export const Alerts: React.FC = () => {
       
       const devMap: { [key: string]: string } = {}
       const macMap: { [key: string]: string } = {}
-      const ipMap: { [key: string]: string } = {}
 
       devicesData.forEach(d => {
         devMap[d.id] = d.displayName
         if (d.identities) {
           d.identities.forEach(id => {
             if (id.macAddress) macMap[id.macAddress.toLowerCase()] = d.id
-            if (id.ipAddress) ipMap[id.ipAddress] = d.id
           })
         }
       })
 
       setDevices(devMap)
       setMacToDevId(macMap)
-      setIpToDevId(ipMap)
     } catch (err) {
       console.error('Failed to fetch data', err)
     } finally {
@@ -82,9 +78,26 @@ export const Alerts: React.FC = () => {
     }
   }
 
-  const handleApproveDevice = async (id: string) => {
+  const handleUnresolve = async (id: string) => {
     try {
-      await apiClient(`/api/threats/${id}/approve-device`, { method: 'POST' })
+      await apiClient(`/api/threats/${id}/unresolve`, { method: 'PUT' })
+      fetchData()
+    } catch (err) {
+      console.error('Failed to unresolve threat', err)
+    }
+  }
+
+  const handleApproveDevice = async (id: string, displayName?: string) => {
+    try {
+      await apiClient(`/api/threats/${id}/approve-device`, {
+        method: 'POST',
+        body: displayName ? JSON.stringify({ displayName }) : undefined
+      })
+      setHostnameEdits(prev => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
       fetchData()
     } catch (err) {
       console.error('Failed to approve device', err)
@@ -180,8 +193,7 @@ export const Alerts: React.FC = () => {
             const isCritical = threat.severity === 'CRITICAL'
 
             const matchedDeviceId = threat.physicalDeviceId ||
-              (threat.macAddress ? macToDevId[threat.macAddress.toLowerCase()] : undefined) ||
-              (threat.ipAddress ? ipToDevId[threat.ipAddress] : undefined)
+              (threat.macAddress ? macToDevId[threat.macAddress.toLowerCase()] : undefined)
 
             const isDeviceInBaseline = Boolean(matchedDeviceId)
             const deviceName = matchedDeviceId ? devices[matchedDeviceId] || 'Unknown Device' : 'Unassociated'
@@ -307,14 +319,26 @@ export const Alerts: React.FC = () => {
                         </button>
                       )}
 
-                      {isRogueDevice && !isDeviceInBaseline && (
-                        <button 
-                          onClick={() => handleApproveDevice(threat.id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-success hover:bg-accent-success/90 text-bg-base text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors mr-4"
-                        >
-                          <Network className="w-3.5 h-3.5" />
-                          Add to Baseline
-                        </button>
+                      {(isRogueDevice || !isDeviceInBaseline) && (
+                        <div className="flex items-center gap-2 mr-4">
+                          <input
+                            type="text"
+                            placeholder={`Name this device...`}
+                            className="bg-bg-surface-raised border border-border-subtle rounded-lg py-1.5 px-3 text-xs text-text-primary focus:outline-none focus:border-accent-success w-40 transition-colors"
+                            value={hostnameEdits[threat.id] || ''}
+                            onChange={(e) => setHostnameEdits({...hostnameEdits, [threat.id]: e.target.value})}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleApproveDevice(threat.id, hostnameEdits[threat.id])
+                            }}
+                          />
+                          <button 
+                            onClick={() => handleApproveDevice(threat.id, hostnameEdits[threat.id])}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-success hover:bg-accent-success/90 text-bg-base text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors whitespace-nowrap"
+                          >
+                            <Network className="w-3.5 h-3.5" />
+                            Add Device
+                          </button>
+                        </div>
                       )}
                       
                       <button 
@@ -339,10 +363,10 @@ export const Alerts: React.FC = () => {
                 )}
                 
                 {threat.resolved && !expandedNotes[threat.id] && (
-                  <div className="mt-2 pt-2 border-t border-border-subtle flex justify-end pl-9 gap-3">
+                  <div className="mt-2 pt-2 border-t border-border-subtle flex justify-end pl-9 gap-3 items-center">
                     {isRogueDevice && !isDeviceInBaseline && (
                       <button 
-                        onClick={() => handleApproveDevice(threat.id)}
+                        onClick={() => handleApproveDevice(threat.id, hostnameEdits[threat.id])}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-success/20 border border-accent-success/50 hover:bg-accent-success/30 text-accent-success text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors mr-auto"
                       >
                         <Network className="w-3.5 h-3.5" />
@@ -358,6 +382,14 @@ export const Alerts: React.FC = () => {
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
                         {threat.notes ? 'Edit Note' : 'Add Note'}
+                    </button>
+                    <button
+                      onClick={() => handleUnresolve(threat.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 border border-border-subtle hover:border-accent-warning hover:text-accent-warning text-text-muted text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors"
+                      title="Reopen this alert"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      Unresolve
                     </button>
                   </div>
                 )}

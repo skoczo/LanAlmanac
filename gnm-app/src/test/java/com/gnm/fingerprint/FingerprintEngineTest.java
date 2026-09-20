@@ -11,6 +11,7 @@ import java.util.UUID;
 
 import com.gnm.model.*;
 import com.gnm.model.enums.*;
+import com.gnm.fingerprint.probes.ProbeContext;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -306,5 +307,16 @@ public class FingerprintEngineTest {
         existingIdentity.lastSeen = past;
         existingIdentity.current = true;
         existingIdentity.persist();
+    }
+
+    @Test
+    public void testProbeContextThrowsExceptionWhenOverwritingHostname() {
+        ProbeContext context = new ProbeContext("192.168.1.100", new FingerprintVector());
+        context.setResolvedHostname("first-resolved-host");
+        assertEquals("first-resolved-host", context.getResolvedHostname());
+
+        assertThrows(IllegalStateException.class, () -> {
+            context.setResolvedHostname("second-resolved-host");
+        });
     }
 }

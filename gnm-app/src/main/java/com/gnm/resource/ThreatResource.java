@@ -25,15 +25,25 @@ public class ThreatResource {
     public List<ThreatEvent> getThreats() {
         List<ThreatEvent> threats = ThreatEvent.list("ORDER BY detectedAt DESC");
         for (ThreatEvent threat : threats) {
-            if (threat.physicalDeviceId == null) {
+            // Rogue device threats must NEVER have physicalDeviceId auto-assigned from
+            // existing NetworkIdentity entries. The rogue device is flagged precisely
+            // because it does NOT belong to any known baseline device. Assigning an
+            // existing device's ID here would corrupt the UI (hide "Add to Baseline"
+            // button) and could allow users to accidentally rename a legitimate device.
+            boolean isRogueDevice = threat.description != null && threat.description.startsWith("Rogue Device Detected");
+
+            if (isRogueDevice) {
+                // Self-healing: clear any physicalDeviceId that was incorrectly written
+                // to the DB by the old buggy eager-assignment logic, but only for
+                // unresolved threats. Resolved rogue threats keep their physicalDeviceId
+                // (it points to the device the admin deliberately approved via approve-device).
+                if (!threat.resolved && threat.physicalDeviceId != null) {
+                    threat.physicalDeviceId = null;
+                    threat.persist();
+                }
+            } else if (threat.physicalDeviceId == null) {
                 if (threat.macAddress != null && !threat.macAddress.isEmpty()) {
                     NetworkIdentity identity = NetworkIdentity.find("macAddress = ?1", threat.macAddress).firstResult();
-                    if (identity != null && identity.physicalDevice != null) {
-                        threat.physicalDeviceId = identity.physicalDevice.id;
-                        threat.persist();
-                    }
-                } else if (threat.ipAddress != null && !threat.ipAddress.isEmpty()) {
-                    NetworkIdentity identity = NetworkIdentity.find("ipAddress = ?1", threat.ipAddress).firstResult();
                     if (identity != null && identity.physicalDevice != null) {
                         threat.physicalDeviceId = identity.physicalDevice.id;
                         threat.persist();
@@ -51,6 +61,25 @@ public class ThreatResource {
         ThreatEvent threat = ThreatEvent.findById(id);
         if (threat != null) {
             threat.resolved = true;
+            threat.persist();
+        }
+        return threat;
+    }
+
+    @PUT
+    @Path("/{id}/unresolve")
+    @Transactional
+    public ThreatEvent unresolveThreat(@PathParam("id") UUID id) {
+        ThreatEvent threat = ThreatEvent.findById(id);
+        if (threat != null) {
+            threat.resolved = false;
+            // For rogue device threats: clear the physicalDeviceId so the
+            // "Add Device" flow becomes fully available again (the previously
+            // approved device is NOT deleted — it stays in the baseline).
+            boolean isRogueDevice = threat.description != null && threat.description.startsWith("Rogue Device Detected");
+            if (isRogueDevice) {
+                threat.physicalDeviceId = null;
+            }
             threat.persist();
         }
         return threat;
@@ -108,36 +137,50 @@ public class ThreatResource {
     @POST
     @Path("/{id}/approve-device")
     @Transactional
-    public ThreatEvent approveDevice(@PathParam("id") UUID id) {
+    public ThreatEvent approveDevice(@PathParam("id") UUID id, Map<String, String> payload) {
         ThreatEvent threat = ThreatEvent.findById(id);
         if (threat != null) {
+            boolean isRogueDevice = threat.description != null && threat.description.startsWith("Rogue Device Detected");
             PhysicalDevice targetDevice = null;
-            if (threat.physicalDeviceId != null) {
-                targetDevice = PhysicalDevice.findById(threat.physicalDeviceId);
-            }
 
-            if (targetDevice == null && threat.macAddress != null && !threat.macAddress.isEmpty()) {
-                NetworkIdentity existingId = NetworkIdentity.find("macAddress = ?1", threat.macAddress).firstResult();
-                if (existingId != null) {
-                    targetDevice = existingId.physicalDevice;
+            // For rogue device threats we must ALWAYS create a new device.
+            // Never link a rogue sighting to an existing baseline device by MAC/IP.
+            if (!isRogueDevice) {
+                if (threat.physicalDeviceId != null) {
+                    targetDevice = PhysicalDevice.findById(threat.physicalDeviceId);
+                }
+
+                if (targetDevice == null && threat.macAddress != null && !threat.macAddress.isEmpty()) {
+                    NetworkIdentity existingId = NetworkIdentity.find("macAddress = ?1", threat.macAddress).firstResult();
+                    if (existingId != null) {
+                        targetDevice = existingId.physicalDevice;
+                    }
                 }
             }
 
-            if (targetDevice == null && threat.ipAddress != null && !threat.ipAddress.isEmpty()) {
-                NetworkIdentity existingId = NetworkIdentity.find("ipAddress = ?1", threat.ipAddress).firstResult();
-                if (existingId != null) {
-                    targetDevice = existingId.physicalDevice;
+            if (targetDevice != null && payload != null && payload.containsKey("displayName")) {
+                String customName = payload.get("displayName");
+                if (customName != null && !customName.trim().isEmpty()) {
+                    targetDevice.displayName = customName.trim();
+                    targetDevice.persist();
                 }
             }
 
-            if (targetDevice == null && threat.description != null && threat.description.startsWith("Rogue Device Detected")) {
+            if (targetDevice == null) {
                 PhysicalDevice newDevice = new PhysicalDevice();
-                newDevice.displayName = "Approved from IDS Alert: " + (threat.ipAddress != null ? threat.ipAddress : "Unknown");
                 newDevice.deviceType = DeviceType.UNKNOWN;
                 newDevice.firstSeen = threat.detectedAt != null ? threat.detectedAt : Instant.now();
                 newDevice.lastSeen = newDevice.firstSeen;
                 newDevice.status = DeviceStatus.ONLINE;
                 newDevice.confidenceScore = 1.0;
+
+                // Use user-provided display name first, then hostname from description, then IP fallback
+                String customName = payload != null ? payload.get("displayName") : null;
+                if (customName != null && !customName.trim().isEmpty()) {
+                    newDevice.displayName = customName.trim();
+                } else {
+                    newDevice.displayName = "Approved from IDS Alert: " + (threat.ipAddress != null ? threat.ipAddress : "Unknown");
+                }
                 newDevice.persistAndFlush();
 
                 NetworkIdentity newId = new NetworkIdentity();
@@ -153,7 +196,10 @@ public class ThreatResource {
                     String hostname = desc.substring(desc.indexOf("from ") + 5).trim();
                     if (!hostname.equalsIgnoreCase("Unknown")) {
                         newId.hostname = hostname;
-                        newDevice.displayName = hostname;
+                        // Only use hostname as displayName if user didn't provide a custom name
+                        if (customName == null || customName.trim().isEmpty()) {
+                            newDevice.displayName = hostname;
+                        }
                     }
                 }
 

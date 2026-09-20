@@ -54,7 +54,16 @@ public class ProbeContext {
 
     /**
      * Sets the resolved hostname for the target device.
+     * 
+     * @param resolvedHostname The hostname discovered for the device.
+     * @throws IllegalStateException If a hostname is already set on this context.
      */
-    public void setResolvedHostname(String resolvedHostname) { this.resolvedHostname = resolvedHostname; }
+    public void setResolvedHostname(String resolvedHostname) {
+        if (this.resolvedHostname != null && resolvedHostname != null && !this.resolvedHostname.equals(resolvedHostname)) {
+            throw new IllegalStateException("Resolved hostname is already set to '" + this.resolvedHostname 
+                    + "' and cannot be overwritten with '" + resolvedHostname + "'");
+        }
+        this.resolvedHostname = resolvedHostname;
+    }
 }
 

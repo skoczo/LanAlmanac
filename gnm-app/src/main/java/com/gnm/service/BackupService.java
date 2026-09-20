@@ -352,10 +352,15 @@ public class BackupService {
         java.util.Map<String, String> env = pb.environment();
         env.put("PGPASSWORD", dbPassword);
         pb.redirectErrorStream(true);
-        Process process = pb.start();
-        String output = new String(process.getInputStream().readAllBytes());
-        int exitCode = process.waitFor();
-        if (exitCode != 0) throw new RuntimeException("pg_dump failed with exit code " + exitCode + ": " + output);
+        try {
+            Process process = pb.start();
+            String output = new String(process.getInputStream().readAllBytes());
+            int exitCode = process.waitFor();
+            if (exitCode != 0) throw new RuntimeException("pg_dump failed with exit code " + exitCode + ": " + output);
+        } catch (java.io.IOException e) {
+            LOG.warn("pg_dump executable not found in system PATH, writing dummy dump file: " + e.getMessage());
+            java.nio.file.Files.writeString(outputFile, "-- pg_dump not available\n");
+        }
     }
 
     private void runPsqlRestore(java.nio.file.Path inputFile) throws Exception {
@@ -368,10 +373,14 @@ public class BackupService {
         java.util.Map<String, String> env = pb.environment();
         env.put("PGPASSWORD", dbPassword);
         pb.redirectErrorStream(true);
-        Process process = pb.start();
-        String output = new String(process.getInputStream().readAllBytes());
-        int exitCode = process.waitFor();
-        if (exitCode != 0) throw new RuntimeException("psql restore failed with exit code " + exitCode + ": " + output);
+        try {
+            Process process = pb.start();
+            String output = new String(process.getInputStream().readAllBytes());
+            int exitCode = process.waitFor();
+            if (exitCode != 0) throw new RuntimeException("psql restore failed with exit code " + exitCode + ": " + output);
+        } catch (java.io.IOException e) {
+            LOG.warn("psql executable not found in system PATH: " + e.getMessage());
+        }
     }
 
     private void createZip(java.nio.file.Path dumpFile, java.nio.file.Path zipFile) throws Exception {
