@@ -96,11 +96,12 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
     public void testSshHostKeyChangeDetectedOnPeriodicScan() throws Exception {
         // Given: The ne-linux-server (192.168.100.10) is discovered and its original
         // key is "fake-old-key"
-        String ip = environment.getServiceHost("ne-linux-server", 22);
+        String ip = "192.168.100.10";
         setupFakeSshHostKey(ip, "fake-old-key");
 
         // Force port scanning in test environment
         System.setProperty("forceNetworkScan", "true");
+        System.setProperty("test.ssh.host", environment.getServiceHost("ne-linux-server", 22));
         try {
             // When: The periodic scan (or manual discovery) hits the device and fetches its REAL ssh key
             waitForSsh(ip);
@@ -136,11 +137,12 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
     @TestSecurity(user = "admin", roles = "gnm-admin")
     public void testAlarmAutoMitigationOnHostKeyReversion() throws Exception {
         // Given: The device has an unresolved ThreatEvent for a key mismatch
-        String ip = environment.getServiceHost("ne-linux-server", 22);
+        String ip = "192.168.100.10";
         setupFakeSshHostKey(ip, "fake-old-key");
 
         // Let's trigger the mismatch first
         System.setProperty("forceNetworkScan", "true");
+        System.setProperty("test.ssh.host", environment.getServiceHost("ne-linux-server", 22));
         try {
             waitForSsh(ip);
             String scanPayload = "{\"ipAddress\": \"" + ip + "\"}";
@@ -205,7 +207,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
     @TestSecurity(user = "admin", roles = "gnm-admin")
     public void testConnectionBlockedAndAlarmRaisedOnManualConnect() throws Exception {
         // Given: We have a device with a fake trusted SSH key
-        String ip = environment.getServiceHost("ne-linux-server", 22);
+        String ip = "192.168.100.10";
         setupFakeSshHostKey(ip, "fake-old-key");
 
         NetworkIdentity id = NetworkIdentity.find("ipAddress", ip).firstResult();

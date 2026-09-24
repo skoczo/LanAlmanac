@@ -19,6 +19,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import org.pcap4j.core.BpfProgram;
 import org.pcap4j.core.PcapHandle;
 import org.pcap4j.core.PcapNetworkInterface;
@@ -271,7 +272,8 @@ public class ArpScanner {
     }
 
     private String getListenInterface() {
-        GlobalSetting setting = GlobalSetting.findById("gnm.listen.interface");
+        GlobalSetting setting = QuarkusTransaction.requiringNew()
+                .call(() -> GlobalSetting.findById("gnm.listen.interface"));
         if (setting != null && setting.value != null && !setting.value.trim().isEmpty()) {
             return setting.value.trim();
         }

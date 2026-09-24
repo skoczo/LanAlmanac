@@ -43,6 +43,7 @@ public class DiscoveryScheduler {
 
         // Initial startup scan: populate devices once on application startup
         Thread.ofVirtual().start(() -> {
+            io.quarkus.arc.Arc.container().requestContext().activate();
             try {
                 LOG.info("Running initial startup ARP and ICMP scan...");
                 java.util.Set<String> liveIps = arpScanner.scan();
@@ -54,6 +55,8 @@ public class DiscoveryScheduler {
                 LOG.info("Initial startup scan completed successfully.");
             } catch (Exception e) {
                 LOG.warn("Initial startup scan encountered an error: " + e.getMessage(), e);
+            } finally {
+                io.quarkus.arc.Arc.container().requestContext().terminate();
             }
         });
     }

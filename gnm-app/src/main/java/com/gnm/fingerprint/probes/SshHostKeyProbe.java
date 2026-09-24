@@ -39,9 +39,14 @@ public class SshHostKeyProbe implements NetworkProbe {
     @Override
     public void execute(ProbeContext context) throws Exception {
         if (context.getOpenPorts().isEmpty()) return;
-        // Probe only ports recognized as potential SSH service ports
+        
+        String targetHost = context.getIpAddress();
+        if (Boolean.getBoolean("forceNetworkScan") && System.getProperty("test.ssh.host") != null) {
+            targetHost = System.getProperty("test.ssh.host");
+        }
+
         for (Integer port : context.getOpenPorts()) {
-            if (port == 22 || port == 2222 || port == 2223 || port == 2224) {
+            if (port == 22 || port == 2222 || port == 2223 || port == 2224 || Boolean.getBoolean("forceNetworkScan")) {
                 AtomicReference<String> hostKeyRef = new AtomicReference<>();
                 try (SshClient client = SshClient.setUpDefaultClient()) {
                     // Register custom verifier to capture server key fingerprint during handshake without authenticating
@@ -51,7 +56,7 @@ public class SshHostKeyProbe implements NetworkProbe {
                         return false; // Intentionally abort session after capturing server public key
                     });
                     client.start();
-                    try (ClientSession session = client.connect("fakeuser", context.getIpAddress(), port).verify(2000).getSession()) {
+                    try (ClientSession session = client.connect("fakeuser", targetHost, port).verify(2000).getSession()) {
                         session.auth().verify(2000); 
                     } catch (Exception e) {
                         // Exception expected when verifier rejects connection after capturing key

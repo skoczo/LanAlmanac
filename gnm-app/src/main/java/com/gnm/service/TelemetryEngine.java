@@ -73,9 +73,27 @@ public class TelemetryEngine {
                     pollSnmpMetrics(device, ipAddress, cred);
                 }
             } catch (Exception e) {
-                log.warn("Failed to poll metrics for device " + device.id, e);
+                if (isNoRouteToHost(e)) {
+                    log.debug("Failed to poll metrics for device " + device.id + ": Host unreachable (" + ipAddress + ")");
+                } else {
+                    log.warn("Failed to poll metrics for device " + device.id, e);
+                }
             }
         }
+    }
+
+    private boolean isNoRouteToHost(Throwable e) {
+        Throwable current = e;
+        while (current != null) {
+            if (current instanceof java.net.NoRouteToHostException) {
+                return true;
+            }
+            if (current.getMessage() != null && current.getMessage().toLowerCase().contains("no route to host")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private void pollSshMetrics(PhysicalDevice device, String ipAddress, Credential cred) throws Exception {

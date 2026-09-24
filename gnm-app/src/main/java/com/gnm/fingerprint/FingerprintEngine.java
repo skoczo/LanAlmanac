@@ -168,10 +168,13 @@ public class FingerprintEngine {
                 lastDbUpdateTimes.put(debounceKey, java.time.Instant.now());
 
                 java.util.concurrent.Future<?> future = executorService.submit(() -> {
+                    io.quarkus.arc.Arc.container().requestContext().activate();
                     try {
                         processSighting(sighting);
                     } catch (Exception e) {
                         if (running) LOG.error("Error processing network sighting event in executor thread", e);
+                    } finally {
+                        io.quarkus.arc.Arc.container().requestContext().terminate();
                     }
                 });
             } catch (InterruptedException e) {
@@ -266,7 +269,7 @@ public class FingerprintEngine {
                             try {
                                 probe.execute(context);
                             } catch (Exception e) {
-                                LOG.error("Probe " + probe.getClass().getSimpleName() + " failed for IP " + sighting.ipAddress, e);
+                                LOG.debug("Probe " + probe.getClass().getSimpleName() + " failed for IP " + sighting.ipAddress + ": " + e.getMessage());
                             }
                         }
 

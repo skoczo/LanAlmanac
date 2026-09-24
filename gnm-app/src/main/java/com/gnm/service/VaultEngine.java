@@ -14,7 +14,9 @@ import java.nio.file.Files;
 import java.security.SecureRandom;
 import java.nio.ByteBuffer;
 import io.quarkus.runtime.StartupEvent;
+import jakarta.annotation.Priority;
 import jakarta.enterprise.event.Observes;
+import jakarta.interceptor.Interceptor;
 import org.jboss.logging.Logger;
 
 @ApplicationScoped
@@ -28,7 +30,7 @@ public class VaultEngine {
 
     private volatile SecretKey unsealedMasterKey = null;
 
-    void onStart(@Observes StartupEvent ev) {
+    void onStart(@Observes @Priority(Interceptor.Priority.PLATFORM_BEFORE) StartupEvent ev) {
         String envPassword = System.getenv("GNM_VAULT_PASSWORD");
         if (envPassword != null && !envPassword.trim().isEmpty()) {
             if (!isInitialized()) {
