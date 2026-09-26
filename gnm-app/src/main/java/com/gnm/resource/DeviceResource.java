@@ -401,33 +401,45 @@ public class DeviceResource {
     @Path("/{id}/links")
     @Transactional
     public List<NetworkLink> getDeviceLinks(@PathParam("id") UUID id) {
-        return NetworkLink.find("sourceDevice.id = ?1 or targetDevice.id = ?1", id).list();
+        List<NetworkLink> links = NetworkLink.find("sourceDevice.id = ?1 or targetDevice.id = ?1", id).list();
+        for (NetworkLink link : links) {
+            if (link.sourceDevice != null) initializeLazyCollections(link.sourceDevice);
+            if (link.targetDevice != null) initializeLazyCollections(link.targetDevice);
+        }
+        return links;
+    }
+
+    public static class NetworkLinkRequest {
+        public UUID targetDeviceId;
+        public String sourceInterface;
+        public String targetInterface;
     }
 
     @POST
     @Path("/{id}/links")
     @Transactional
-    public Response addDeviceLink(@PathParam("id") UUID id, Map<String, Object> payload) {
+    public Response addDeviceLink(@PathParam("id") UUID id, NetworkLinkRequest payload) {
         PhysicalDevice source = PhysicalDevice.findById(id);
         if (source == null) return Response.status(Response.Status.NOT_FOUND).build();
 
-        String targetIdStr = payload.get("targetDeviceId") != null ? payload.get("targetDeviceId").toString() : null;
-        if (targetIdStr == null || targetIdStr.isBlank()) {
+        if (payload.targetDeviceId == null) {
             return Response.status(Response.Status.BAD_REQUEST).entity("Target device ID required").build();
         }
 
-        UUID targetId = UUID.fromString(targetIdStr);
-        PhysicalDevice target = PhysicalDevice.findById(targetId);
+        PhysicalDevice target = PhysicalDevice.findById(payload.targetDeviceId);
         if (target == null) return Response.status(Response.Status.NOT_FOUND).entity("Target device not found").build();
 
         NetworkLink link = new NetworkLink();
         link.sourceDevice = source;
         link.targetDevice = target;
-        link.sourceInterface = "N/A";
-        link.targetInterface = "N/A";
+        link.sourceInterface = payload.sourceInterface != null ? payload.sourceInterface : "N/A";
+        link.targetInterface = payload.targetInterface != null ? payload.targetInterface : "N/A";
         link.discoveryProtocol = DiscoveryProtocol.MANUAL;
         link.lastVerified = Instant.now();
         link.persist();
+
+        initializeLazyCollections(source);
+        initializeLazyCollections(target);
 
         return Response.ok(link).build();
     }

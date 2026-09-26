@@ -1471,23 +1471,53 @@ export const DeviceDetail: React.FC = () => {
             {showAddLink && (
               <form onSubmit={handleAddLink} className="p-5 rounded-xl border border-border-subtle bg-bg-surface-raised space-y-4">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-text-secondary">New Connection</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Search / Filter</label>
-                    <input type="text" className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={deviceSearch} onChange={e => setDeviceSearch(e.target.value)} placeholder="Type to filter..." />
+                
+                <div className="border border-border-subtle rounded-lg overflow-hidden flex flex-col h-56 bg-bg-base">
+                  <div className="p-2 border-b border-border-subtle bg-bg-surface-raised sticky top-0">
+                    <input 
+                      type="text" 
+                      placeholder="Search and select target device..." 
+                      className="w-full bg-bg-base border border-border-subtle rounded-md px-3 py-2 text-xs focus:outline-none focus:border-accent-primary transition-colors"
+                      value={deviceSearch}
+                      onChange={e => setDeviceSearch(e.target.value)}
+                      autoFocus
+                    />
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Target Device</label>
-                    <select required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newLink.targetDeviceId} onChange={e => setNewLink({...newLink, targetDeviceId: e.target.value})}>
-                      <option value="">-- Select Device --</option>
-                      {allDevices
-                        .filter(d => d.displayName.toLowerCase().includes(deviceSearch.toLowerCase()))
-                        .map(d => (
-                          <option key={d.id} value={d.id}>{d.displayName}</option>
-                      ))}
-                    </select>
+                  <div className="overflow-y-auto flex-1 p-1 space-y-0.5">
+                    {allDevices
+                      .filter(d => d.displayName.toLowerCase().includes(deviceSearch.toLowerCase()))
+                      .map(d => (
+                        <label 
+                          key={d.id} 
+                          className={`flex items-center gap-3 p-2.5 rounded-md cursor-pointer transition-colors ${
+                            newLink.targetDeviceId === d.id 
+                              ? 'bg-accent-primary/10 border border-accent-primary/30' 
+                              : 'hover:bg-bg-surface-raised border border-transparent'
+                          }`}
+                        >
+                          <input 
+                            type="radio" 
+                            name="targetDevice" 
+                            value={d.id} 
+                            checked={newLink.targetDeviceId === d.id} 
+                            onChange={() => setNewLink({...newLink, targetDeviceId: d.id})} 
+                            className="accent-accent-primary w-3.5 h-3.5" 
+                            required
+                          />
+                          <div className="flex flex-col">
+                            <span className="text-xs font-semibold text-text-primary">{d.displayName}</span>
+                            <span className="text-[10px] text-text-muted">{d.deviceType}</span>
+                          </div>
+                        </label>
+                    ))}
+                    {allDevices.filter(d => d.displayName.toLowerCase().includes(deviceSearch.toLowerCase())).length === 0 && (
+                      <div className="p-6 text-center text-xs text-text-muted italic">
+                        No devices found matching your search.
+                      </div>
+                    )}
                   </div>
                 </div>
+
                 <div className="flex justify-end gap-2 mt-4">
                   <button type="button" onClick={() => { setShowAddLink(false); setDeviceSearch(''); }} className="px-4 py-2 rounded-lg border border-border-subtle text-xs font-semibold hover:bg-bg-surface cursor-pointer">Cancel</button>
                   <button type="submit" className="px-4 py-2 rounded-lg bg-accent-primary text-text-primary text-xs font-semibold hover:bg-accent-primary/90 cursor-pointer">Save Connection</button>

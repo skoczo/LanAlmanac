@@ -120,4 +120,30 @@ public class DeviceResourceTest {
              .statusCode(200)
              .body("labels", hasItems("core", "router"));
     }
+
+    @Test
+    @TestSecurity(user = "admin", roles = "gnm-admin")
+    public void testAddDeviceLink() {
+        io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
+            PhysicalDevice target = new PhysicalDevice();
+            target.displayName = "Target Device";
+            target.deviceType = DeviceType.SWITCH;
+            target.firstSeen = Instant.now();
+            target.lastSeen = Instant.now();
+            target.status = DeviceStatus.ONLINE;
+            target.persist();
+        });
+
+        PhysicalDevice source = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().call(() -> (PhysicalDevice) PhysicalDevice.findAll().firstResult());
+        PhysicalDevice target = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().call(() -> (PhysicalDevice) PhysicalDevice.find("displayName", "Target Device").firstResult());
+
+        given()
+          .contentType(ContentType.JSON)
+          .body(Map.of("targetDeviceId", target.id.toString()))
+          .when().post("/api/devices/" + source.id + "/links")
+          .then()
+             .statusCode(200)
+             .body("targetDevice.id", is(target.id.toString()))
+             .body("discoveryProtocol", is("MANUAL"));
+    }
 }
