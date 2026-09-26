@@ -52,6 +52,12 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           const isAlarm = data.type === 'ALARM';
           const isActivity = data.type === 'ACTIVITY';
           
+          if (isActivity && data.action === 'EBPF_HEARTBEAT') {
+            // EBPF heartbeats happen multiple times per second on active networks.
+            // Handled by LiveDiscoveryFeed. Do not spam toasts.
+            return;
+          }
+
           let title = 'Status Update';
           let text = `${data.displayName} (${data.ipAddress}) is now ${data.status}`;
           

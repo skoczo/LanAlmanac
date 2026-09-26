@@ -182,11 +182,14 @@ public class DeviceLivenessManager {
     public void markOnline(java.util.UUID deviceId, String currentIp) {
         PhysicalDevice device = PhysicalDevice.findById(deviceId);
         if (device != null) {
+            boolean statusChanged = (device.status != DeviceStatus.ONLINE);
             device.status = DeviceStatus.ONLINE;
             device.consecutiveMissedProbes = 0;
             device.lastSeen = Instant.now();
             device.persist();
-            eventBroadcaster.fireAsync(new FingerprintEngine.DeviceEvent("ONLINE", device.id.toString(), device.displayName, "ONLINE", currentIp));
+            if (statusChanged) {
+                eventBroadcaster.fireAsync(new FingerprintEngine.DeviceEvent("ONLINE", device.id.toString(), device.displayName, "ONLINE", currentIp));
+            }
         }
     }
 
