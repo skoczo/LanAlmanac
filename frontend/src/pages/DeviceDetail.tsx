@@ -96,6 +96,16 @@ interface NetworkService {
   credential?: Credential
 }
 
+interface NetworkLink {
+  id: string
+  sourceDevice: { id: string, displayName: string }
+  targetDevice: { id: string, displayName: string }
+  sourceInterface: string
+  targetInterface: string
+  discoveryProtocol: string
+  lastVerified: string
+}
+
 interface Device {
   id: string
   displayName: string
@@ -134,9 +144,13 @@ export const DeviceDetail: React.FC = () => {
   const [telemetry, setTelemetry] = useState<TelemetryPoint[]>([])
   const [correlationHistory, setCorrelationHistory] = useState<CorrelationEvent[]>([])
   const [statusHistory, setStatusHistory] = useState<StatusHistoryEvent[]>([])
+  const [links, setLinks] = useState<NetworkLink[]>([])
+  const [allDevices, setAllDevices] = useState<Device[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'identities' | 'fingerprint' | 'correlation' | 'status_history' | 'services' | 'credentials' | 'monitor' | 'settings'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'identities' | 'fingerprint' | 'correlation' | 'status_history' | 'services' | 'credentials' | 'monitor' | 'connections' | 'settings'>('overview')
   const [newLabel, setNewLabel] = useState('')
+  const [showAddLink, setShowAddLink] = useState(false)
+  const [newLink, setNewLink] = useState({ targetDeviceId: '', sourceInterface: 'manual', targetInterface: 'manual' })
   
   const { sealed, setShowUnsealModal } = useVault()
   
@@ -168,13 +182,17 @@ export const DeviceDetail: React.FC = () => {
       apiClient<Device>(`/api/devices/${deviceId}`),
       apiClient<TelemetryPoint[]>(`/api/devices/${deviceId}/telemetry`),
       apiClient<CorrelationEvent[]>(`/api/devices/${deviceId}/correlation-history`).catch(() => []),
-      apiClient<StatusHistoryEvent[]>(`/api/devices/${deviceId}/status-history`).catch(() => [])
+      apiClient<StatusHistoryEvent[]>(`/api/devices/${deviceId}/status-history`).catch(() => []),
+      apiClient<NetworkLink[]>(`/api/devices/${deviceId}/links`).catch(() => []),
+      apiClient<Device[]>('/api/devices').catch(() => [])
     ])
-      .then(([deviceData, telemetryData, correlationData, statusData]) => {
+      .then(([deviceData, telemetryData, correlationData, statusData, linksData, allDevs]) => {
         setDevice(deviceData)
         setTelemetry(telemetryData)
         setCorrelationHistory(correlationData)
         setStatusHistory(statusData)
+        setLinks(linksData)
+        setAllDevices(allDevs.filter(d => d.id !== deviceId))
         setLoading(false)
       })
       .catch((err) => {
@@ -331,6 +349,32 @@ export const DeviceDetail: React.FC = () => {
     }
   }
 
+  const handleAddLink = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      await apiClient(`/api/devices/${deviceId}/links`, {
+        method: 'POST',
+        body: JSON.stringify(newLink)
+      })
+      const linksData = await apiClient<NetworkLink[]>(`/api/devices/${deviceId}/links`)
+      setLinks(linksData)
+      setShowAddLink(false)
+      setNewLink({ targetDeviceId: '', sourceInterface: 'manual', targetInterface: 'manual' })
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const handleDeleteLink = async (linkId: string) => {
+    try {
+      await apiClient(`/api/devices/links/${linkId}`, { method: 'DELETE' })
+      const linksData = await apiClient<NetworkLink[]>(`/api/devices/${deviceId}/links`)
+      setLinks(linksData)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -461,17 +505,17 @@ export const DeviceDetail: React.FC = () => {
 
     {/* Navigation tabs */}
       <div className="flex items-center border-b border-border-subtle gap-2 overflow-x-auto">
-        {(['overview', 'identities', 'fingerprint', 'correlation', 'status_history', 'services', 'credentials', 'monitor', 'settings'] as const).map((tab) => (
+        {(['overview', 'identities', 'fingerprint', 'correlation', 'status_history', 'services', 'credentials', 'monitor', 'connections', 'settings'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`py-3.5 px-5 text-xs font-semibold uppercase tracking-wider border-b-2 cursor-pointer transition-all ${
+            className={`py-3.5 px-5 text-xs font-semibold uppercase tracking-wider border-b-2 cursor-pointer transition-all whitespace-nowrap ${
               activeTab === tab
                 ? 'border-accent-primary text-accent-primary'
                 : 'border-transparent text-text-secondary hover:text-text-primary'
             }`}
           >
-            {tab}
+            {tab.replace('_', ' ')}
           </button>
         ))}
       </div>
@@ -1404,6 +1448,95 @@ export const DeviceDetail: React.FC = () => {
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* CONNECTIONS TAB */}
+        {activeTab === 'connections' && (
+          <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg">
+            <div className="flex justify-between items-center pb-4 border-b border-border-subtle">
+              <h3 className="font-bold text-lg tracking-tight">Network Connections</h3>
+              <button
+                onClick={() => setShowAddLink(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-primary text-white rounded-lg text-sm font-semibold hover:bg-accent-primary-hover transition-colors"
+              >
+                <Plus className="w-4 h-4" /> Add Connection
+              </button>
+            </div>
+            
+            {showAddLink && (
+              <form onSubmit={handleAddLink} className="p-5 rounded-xl border border-border-subtle bg-bg-surface-raised space-y-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-text-secondary">New Connection</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Target Device</label>
+                    <select required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newLink.targetDeviceId} onChange={e => setNewLink({...newLink, targetDeviceId: e.target.value})}>
+                      <option value="">-- Select Device --</option>
+                      {allDevices.map(d => (
+                        <option key={d.id} value={d.id}>{d.displayName}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Source Interface</label>
+                    <input type="text" required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newLink.sourceInterface} onChange={e => setNewLink({...newLink, sourceInterface: e.target.value})} placeholder="e.g. eth0" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Target Interface</label>
+                    <input type="text" required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newLink.targetInterface} onChange={e => setNewLink({...newLink, targetInterface: e.target.value})} placeholder="e.g. eth1" />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 mt-4">
+                  <button type="button" onClick={() => setShowAddLink(false)} className="px-4 py-2 rounded-lg border border-border-subtle text-xs font-semibold hover:bg-bg-surface cursor-pointer">Cancel</button>
+                  <button type="submit" className="px-4 py-2 rounded-lg bg-accent-primary text-text-primary text-xs font-semibold hover:bg-accent-primary/90 cursor-pointer">Save Connection</button>
+                </div>
+              </form>
+            )}
+
+            {links.length === 0 ? (
+              <div className="p-8 text-center border border-dashed border-border-subtle rounded-xl text-text-secondary text-xs">
+                No connections added or discovered for this device.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {links.map((link) => {
+                  const isSource = link.sourceDevice.id === deviceId
+                  const peerDevice = isSource ? link.targetDevice : link.sourceDevice
+                  const peerInterface = isSource ? link.targetInterface : link.sourceInterface
+                  const localInterface = isSource ? link.sourceInterface : link.targetInterface
+
+                  return (
+                    <div key={link.id} className="p-4 rounded-xl bg-bg-surface-raised border border-border-subtle flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3.5">
+                        <div className="p-2.5 rounded-xl bg-accent-primary/10 border border-accent-primary/20 text-accent-primary">
+                          <Wifi className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-xs text-text-primary">
+                            <Link to="/devices/$id" params={{ id: peerDevice.id }} className="hover:underline text-accent-primary">
+                              {peerDevice.displayName}
+                            </Link>
+                          </h4>
+                          <p className="text-[10px] text-text-secondary mt-0.5">
+                            Local: <span className="font-mono text-text-primary">{localInterface}</span> 
+                            {' <-> '}
+                            Peer: <span className="font-mono text-text-primary">{peerInterface}</span>
+                          </p>
+                          <p className="text-[10px] text-text-muted mt-0.5">Protocol: {link.discoveryProtocol}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteLink(link.id)}
+                        className="p-2 bg-bg-surface border border-border-subtle text-accent-danger rounded-lg hover:bg-accent-danger/10 hover:border-accent-danger/30 transition-colors"
+                        title="Delete Connection"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>

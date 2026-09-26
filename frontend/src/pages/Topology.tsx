@@ -10,9 +10,11 @@ import ReactFlow, {
   useEdgesState, 
   MarkerType,
   Node,
-  Edge
+  Edge,
+  Position
 } from 'reactflow'
 import 'reactflow/dist/style.css'
+import dagre from 'dagre'
 
 // Custom Node Component to maintain our dark theme aesthetic
 const CustomDeviceNode = ({ data }: { data: any }) => {
@@ -49,6 +51,42 @@ const nodeTypes = {
   customDevice: CustomDeviceNode,
 }
 
+const dagreGraph = new dagre.graphlib.Graph()
+dagreGraph.setDefaultEdgeLabel(() => ({}))
+
+const nodeWidth = 200
+const nodeHeight = 80
+
+const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => {
+  const isHorizontal = direction === 'LR'
+  dagreGraph.setGraph({ rankdir: direction })
+
+  nodes.forEach((node) => {
+    dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight })
+  })
+
+  edges.forEach((edge) => {
+    dagreGraph.setEdge(edge.source, edge.target)
+  })
+
+  dagre.layout(dagreGraph)
+
+  nodes.forEach((node) => {
+    const nodeWithPosition = dagreGraph.node(node.id)
+    node.targetPosition = isHorizontal ? Position.Left : Position.Top
+    node.sourcePosition = isHorizontal ? Position.Right : Position.Bottom
+
+    node.position = {
+      x: nodeWithPosition.x - nodeWidth / 2,
+      y: nodeWithPosition.y - nodeHeight / 2,
+    }
+
+    return node
+  })
+
+  return { nodes, edges }
+}
+
 export const Topology: React.FC = () => {
   const { apiClient } = useAuth()
   const navigate = useNavigate()
@@ -60,25 +98,17 @@ export const Topology: React.FC = () => {
   useEffect(() => {
     apiClient<{ nodes: any[], edges: any[] }>('/api/topology')
       .then((data) => {
-        // We need to apply a basic layout since backend returns x:0, y:0
-        const formattedNodes: Node[] = data.nodes.map((n, i) => {
-          // Simple Grid Layout for now
-          const cols = 5;
-          const x = (i % cols) * 250;
-          const y = Math.floor(i / cols) * 150;
-          
-          return {
-            id: n.id,
-            type: 'customDevice',
-            position: { x, y },
-            data: { ...n.data, deviceId: n.id }
-          }
-        })
+        const initialNodes: Node[] = data.nodes.map((n) => ({
+          id: n.id,
+          type: 'customDevice',
+          position: { x: 0, y: 0 },
+          data: { ...n.data, deviceId: n.id }
+        }))
         
-        const formattedEdges: Edge[] = data.edges.map((e) => ({
+        const initialEdges: Edge[] = data.edges.map((e) => ({
           ...e,
-          animated: true,
-          style: { stroke: '#3b82f6', strokeWidth: 2 },
+          animated: e.animated !== undefined ? e.animated : true,
+          style: { stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: e.id.startsWith('virtual-') ? '5 5' : '0' },
           labelStyle: { fill: '#94a3b8', fontWeight: 700 },
           markerEnd: {
             type: MarkerType.ArrowClosed,
@@ -88,8 +118,14 @@ export const Topology: React.FC = () => {
           },
         }))
 
-        setNodes(formattedNodes)
-        setEdges(formattedEdges)
+        const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+          initialNodes,
+          initialEdges,
+          'TB'
+        )
+
+        setNodes(layoutedNodes)
+        setEdges(layoutedEdges)
       })
       .catch(console.error)
       .finally(() => setLoading(false))
@@ -115,7 +151,7 @@ export const Topology: React.FC = () => {
     <div className="flex flex-col h-full animate-fade-in select-none">
       <div className="mb-4">
         <h1 className="text-2xl font-bold tracking-tight">Interactive Network Map</h1>
-        <p className="text-text-secondary text-sm">Visualizing active SNMP Layer 2/3 connections</p>
+        <p className="text-text-secondary text-sm">Visualizing network structure & active connections</p>
       </div>
 
       <div className="flex-1 w-full bg-[#0a0f1c] rounded-2xl border border-border-subtle shadow-inner overflow-hidden">

@@ -25,6 +25,8 @@ import com.gnm.fingerprint.FingerprintEngine;
 import jakarta.inject.Inject;
 import java.net.InetAddress;
 import java.time.Instant;
+import com.gnm.model.NetworkLink;
+import com.gnm.model.enums.DiscoveryProtocol;
 
 @Path("/api/devices")
 @Produces(MediaType.APPLICATION_JSON)
@@ -394,5 +396,50 @@ public class DeviceResource {
         return DeviceStatusHistory.find("physicalDevice.id = ?1 order by timestamp desc", id)
                 .page(0, maxLimit)
                 .list();
+    }
+    @GET
+    @Path("/{id}/links")
+    @Transactional
+    public List<NetworkLink> getDeviceLinks(@PathParam("id") UUID id) {
+        return NetworkLink.find("sourceDevice.id = ?1 or targetDevice.id = ?1", id).list();
+    }
+
+    @POST
+    @Path("/{id}/links")
+    @Transactional
+    public Response addDeviceLink(@PathParam("id") UUID id, Map<String, String> payload) {
+        PhysicalDevice source = PhysicalDevice.findById(id);
+        if (source == null) return Response.status(Response.Status.NOT_FOUND).build();
+
+        String targetIdStr = payload.get("targetDeviceId");
+        if (targetIdStr == null || targetIdStr.isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("Target device ID required").build();
+        }
+
+        UUID targetId = UUID.fromString(targetIdStr);
+        PhysicalDevice target = PhysicalDevice.findById(targetId);
+        if (target == null) return Response.status(Response.Status.NOT_FOUND).entity("Target device not found").build();
+
+        NetworkLink link = new NetworkLink();
+        link.sourceDevice = source;
+        link.targetDevice = target;
+        link.sourceInterface = payload.getOrDefault("sourceInterface", "manual");
+        link.targetInterface = payload.getOrDefault("targetInterface", "manual");
+        link.discoveryProtocol = DiscoveryProtocol.MANUAL;
+        link.lastVerified = Instant.now();
+        link.persist();
+
+        return Response.ok(link).build();
+    }
+
+    @DELETE
+    @Path("/links/{linkId}")
+    @Transactional
+    public Response deleteDeviceLink(@PathParam("linkId") UUID linkId) {
+        NetworkLink link = NetworkLink.findById(linkId);
+        if (link != null) {
+            link.delete();
+        }
+        return Response.noContent().build();
     }
 }
