@@ -73,6 +73,7 @@ npm install
 
 echo "Ensuring Playwright browsers are installed..."
 npx playwright install
+npx playwright install-deps
 
 echo "Running E2E tests..."
 npm run test:e2e
