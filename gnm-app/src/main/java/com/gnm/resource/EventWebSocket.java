@@ -72,14 +72,16 @@ public class EventWebSocket {
         public String action;
         public String ipAddress;
         public String details;
+        public String displayName;
         public String timestamp = Instant.now().toString();
 
         public DiscoveryActivityEvent() {}
 
-        public DiscoveryActivityEvent(String action, String ipAddress, String details) {
+        public DiscoveryActivityEvent(String action, String ipAddress, String details, String displayName) {
             this.action = action;
             this.ipAddress = ipAddress;
             this.details = details;
+            this.displayName = displayName;
         }
     }
 

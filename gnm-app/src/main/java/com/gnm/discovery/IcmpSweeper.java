@@ -44,6 +44,10 @@ public class IcmpSweeper {
     String subnetConfig;
 
     public java.util.Set<String> sweep() {
+        return sweep(java.util.Collections.emptySet());
+    }
+
+    public java.util.Set<String> sweep(java.util.Set<String> skipIps) {
         moduleManager.updateStatus(
                 DiscoveryModuleManager.ICMP_SWEEPER_ID,
                 com.gnm.discovery.model.DiscoveryModuleStatus.Status.RUNNING,
@@ -56,7 +60,7 @@ public class IcmpSweeper {
             List<CompletableFuture<java.util.Set<String>>> subnetFutures = new ArrayList<>();
             for (String subnet : subnets) {
                 String trimmed = subnet.trim();
-                subnetFutures.add(CompletableFuture.supplyAsync(() -> sweepSubnet(trimmed), subnetExecutor));
+                subnetFutures.add(CompletableFuture.supplyAsync(() -> sweepSubnet(trimmed, skipIps), subnetExecutor));
             }
             for (CompletableFuture<java.util.Set<String>> f : subnetFutures) {
                 try {
@@ -80,7 +84,7 @@ public class IcmpSweeper {
         return allLiveIps;
     }
 
-    private java.util.Set<String> sweepSubnet(String subnet) {
+    private java.util.Set<String> sweepSubnet(String subnet, java.util.Set<String> skipIps) {
         LOG.info("Starting active ICMP sweep on subnet: " + subnet);
 
         String[] parts = subnet.split("/");
@@ -103,7 +107,9 @@ public class IcmpSweeper {
             List<CompletableFuture<Void>> futures = new ArrayList<>(254);
             for (int i = 1; i <= 254; i++) {
                 final String ip = base + i;
-                futures.add(CompletableFuture.runAsync(() -> probeIp(ip, liveIps), executor));
+                if (skipIps == null || !skipIps.contains(ip)) {
+                    futures.add(CompletableFuture.runAsync(() -> probeIp(ip, liveIps), executor));
+                }
             }
 
             try {

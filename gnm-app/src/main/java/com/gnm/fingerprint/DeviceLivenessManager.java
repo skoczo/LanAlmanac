@@ -27,7 +27,7 @@ public class DeviceLivenessManager {
     @Inject IcmpSweeper icmpSweeper;
     @Inject DeviceLivenessManager self;
 
-    // Track the exact last time an IP was seen (by eBPF, DHCP, manual scans, etc.)
+    // Track the exact last time an IP was seen (by passive sniffer, DHCP, manual scans, etc.)
     private final Map<String, Instant> lastSeenMap = new ConcurrentHashMap<>();
     // Track when we last performed an active targeted check for a silent device
     private final Map<String, Instant> lastActiveCheckMap = new ConcurrentHashMap<>();
@@ -36,7 +36,7 @@ public class DeviceLivenessManager {
         if (ip == null || ip.isBlank() || "0.0.0.0".equals(ip) || "255.255.255.255".equals(ip)) return;
         lastSeenMap.put(ip, Instant.now());
         activityBroadcaster.fireAsync(new com.gnm.resource.EventWebSocket.DiscoveryActivityEvent(
-            "EBPF_HEARTBEAT", ip, "Passive network activity detected"));
+            "PASSIVE_HEARTBEAT", ip, "Passive network activity detected", null));
     }
 
     public Instant getLastSeen(String ip) {
@@ -133,7 +133,7 @@ public class DeviceLivenessManager {
         LOG.infof("SmartPresence: Evaluating %s, silenceSeconds=%d, effActiveCheck=%d, effOffline=%d", currentIp, silenceSeconds, effActiveCheckSeconds, effOfflineSeconds);
 
         if (silenceSeconds <= effActiveCheckSeconds) {
-            // Device is actively talking on the network (eBPF saw it recently).
+            // Device is actively talking on the network (passive sniffer saw it recently).
             // Ensure it is marked ONLINE.
             if (device.status != DeviceStatus.ONLINE || (device.consecutiveMissedProbes > 0)) {
                 self.markOnline(device.id, currentIp);
@@ -158,7 +158,7 @@ public class DeviceLivenessManager {
             lastActiveCheckMap.put(currentIp, now);
             
             activityBroadcaster.fireAsync(new com.gnm.resource.EventWebSocket.DiscoveryActivityEvent(
-                "TARGETED_SCAN", currentIp, "Silent for " + silenceSeconds + "s, verifying liveness..."));
+                "TARGETED_SCAN", currentIp, "Silent for " + silenceSeconds + "s, verifying liveness...", device.displayName));
 
             // Run the targeted check asynchronously using Virtual Threads
             Thread.ofVirtual().start(() -> {
@@ -168,11 +168,11 @@ public class DeviceLivenessManager {
                     recordActivity(currentIp);
                     self.markOnline(device.id, currentIp);
                     activityBroadcaster.fireAsync(new com.gnm.resource.EventWebSocket.DiscoveryActivityEvent(
-                        "TARGETED_SCAN_RESULT", currentIp, "Responded to active scan"));
+                        "TARGETED_SCAN_RESULT", currentIp, "Responded to active scan", device.displayName));
                 } else {
                     LOG.debugf("SmartPresence: %s targeted check failed. Device remains silent.", currentIp);
                     activityBroadcaster.fireAsync(new com.gnm.resource.EventWebSocket.DiscoveryActivityEvent(
-                        "TARGETED_SCAN_RESULT", currentIp, "Did not respond to active scan"));
+                        "TARGETED_SCAN_RESULT", currentIp, "Did not respond to active scan", device.displayName));
                 }
             });
         }

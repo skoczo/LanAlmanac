@@ -53,7 +53,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           const isActivity = data.type === 'ACTIVITY';
           
           if (isActivity) {
-            // Activity events (EBPF_HEARTBEAT, TARGETED_SCAN, etc) happen frequently.
+            // Activity events (PASSIVE_HEARTBEAT, TARGETED_SCAN, etc) happen frequently.
             // They are handled by LiveDiscoveryFeed. Do not spam the main notification toasts.
             return;
           }

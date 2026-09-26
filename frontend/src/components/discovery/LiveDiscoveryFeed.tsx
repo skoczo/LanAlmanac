@@ -6,6 +6,7 @@ export interface DiscoveryActivityEvent {
   action: string
   ipAddress: string
   details: string
+  displayName?: string
   timestamp: string
 }
 
@@ -37,7 +38,7 @@ export const LiveDiscoveryFeed: React.FC = () => {
         return <XCircle className="w-4 h-4 text-red-400" />
     }
     switch (action) {
-      case 'EBPF_HEARTBEAT': return <Activity className="w-4 h-4 text-cyan-400" />
+      case 'PASSIVE_HEARTBEAT': return <Activity className="w-4 h-4 text-cyan-400" />
       case 'TARGETED_SCAN': return <Target className="w-4 h-4 text-amber-400" />
       case 'TARGETED_SCAN_RESULT': return <CheckCircle2 className="w-4 h-4 text-green-400" />
       default: return <Radio className="w-4 h-4 text-slate-400" />
@@ -49,7 +50,7 @@ export const LiveDiscoveryFeed: React.FC = () => {
         return 'bg-red-500/10 border-red-500/20'
     }
     switch (action) {
-      case 'EBPF_HEARTBEAT': return 'bg-cyan-500/10 border-cyan-500/20'
+      case 'PASSIVE_HEARTBEAT': return 'bg-cyan-500/10 border-cyan-500/20'
       case 'TARGETED_SCAN': return 'bg-amber-500/10 border-amber-500/20'
       case 'TARGETED_SCAN_RESULT': return 'bg-green-500/10 border-green-500/20'
       default: return 'bg-slate-500/10 border-slate-500/20'
@@ -82,7 +83,9 @@ export const LiveDiscoveryFeed: React.FC = () => {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-mono text-slate-200">{ev.ipAddress}</span>
+                  <span className="text-sm font-mono text-slate-200">
+                    {ev.displayName ? `${ev.displayName} (${ev.ipAddress})` : ev.ipAddress}
+                  </span>
                   <span className="text-[10px] text-slate-500">
                     {new Date(ev.timestamp).toLocaleTimeString()}
                   </span>

@@ -20,15 +20,15 @@ public class DiscoveryModuleManagerTest {
         List<DiscoveryModuleStatus> modules = moduleManager.getAllModuleStatuses();
         Assertions.assertTrue(modules.size() >= 3);
 
-        moduleManager.updateStatus("ebpf-passive-sniffer", Status.RUNNING, "Nasłuchiwanie eBPF aktywne");
-        DiscoveryModuleStatus mod = moduleManager.getModuleStatus("ebpf-passive-sniffer");
+        moduleManager.updateStatus("passive-sniffer", Status.RUNNING, "Nasłuchiwanie pasywne aktywne");
+        DiscoveryModuleStatus mod = moduleManager.getModuleStatus("passive-sniffer");
         Assertions.assertNotNull(mod);
         Assertions.assertEquals(Status.RUNNING, mod.status);
-        Assertions.assertEquals("Nasłuchiwanie eBPF aktywne", mod.currentActivity);
+        Assertions.assertEquals("Nasłuchiwanie pasywne aktywne", mod.currentActivity);
 
-        moduleManager.updateError("ebpf-passive-sniffer", "Brak uprawnień CAP_BPF");
-        mod = moduleManager.getModuleStatus("ebpf-passive-sniffer");
+        moduleManager.updateError("passive-sniffer", "Brak uprawnień");
+        mod = moduleManager.getModuleStatus("passive-sniffer");
         Assertions.assertEquals(Status.ERROR, mod.status);
-        Assertions.assertEquals("Brak uprawnień CAP_BPF", mod.errorMessage);
+        Assertions.assertEquals("Brak uprawnień", mod.errorMessage);
     }
 }

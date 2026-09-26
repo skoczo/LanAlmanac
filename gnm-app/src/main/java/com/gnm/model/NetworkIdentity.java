@@ -45,4 +45,13 @@ public class NetworkIdentity extends PanacheEntityBase {
     @OneToMany(mappedBy = "networkIdentity", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JsonIgnore
     public List<NetworkSighting> sightings = new ArrayList<>();
+
+    public static java.util.Set<String> getOnlineIps() {
+        return new java.util.HashSet<>(
+            find("SELECT n.ipAddress FROM NetworkIdentity n WHERE n.current = true AND n.physicalDevice.status = ?1 AND n.ipAddress IS NOT NULL", 
+                 com.gnm.model.enums.DeviceStatus.ONLINE)
+            .project(String.class)
+            .list()
+        );
+    }
 }

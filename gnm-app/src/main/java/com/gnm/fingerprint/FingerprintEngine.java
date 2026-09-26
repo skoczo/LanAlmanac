@@ -157,10 +157,7 @@ public class FingerprintEngine {
                     && !sighting.rawMetadata.contains("\"host\"")
                     && !sighting.rawMetadata.contains("\"dhcp\"")
                     && !sighting.rawMetadata.contains("\"mdns\"");
-                boolean hasRawMetadata = !isArpScanOnly && sighting.rawMetadata != null
-                    && !sighting.rawMetadata.equals("{}")
-                    && !sighting.rawMetadata.isEmpty()
-                    && !sighting.rawMetadata.equals("{\"protocol\":\"arp\"}");
+
                 boolean isIcmpSweep = "ICMP_SWEEP".equals(sighting.source);
                 boolean isManual = "MANUAL_DISCOVERY".equals(sighting.source);
                 

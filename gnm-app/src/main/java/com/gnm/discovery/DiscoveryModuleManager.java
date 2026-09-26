@@ -18,7 +18,7 @@ public class DiscoveryModuleManager {
 
     private static final Logger LOG = Logger.getLogger(DiscoveryModuleManager.class);
 
-    public static final String EBPF_SNIFFER_ID = "ebpf-passive-sniffer";
+    public static final String PASSIVE_SNIFFER_ID = "passive-sniffer";
     public static final String ACTIVE_ARP_ID = "active-arp-scanner";
     public static final String ICMP_SWEEPER_ID = "icmp-sweeper";
 
@@ -35,11 +35,11 @@ public class DiscoveryModuleManager {
     }
 
     private void initDefaultModules() {
-        moduleStatusMap.put(EBPF_SNIFFER_ID, new DiscoveryModuleStatus(
-                EBPF_SNIFFER_ID,
-                "eBPF Passive Sniffer",
+        moduleStatusMap.put(PASSIVE_SNIFFER_ID, new DiscoveryModuleStatus(
+                PASSIVE_SNIFFER_ID,
+                "Passive Packet Sniffer",
                 Status.STOPPED,
-                "Initializing eBPF sniffer module...",
+                "Initializing passive sniffer module...",
                 true
         ));
 
@@ -134,8 +134,8 @@ public class DiscoveryModuleManager {
                 } else if (ICMP_SWEEPER_ID.equals(id)) {
                     updateStatus(id, Status.RUNNING, "Running ICMP sweep on demand...");
                     icmpSweeper.sweep();
-                } else if (EBPF_SNIFFER_ID.equals(id)) {
-                    LOG.info("Triggered refresh for eBPF sniffer status.");
+                } else if (PASSIVE_SNIFFER_ID.equals(id)) {
+                    LOG.info("Triggered refresh for passive sniffer status.");
                 }
             } catch (Exception e) {
                 updateError(id, "Error during manual scan: " + e.getMessage());

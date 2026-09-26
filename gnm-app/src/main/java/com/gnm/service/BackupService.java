@@ -299,7 +299,7 @@ public class BackupService {
     private static final String DUMP_FILE_NAME = "database_dump.sql";
 
     public java.nio.file.Path createBackup(String password) throws Exception {
-        java.nio.file.Path tempDir = java.nio.file.Files.createTempDirectory("gnm_backup_");
+        java.nio.file.Path tempDir = java.nio.file.Files.createTempDirectory(java.nio.file.Paths.get("").toAbsolutePath(), "gnm_backup_");
         java.nio.file.Path dumpFile = tempDir.resolve(DUMP_FILE_NAME);
         try {
             runPgDump(dumpFile);
@@ -314,7 +314,7 @@ public class BackupService {
     }
 
     public void restoreBackup(java.nio.file.Path encryptedBackup, String password) throws Exception {
-        java.nio.file.Path tempDir = java.nio.file.Files.createTempDirectory("gnm_restore_");
+        java.nio.file.Path tempDir = java.nio.file.Files.createTempDirectory(java.nio.file.Paths.get("").toAbsolutePath(), "gnm_restore_");
         java.nio.file.Path zipFile = tempDir.resolve("backup.zip");
         try {
             decryptFile(encryptedBackup, zipFile, password);
@@ -335,8 +335,11 @@ public class BackupService {
             } else {
                 throw new IllegalStateException("Backup does not contain database dump.");
             }
-            LOG.info("Backup restored successfully. Restarting application...");
-            System.exit(0);
+            LOG.info("Backup restored successfully.");
+            if (!io.quarkus.runtime.LaunchMode.current().equals(io.quarkus.runtime.LaunchMode.TEST)) {
+                LOG.info("Restarting application...");
+                System.exit(0);
+            }
         } finally {
             deleteDirectory(tempDir);
         }
@@ -347,7 +350,7 @@ public class BackupService {
         ProcessBuilder pb = new ProcessBuilder(
                 "pg_dump", "-h", info.host, "-p", String.valueOf(info.port), 
                 "-U", dbUser, "-d", info.dbName, "-f", outputFile.toAbsolutePath().toString(),
-                "-c", "--if-exists"
+                "-a", "--exclude-table-data=telemetry", "--exclude-table=flyway_schema_history"
         );
         java.util.Map<String, String> env = pb.environment();
         env.put("PGPASSWORD", dbPassword);
@@ -367,8 +370,7 @@ public class BackupService {
         DbConnectionInfo info = parseJdbcUrl(jdbcUrl);
         ProcessBuilder pb = new ProcessBuilder(
                 "psql", "-h", info.host, "-p", String.valueOf(info.port), 
-                "-U", dbUser, "-d", info.dbName, "-f", inputFile.toAbsolutePath().toString(),
-                "-v", "ON_ERROR_STOP=1"
+                "-U", dbUser, "-d", info.dbName, "-f", inputFile.toAbsolutePath().toString()
         );
         java.util.Map<String, String> env = pb.environment();
         env.put("PGPASSWORD", dbPassword);

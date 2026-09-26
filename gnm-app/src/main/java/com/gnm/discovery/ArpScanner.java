@@ -54,6 +54,10 @@ public class ArpScanner {
     private String networkInterfaceProp;
 
     public Set<String> scan() {
+        return scan(java.util.Collections.emptySet());
+    }
+
+    public Set<String> scan(Set<String> skipIps) {
         String iface = getListenInterface();
         LOG.info("Starting active ARP scan on interface: " + iface);
         moduleManager.updateStatus(
@@ -63,7 +67,7 @@ public class ArpScanner {
         );
 
         try {
-            Set<String> liveIps = runPcapArpScan();
+            Set<String> liveIps = runPcapArpScan(skipIps);
             moduleManager.updateStatus(
                     DiscoveryModuleManager.ACTIVE_ARP_ID,
                     com.gnm.discovery.model.DiscoveryModuleStatus.Status.STOPPED,
@@ -82,7 +86,7 @@ public class ArpScanner {
         }
     }
 
-    private Set<String> runPcapArpScan() throws Exception {
+    private Set<String> runPcapArpScan(Set<String> skipIps) throws Exception {
         String ifaceName = getListenInterface();
         LOG.info("Checking raw socket privileges for active PCAP ARP scan on " + ifaceName + "...");
 
@@ -119,7 +123,7 @@ public class ArpScanner {
 
             LOG.info("Raw socket privileges confirmed. Broadcasting ARP probes on " + ifaceName + "...");
 
-            List<Inet4Address> targetIps = getTargetIps(localIp);
+            List<Inet4Address> targetIps = getTargetIps(localIp, skipIps);
             for (Inet4Address targetIp : targetIps) {
                 ArpPacket.Builder arpBuilder = new ArpPacket.Builder();
                 arpBuilder
@@ -176,7 +180,8 @@ public class ArpScanner {
             if (handle != null && handle.isOpen()) {
                 try {
                     handle.close();
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    LOG.debug("Failed to close PCAP handle", e);
                 }
             }
         }
@@ -202,7 +207,7 @@ public class ArpScanner {
         throw new IllegalArgumentException("Interface does not have a valid IPv4 address");
     }
 
-    private List<Inet4Address> getTargetIps(Inet4Address localIp) {
+    private List<Inet4Address> getTargetIps(Inet4Address localIp, java.util.Set<String> skipIps) {
         List<Inet4Address> targets = new ArrayList<>();
         try {
             String cidrConfig = getSubnetConfig();
@@ -249,7 +254,10 @@ public class ArpScanner {
                     };
                     InetAddress addr = InetAddress.getByAddress(ipBytes);
                     if (addr instanceof Inet4Address && !addr.equals(localIp)) {
-                        targets.add((Inet4Address) addr);
+                        String ipStr = addr.getHostAddress();
+                        if (skipIps == null || !skipIps.contains(ipStr)) {
+                            targets.add((Inet4Address) addr);
+                        }
                     }
                     totalCount++;
                 }

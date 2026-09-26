@@ -20,7 +20,7 @@ public class DiscoveryResourceTest extends AbstractE2ETest {
           .then()
              .statusCode(200)
              .body("size()", greaterThanOrEqualTo(3))
-             .body("id", hasItems("ebpf-passive-sniffer", "active-arp-scanner", "icmp-sweeper"));
+             .body("id", hasItems("passive-sniffer", "active-arp-scanner", "icmp-sweeper"));
     }
 
     @Test

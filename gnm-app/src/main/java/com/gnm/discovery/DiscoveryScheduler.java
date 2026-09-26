@@ -28,6 +28,8 @@ public class DiscoveryScheduler {
     @Inject
     private ArpScanner arpScanner;
 
+
+
     @Inject
     private DiscoveryModuleManager moduleManager;
 
@@ -88,7 +90,8 @@ public class DiscoveryScheduler {
         }
 
         LOG.debug("Scheduled trigger: running active ICMP sweep...");
-        icmpSweeper.sweep();
+        java.util.Set<String> skipIps = QuarkusTransaction.requiringNew().call(() -> com.gnm.model.NetworkIdentity.getOnlineIps());
+        icmpSweeper.sweep(skipIps);
     }
 
     @Scheduled(every = "${gnm.scan.arp-interval:24h}", identity = "arp-scan-job")
@@ -111,6 +114,8 @@ public class DiscoveryScheduler {
         }
 
         LOG.debug("Scheduled trigger: running active ARP scan...");
-        arpScanner.scan();
+        java.util.Set<String> skipIps = QuarkusTransaction.requiringNew().call(() -> com.gnm.model.NetworkIdentity.getOnlineIps());
+        arpScanner.scan(skipIps);
     }
+
 }
