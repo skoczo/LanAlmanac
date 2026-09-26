@@ -105,7 +105,7 @@ public class PassivePacketListener {
             moduleManager.updateStatus(
                     DiscoveryModuleManager.PASSIVE_SNIFFER_ID,
                     com.gnm.discovery.model.DiscoveryModuleStatus.Status.RUNNING,
-                    "Passive packet listener (ARP, DHCP, mDNS, TCP SYN) running on " + networkInterface
+                    "Passive BPF sniffer (ARP, DHCP, mDNS, TCP SYN) running on " + networkInterface
             );
 
             while (running) {

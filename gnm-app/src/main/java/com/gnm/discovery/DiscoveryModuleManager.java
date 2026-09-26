@@ -37,7 +37,7 @@ public class DiscoveryModuleManager {
     private void initDefaultModules() {
         moduleStatusMap.put(PASSIVE_SNIFFER_ID, new DiscoveryModuleStatus(
                 PASSIVE_SNIFFER_ID,
-                "Passive Packet Sniffer",
+                "Passive BPF Sniffer",
                 Status.STOPPED,
                 "Initializing passive sniffer module...",
                 true

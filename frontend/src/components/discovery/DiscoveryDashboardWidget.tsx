@@ -83,11 +83,11 @@ export const DiscoveryDashboardWidget: React.FC = () => {
             <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
               Network Discovery Modules
               <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-mono">
-                Passive Sniffer
+                Passive BPF Sniffer
               </span>
             </h2>
             <p className="text-xs text-slate-400">
-              Operational status, passive sniffer & on-demand scanning
+              Operational status, passive BPF sniffer & on-demand scanning
             </p>
           </div>
         </div>
