@@ -11,7 +11,8 @@ import ReactFlow, {
   MarkerType,
   Node,
   Edge,
-  Position
+  Position,
+  Handle
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import dagre from 'dagre'
@@ -36,6 +37,7 @@ const CustomDeviceNode = ({ data }: { data: any }) => {
 
   return (
     <div className={`px-4 py-3 shadow-lg rounded-xl border-2 bg-bg-surface-raised flex items-center gap-3 w-48 ${isOnline ? 'border-accent-success/50 shadow-accent-success/10' : 'border-accent-danger/50 shadow-accent-danger/10'}`}>
+      <Handle type="target" position={Position.Top} className="w-1.5 h-1.5 bg-text-secondary border-none" />
       <div className={`p-2 rounded-lg bg-bg-surface flex-shrink-0 ${isOnline ? 'animate-pulse-slow' : ''}`}>
         {isOnline ? renderIcon(data.type) : <ServerCrash className="w-5 h-5 text-accent-danger" />}
       </div>
@@ -43,6 +45,7 @@ const CustomDeviceNode = ({ data }: { data: any }) => {
         <span className="font-bold text-sm text-text-primary truncate" title={data.label}>{data.label}</span>
         <span className="text-xs text-text-secondary">{data.type}</span>
       </div>
+      <Handle type="source" position={Position.Bottom} className="w-1.5 h-1.5 bg-text-secondary border-none" />
     </div>
   )
 }

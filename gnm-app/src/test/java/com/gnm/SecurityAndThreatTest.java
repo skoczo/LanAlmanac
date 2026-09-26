@@ -101,7 +101,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
 
         // Force port scanning in test environment
         System.setProperty("forceNetworkScan", "true");
-        System.setProperty("test.ssh.host", "127.0.0.1");
+        System.setProperty("test.ssh.host", ip);
         System.setProperty("test.ssh.port", String.valueOf(environment.getServicePort("ne-linux-server", 22)));
         try {
             // When: The periodic scan (or manual discovery) hits the device and fetches its REAL ssh key
@@ -163,7 +163,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
 
         // Let's trigger the mismatch first
         System.setProperty("forceNetworkScan", "true");
-        System.setProperty("test.ssh.host", "127.0.0.1");
+        System.setProperty("test.ssh.host", ip);
         System.setProperty("test.ssh.port", String.valueOf(environment.getServicePort("ne-linux-server", 22)));
         try {
             waitForSsh(ip);
@@ -241,6 +241,8 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
         waitForSsh(ip);
 
         // When: We try to connect via WebSocket (manual terminal connect)
+        System.setProperty("test.ssh.host", ip);
+        try {
         String wsUri = terminalUri.toString().replace("http://", "ws://").replace("https://", "wss://") + "/" + pd.id + "/" + cred.id;
         TestWebSocketListener listener = new TestWebSocketListener();
         WebSocket ws = HttpClient.newHttpClient().newWebSocketBuilder().buildAsync(URI.create(wsUri), listener).join();
@@ -269,6 +271,9 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
         }
         assertTrue(threatCreated, "ThreatEvent should be created on manual connect mismatch");
         ws.sendClose(WebSocket.NORMAL_CLOSURE, "Done").join();
+        } finally {
+            System.clearProperty("test.ssh.host");
+        }
     }
 
     @Test
@@ -286,6 +291,8 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
         waitForSsh(ip, serviceName);
 
         // When: We try to connect via WebSocket
+        System.setProperty("test.ssh.host", ip);
+        try {
         String wsUri = terminalUri.toString().replace("http://", "ws://").replace("https://", "wss://") + "/" + pd.id + "/" + cred.id;
         TestWebSocketListener listener = new TestWebSocketListener();
         WebSocket ws = HttpClient.newHttpClient().newWebSocketBuilder().buildAsync(URI.create(wsUri), listener).join();
@@ -308,6 +315,9 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
         assertEquals(false, ns.sshHostKeyTrusted, "sshHostKey should not be automatically trusted");
 
         ws.sendClose(WebSocket.NORMAL_CLOSURE, "Done").join();
+        } finally {
+            System.clearProperty("test.ssh.host");
+        }
     }
 
     @Transactional

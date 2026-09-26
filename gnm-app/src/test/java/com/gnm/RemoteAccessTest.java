@@ -146,7 +146,10 @@ public class RemoteAccessTest extends AbstractE2ETest {
         trustSshHostKey(pd, cred);
 
         // Connect via Terminal WebSocket
-        String wsUri = terminalUri.toString().replace("http://", "ws://").replace("https://", "wss://") + "/" + pd.id + "/" + cred.id;
+        System.setProperty("test.ssh.host", environment.getServiceHost("ne-linux-server", 22));
+        System.setProperty("test.ssh.port", String.valueOf(environment.getServicePort("ne-linux-server", 22)));
+        try {
+            String wsUri = terminalUri.toString().replace("http://", "ws://").replace("https://", "wss://") + "/" + pd.id + "/" + cred.id;
         TestWebSocketListener listener = new TestWebSocketListener();
         WebSocket ws = HttpClient.newHttpClient().newWebSocketBuilder().buildAsync(URI.create(wsUri), listener).join();
 
@@ -172,6 +175,10 @@ public class RemoteAccessTest extends AbstractE2ETest {
         }
         assertTrue(receivedOutput, "Should receive streamed terminal output from the SSH session");
         ws.sendClose(WebSocket.NORMAL_CLOSURE, "Done").join();
+        } finally {
+            System.clearProperty("test.ssh.host");
+            System.clearProperty("test.ssh.port");
+        }
     }
 
     @Transactional

@@ -233,8 +233,15 @@ public class TerminalWebSocket {
         try {
             int port = ctx.port != null ? ctx.port : 22;
             String connectHost = ctx.ipAddress;
-            if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST && connectHost != null && connectHost.startsWith("192.168.")) {
-                connectHost = "172.17.0.1";
+            if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) {
+                if (System.getProperty("test.ssh.host") != null) {
+                    connectHost = System.getProperty("test.ssh.host");
+                } else if (connectHost != null && connectHost.startsWith("192.168.")) {
+                    connectHost = "172.17.0.1";
+                }
+                if (System.getProperty("test.ssh.port") != null) {
+                    port = Integer.parseInt(System.getProperty("test.ssh.port"));
+                }
             }
             log.infof("Connecting to %s@%s:%d", ctx.username, connectHost, port);
             connection.sendTextAndAwait(String.format("Connecting to %s@%s port %d...\r\n", ctx.username, connectHost, port));
