@@ -434,9 +434,9 @@ public class DeviceIdentityManager {
             // Panache will auto-flush before the count query if necessary
 
             long activeCount = NetworkIdentity.count("physicalDevice.id = ?1 and current = true", oldId.physicalDevice.id);
+            // Let DeviceLivenessManager handle offline marking based on actual silence
             if (activeCount == 0) {
-                oldId.physicalDevice.status = DeviceStatus.OFFLINE;
-                oldId.physicalDevice.persist();
+                // We just let the device remain in its current state until LivenessManager marks it offline
             }
         }
     }
