@@ -150,7 +150,7 @@ public class FingerprintEngine {
                 // Smart Presence Engine - record activity to prevent unnecessary active probing
                 livenessManager.recordActivity(sighting.ipAddress);
 
-                String debounceKey = sighting.ipAddress + "|" + sighting.macAddress;
+                String debounceKey = sighting.ipAddress + "|" + sighting.macAddress + "|" + (sighting.source != null ? sighting.source : "");
                 java.time.Instant lastDbUpdate = lastDbUpdateTimes.get(debounceKey);
                 boolean isArpScanOnly = sighting.rawMetadata != null
                     && sighting.rawMetadata.contains("\"flags\":")
@@ -164,7 +164,7 @@ public class FingerprintEngine {
                 boolean isIcmpSweep = "ICMP_SWEEP".equals(sighting.source);
                 boolean isManual = "MANUAL_DISCOVERY".equals(sighting.source);
                 
-                if (!hasRawMetadata && !isIcmpSweep && !isManual && lastDbUpdate != null && java.time.Instant.now().isBefore(lastDbUpdate.plusSeconds(10))) {
+                if (!isIcmpSweep && !isManual && lastDbUpdate != null && java.time.Instant.now().isBefore(lastDbUpdate.plusSeconds(10))) {
                     continue; 
                 }
 

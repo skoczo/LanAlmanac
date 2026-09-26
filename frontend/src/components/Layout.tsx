@@ -52,9 +52,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           const isAlarm = data.type === 'ALARM';
           const isActivity = data.type === 'ACTIVITY';
           
-          if (isActivity && data.action === 'EBPF_HEARTBEAT') {
-            // EBPF heartbeats happen multiple times per second on active networks.
-            // Handled by LiveDiscoveryFeed. Do not spam toasts.
+          if (isActivity) {
+            // Activity events (EBPF_HEARTBEAT, TARGETED_SCAN, etc) happen frequently.
+            // They are handled by LiveDiscoveryFeed. Do not spam the main notification toasts.
             return;
           }
 
@@ -66,9 +66,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             text = data.message;
           } else if (data.type === 'NEW_DEVICE') {
             title = 'New Host Discovered';
-          } else if (isActivity) {
-            title = 'Discovery Activity';
-            text = `${data.ipAddress}: ${data.action} - ${data.details || ''}`;
           }
 
           const newToast: ToastMessage = {
