@@ -27,8 +27,23 @@ public class TopologyResource {
     @Transactional
     public Response getTopologyGraph() {
         // Fetch only MANAGED devices and any device that is connected via a link
-        List<PhysicalDevice> devices = PhysicalDevice.list("managementState", ManagementState.MANAGED);
         List<NetworkLink> links = NetworkLink.listAll();
+        java.util.Set<java.util.UUID> includedDeviceIds = new java.util.HashSet<>();
+        
+        List<PhysicalDevice> managedDevices = PhysicalDevice.list("managementState", ManagementState.MANAGED);
+        for (PhysicalDevice d : managedDevices) {
+            includedDeviceIds.add(d.id);
+        }
+        
+        for (NetworkLink link : links) {
+            if (link.sourceDevice != null) includedDeviceIds.add(link.sourceDevice.id);
+            if (link.targetDevice != null) includedDeviceIds.add(link.targetDevice.id);
+        }
+
+        List<PhysicalDevice> devices = new ArrayList<>();
+        if (!includedDeviceIds.isEmpty()) {
+            devices = PhysicalDevice.list("id in ?1", includedDeviceIds);
+        }
 
         List<Map<String, Object>> nodes = new ArrayList<>();
         List<Map<String, Object>> edges = new ArrayList<>();
@@ -40,9 +55,9 @@ public class TopologyResource {
             node.put("id", device.id.toString());
             
             Map<String, Object> data = new HashMap<>();
-            data.put("label", device.displayName);
-            data.put("type", device.deviceType.name());
-            data.put("status", device.status.name());
+            data.put("label", device.displayName != null ? device.displayName : "Unknown");
+            data.put("type", device.deviceType != null ? device.deviceType.name() : "UNKNOWN");
+            data.put("status", device.status != null ? device.status.name() : "OFFLINE");
             
             node.put("data", data);
             

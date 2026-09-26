@@ -1485,7 +1485,10 @@ export const DeviceDetail: React.FC = () => {
                   </div>
                   <div className="overflow-y-auto flex-1 p-1 space-y-0.5">
                     {allDevices
-                      .filter(d => d.displayName.toLowerCase().includes(deviceSearch.toLowerCase()))
+                      .filter(d => {
+                        const isConnected = links.some(l => l.sourceDevice.id === d.id || l.targetDevice.id === d.id);
+                        return !isConnected && d.displayName.toLowerCase().includes(deviceSearch.toLowerCase());
+                      })
                       .map(d => (
                         <label 
                           key={d.id} 

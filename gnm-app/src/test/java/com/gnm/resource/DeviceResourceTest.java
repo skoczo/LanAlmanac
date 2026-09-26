@@ -1,5 +1,6 @@
 package com.gnm.resource;
 
+import com.gnm.model.NetworkLink;
 import com.gnm.model.PhysicalDevice;
 import com.gnm.model.enums.DeviceStatus;
 import com.gnm.model.enums.DeviceType;
@@ -145,5 +146,40 @@ public class DeviceResourceTest {
              .statusCode(200)
              .body("targetDevice.id", is(target.id.toString()))
              .body("discoveryProtocol", is("MANUAL"));
+    }
+    @Test
+    @TestSecurity(user = "admin", roles = "gnm-admin")
+    public void testGetTopology() {
+        io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
+            PhysicalDevice source = new PhysicalDevice();
+            source.displayName = "Topo Source";
+            source.firstSeen = Instant.now();
+            source.lastSeen = Instant.now();
+            source.managementState = com.gnm.model.enums.ManagementState.MANAGED;
+            source.persist();
+
+            PhysicalDevice target = new PhysicalDevice();
+            target.displayName = "Topo Target";
+            target.firstSeen = Instant.now();
+            target.lastSeen = Instant.now();
+            target.managementState = com.gnm.model.enums.ManagementState.DISCOVERED;
+            target.persist();
+
+            NetworkLink link = new NetworkLink();
+            link.sourceDevice = source;
+            link.targetDevice = target;
+            link.sourceInterface = "eth0";
+            link.targetInterface = "eth1";
+            link.discoveryProtocol = com.gnm.model.enums.DiscoveryProtocol.MANUAL;
+            link.lastVerified = Instant.now();
+            link.persist();
+        });
+
+        io.restassured.response.Response response = given()
+          .contentType(ContentType.JSON)
+          .when().get("/api/topology");
+          
+        response.then().statusCode(200);
+        System.out.println("TOPOLOGY RESPONSE: " + response.getBody().asString());
     }
 }

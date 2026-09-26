@@ -429,6 +429,14 @@ public class DeviceResource {
         PhysicalDevice target = PhysicalDevice.findById(payload.targetDeviceId);
         if (target == null) return Response.status(Response.Status.NOT_FOUND).entity("Target device not found").build();
 
+        long existingCount = NetworkLink.count(
+            "(sourceDevice.id = ?1 and targetDevice.id = ?2) or (sourceDevice.id = ?2 and targetDevice.id = ?1)",
+            id, payload.targetDeviceId
+        );
+        if (existingCount > 0) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("Connection already exists between these devices").build();
+        }
+
         NetworkLink link = new NetworkLink();
         link.sourceDevice = source;
         link.targetDevice = target;

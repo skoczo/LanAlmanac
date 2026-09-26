@@ -50,12 +50,20 @@ export const Devices: React.FC = () => {
   const { apiClient } = useAuth()
   const [devices, setDevices] = useState<Device[]>([])
   const [loading, setLoading] = useState(true)
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid')
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('ALL')
-  const [typeFilter, setTypeFilter] = useState('ALL')
-  const [mgmtStateFilter, setMgmtStateFilter] = useState('ALL')
+  const [search, setSearch] = useState(() => sessionStorage.getItem('devices_search') || '')
+  const [statusFilter, setStatusFilter] = useState(() => sessionStorage.getItem('devices_statusFilter') || 'ALL')
+  const [typeFilter, setTypeFilter] = useState(() => sessionStorage.getItem('devices_typeFilter') || 'ALL')
+  const [mgmtStateFilter, setMgmtStateFilter] = useState(() => sessionStorage.getItem('devices_mgmtStateFilter') || 'ALL')
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => (sessionStorage.getItem('devices_viewMode') as any) || 'grid')
   const [showAddModal, setShowAddModal] = useState(false)
+
+  useEffect(() => {
+    sessionStorage.setItem('devices_search', search)
+    sessionStorage.setItem('devices_statusFilter', statusFilter)
+    sessionStorage.setItem('devices_typeFilter', typeFilter)
+    sessionStorage.setItem('devices_mgmtStateFilter', mgmtStateFilter)
+    sessionStorage.setItem('devices_viewMode', viewMode)
+  }, [search, statusFilter, typeFilter, mgmtStateFilter, viewMode])
 
   const fetchDevices = () => {
     apiClient<Device[]>('/api/devices')
