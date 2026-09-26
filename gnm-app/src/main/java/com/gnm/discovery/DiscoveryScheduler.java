@@ -28,6 +28,9 @@ public class DiscoveryScheduler {
     @Inject
     private ArpScanner arpScanner;
 
+    @Inject
+    private DiscoveryModuleManager moduleManager;
+
     public void onStart(@Observes StartupEvent ev) {
         if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) {
             LOG.info("Test mode detected, disabling active and passive network discovery.");
@@ -51,7 +54,6 @@ public class DiscoveryScheduler {
                 if (icmpIps != null) {
                     liveIps.addAll(icmpIps);
                 }
-                fingerprintEngine.updateProbeCounters(liveIps);
                 LOG.info("Initial startup scan completed successfully.");
             } catch (Exception e) {
                 LOG.warn("Initial startup scan encountered an error: " + e.getMessage(), e);
@@ -66,7 +68,7 @@ public class DiscoveryScheduler {
         passivePacketListener.stop();
     }
 
-    @Scheduled(every = "${gnm.scan.icmp-interval:60s}", identity = "icmp-sweep-job")
+    @Scheduled(every = "${gnm.scan.icmp-interval:12h}", identity = "icmp-sweep-job")
     public void triggerIcmpSweep() {
         if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) {
             return;
@@ -78,12 +80,15 @@ public class DiscoveryScheduler {
             LOG.debug("Active scanning is disabled via settings. Skipping ICMP sweep.");
             return;
         }
-        LOG.debug("Scheduled trigger: running active ICMP sweep...");
-        java.util.Set<String> liveIps = icmpSweeper.sweep();
 
-        // Update probe counters for ICMP live IPs so FingerprintEngine can decide which
-        // devices missed this cycle and potentially transition them to OFFLINE.
-        fingerprintEngine.updateProbeCounters(liveIps);
+        com.gnm.discovery.model.DiscoveryModuleStatus mod = moduleManager.getModuleStatus(DiscoveryModuleManager.ICMP_SWEEPER_ID);
+        if (mod == null || !mod.enabled) {
+            LOG.debug("ICMP Sweeper module is disabled. Skipping scheduled ICMP sweep.");
+            return;
+        }
+
+        LOG.debug("Scheduled trigger: running active ICMP sweep...");
+        icmpSweeper.sweep();
     }
 
     @Scheduled(every = "${gnm.scan.arp-interval:24h}", identity = "arp-scan-job")
@@ -98,6 +103,13 @@ public class DiscoveryScheduler {
             LOG.debug("Active scanning is disabled via settings. Skipping ARP scan.");
             return;
         }
+
+        com.gnm.discovery.model.DiscoveryModuleStatus mod = moduleManager.getModuleStatus(DiscoveryModuleManager.ACTIVE_ARP_ID);
+        if (mod == null || !mod.enabled) {
+            LOG.debug("ARP Scanner module is disabled. Skipping scheduled ARP scan.");
+            return;
+        }
+
         LOG.debug("Scheduled trigger: running active ARP scan...");
         arpScanner.scan();
     }

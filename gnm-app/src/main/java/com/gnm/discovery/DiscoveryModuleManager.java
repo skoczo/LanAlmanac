@@ -46,9 +46,9 @@ public class DiscoveryModuleManager {
         moduleStatusMap.put(ACTIVE_ARP_ID, new DiscoveryModuleStatus(
                 ACTIVE_ARP_ID,
                 "Active ARP Scanner",
-                Status.STOPPED,
-                "Idle — waiting for scan",
-                true
+                Status.DISABLED,
+                "Module disabled by default",
+                false
         ));
 
         moduleStatusMap.put(ICMP_SWEEPER_ID, new DiscoveryModuleStatus(
@@ -71,9 +71,14 @@ public class DiscoveryModuleManager {
     public void updateStatus(String id, Status status, String activity) {
         DiscoveryModuleStatus mod = moduleStatusMap.get(id);
         if (mod != null) {
-            mod.status = status;
-            if (activity != null) {
-                mod.currentActivity = activity;
+            if (status == Status.STOPPED && !mod.enabled) {
+                mod.status = Status.DISABLED;
+                mod.currentActivity = "Module disabled";
+            } else {
+                mod.status = status;
+                if (activity != null) {
+                    mod.currentActivity = activity;
+                }
             }
             if (status == Status.RUNNING) {
                 mod.errorMessage = null;

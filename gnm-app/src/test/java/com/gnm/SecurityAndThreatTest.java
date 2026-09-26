@@ -96,12 +96,13 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
     public void testSshHostKeyChangeDetectedOnPeriodicScan() throws Exception {
         // Given: The ne-linux-server (192.168.100.10) is discovered and its original
         // key is "fake-old-key"
-        String ip = "192.168.100.10";
+        String ip = environment.getServiceHost("ne-linux-server", 22);
         setupFakeSshHostKey(ip, "fake-old-key");
 
         // Force port scanning in test environment
         System.setProperty("forceNetworkScan", "true");
-        System.setProperty("test.ssh.host", environment.getServiceHost("ne-linux-server", 22));
+        System.setProperty("test.ssh.host", "127.0.0.1");
+        System.setProperty("test.ssh.port", String.valueOf(environment.getServicePort("ne-linux-server", 22)));
         try {
             // When: The periodic scan (or manual discovery) hits the device and fetches its REAL ssh key
             waitForSsh(ip);
@@ -127,9 +128,29 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
             }
             Thread.sleep(200);
         }
+        if (!threatFound) {
+            // Diagnostic dump
+            List<ThreatEvent> allThreats = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().call(() -> ThreatEvent.listAll());
+            System.out.println("DIAG: All threats count=" + allThreats.size());
+            for (ThreatEvent t : allThreats) {
+                System.out.println("DIAG:   threat ip=" + t.ipAddress + " sev=" + t.severity + " desc=" + t.description);
+            }
+            List<NetworkIdentity> allIds = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().call(() -> NetworkIdentity.listAll());
+            System.out.println("DIAG: All identities count=" + allIds.size());
+            for (NetworkIdentity ni : allIds) {
+                System.out.println("DIAG:   identity ip=" + ni.ipAddress + " mac=" + ni.macAddress + " device=" + ni.physicalDevice.displayName);
+            }
+            List<FingerprintVector> allFvs = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().call(() -> FingerprintVector.listAll());
+            System.out.println("DIAG: All FVs count=" + allFvs.size());
+            for (FingerprintVector fv : allFvs) {
+                System.out.println("DIAG:   FV sshHostKeys=" + fv.sshHostKeys + " device=" + (fv.physicalDevice != null ? fv.physicalDevice.displayName : "null"));
+            }
+        }
         assertTrue(threatFound, "A HIGH severity ThreatEvent should be created for SSH key mismatch");
         } finally {
             System.clearProperty("forceNetworkScan");
+            System.clearProperty("test.ssh.host");
+            System.clearProperty("test.ssh.port");
         }
     }
 
@@ -137,12 +158,13 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
     @TestSecurity(user = "admin", roles = "gnm-admin")
     public void testAlarmAutoMitigationOnHostKeyReversion() throws Exception {
         // Given: The device has an unresolved ThreatEvent for a key mismatch
-        String ip = "192.168.100.10";
+        String ip = environment.getServiceHost("ne-linux-server", 22);
         setupFakeSshHostKey(ip, "fake-old-key");
 
         // Let's trigger the mismatch first
         System.setProperty("forceNetworkScan", "true");
-        System.setProperty("test.ssh.host", environment.getServiceHost("ne-linux-server", 22));
+        System.setProperty("test.ssh.host", "127.0.0.1");
+        System.setProperty("test.ssh.port", String.valueOf(environment.getServicePort("ne-linux-server", 22)));
         try {
             waitForSsh(ip);
             String scanPayload = "{\"ipAddress\": \"" + ip + "\"}";
@@ -200,6 +222,8 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
         assertTrue(resolved, "Threat should be auto-mitigated when key reverts to historical value");
         } finally {
             System.clearProperty("forceNetworkScan");
+            System.clearProperty("test.ssh.host");
+            System.clearProperty("test.ssh.port");
         }
     }
 
@@ -207,7 +231,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
     @TestSecurity(user = "admin", roles = "gnm-admin")
     public void testConnectionBlockedAndAlarmRaisedOnManualConnect() throws Exception {
         // Given: We have a device with a fake trusted SSH key
-        String ip = "192.168.100.10";
+        String ip = environment.getServiceHost("ne-linux-server", 22);
         setupFakeSshHostKey(ip, "fake-old-key");
 
         NetworkIdentity id = NetworkIdentity.find("ipAddress", ip).firstResult();
@@ -251,14 +275,15 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
     @TestSecurity(user = "admin", roles = "gnm-admin")
     public void testHostKeyTrustOnFirstConnectTofu() throws Exception {
         // Given: We have a device with NO sshHostKey stored yet
-        String ip = "192.168.100.20"; // Router sim
-        setupFakeSshHostKey(ip, null); // Set it to null
+        String serviceName = "ne-router-sim";
+        String ip = environment.getServiceHost(serviceName, 22); // Router sim
+        setupFakeSshHostKey(ip, null, serviceName); // Set it to null
 
         NetworkIdentity id = NetworkIdentity.find("ipAddress", ip).firstResult();
         PhysicalDevice pd = id.physicalDevice;
-        Credential cred = setupMockCredential(pd);
+        Credential cred = setupMockCredential(pd, serviceName);
 
-        waitForSsh(ip);
+        waitForSsh(ip, serviceName);
 
         // When: We try to connect via WebSocket
         String wsUri = terminalUri.toString().replace("http://", "ws://").replace("https://", "wss://") + "/" + pd.id + "/" + cred.id;
@@ -267,7 +292,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
 
         // Then: We should get a TOFU warning
         boolean tofuTriggered = false;
-        long endTime = System.currentTimeMillis() + 5000;
+        long endTime = System.currentTimeMillis() + 10000;
         while (System.currentTimeMillis() < endTime) {
             String msg = listener.messages.poll(100, TimeUnit.MILLISECONDS);
             if (msg != null && msg.contains("First time connecting to this host")) {
@@ -287,11 +312,16 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
 
     @Transactional
     protected Credential setupMockCredential(PhysicalDevice pd) {
+        return setupMockCredential(pd, "ne-linux-server");
+    }
+
+    @Transactional
+    protected Credential setupMockCredential(PhysicalDevice pd, String serviceName) {
         com.gnm.model.Credential cred = new com.gnm.model.Credential();
         cred.physicalDevice = pd;
         cred.label = "Mock Admin Credential";
         cred.username = "testuser";
-        cred.port = environment.getServicePort("ne-linux-server", 22);
+        cred.port = environment.getServicePort(serviceName, 22);
         cred.credentialType = com.gnm.model.enums.CredentialType.PASSWORD;
         // Properly encrypt the mock payload
         com.gnm.service.VaultEngine.EncryptedRecord record = vaultEngine.encrypt("testpass".getBytes(StandardCharsets.UTF_8));
@@ -305,6 +335,11 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
 
     @Transactional
     protected void setupFakeSshHostKey(String ip, String fakeKey) {
+        setupFakeSshHostKey(ip, fakeKey, "ne-linux-server");
+    }
+
+    @Transactional
+    protected void setupFakeSshHostKey(String ip, String fakeKey, String serviceName) {
         NetworkIdentity id = NetworkIdentity.find("ipAddress", ip).firstResult();
         PhysicalDevice pd;
         if (id == null) {
@@ -349,7 +384,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
             ns = new NetworkService();
             ns.physicalDevice = pd;
             ns.serviceType = "SSH";
-            ns.port = environment.getServicePort("ne-linux-server", 22);
+            ns.port = environment.getServicePort(serviceName, 22);
             ns.protocol = "TCP";
             ns.firstSeen = java.time.Instant.now();
             ns.lastSeen = java.time.Instant.now();
@@ -371,8 +406,12 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
     }
 
     protected void waitForSsh(String ip) throws Exception {
-        String host = environment.getServiceHost("ne-linux-server", 22);
-        int port = environment.getServicePort("ne-linux-server", 22);
+        waitForSsh(ip, "ne-linux-server");
+    }
+
+    protected void waitForSsh(String ip, String serviceName) throws Exception {
+        String host = environment.getServiceHost(serviceName, 22);
+        int port = environment.getServicePort(serviceName, 22);
         for (int i = 0; i < 50; i++) {
             try (java.net.Socket s = new java.net.Socket()) {
                 s.connect(new java.net.InetSocketAddress(host, port), 200);

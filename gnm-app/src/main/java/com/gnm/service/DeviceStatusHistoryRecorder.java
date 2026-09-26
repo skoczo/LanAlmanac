@@ -47,7 +47,7 @@ public class DeviceStatusHistoryRecorder {
                     history.status = status;
                     history.ipAddress = event.ipAddress;
                     history.timestamp = Instant.now();
-                    history.persist();
+                    history.persistAndFlush();
 
                     // Prune old history entries exceeding the configured max limit per device
                     List<DeviceStatusHistory> records = DeviceStatusHistory.find("physicalDevice.id = ?1 order by timestamp desc", deviceId).list();

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Activity, AlertTriangle, Play, Power, ShieldAlert, Cpu, RefreshCw } from 'lucide-react'
 import { useAuth } from '../../lib/auth/auth-context'
+import { LiveDiscoveryFeed } from './LiveDiscoveryFeed'
 
 export interface DiscoveryModule {
   id: string
@@ -198,6 +199,7 @@ export const DiscoveryDashboardWidget: React.FC = () => {
           )
         })}
       </div>
+      <LiveDiscoveryFeed />
     </div>
   )
 }

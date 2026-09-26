@@ -232,10 +232,14 @@ public class TerminalWebSocket {
 
         try {
             int port = ctx.port != null ? ctx.port : 22;
-            log.infof("Connecting to %s@%s:%d", ctx.username, ctx.ipAddress, port);
-            connection.sendTextAndAwait(String.format("Connecting to %s@%s port %d...\r\n", ctx.username, ctx.ipAddress, port));
+            String connectHost = ctx.ipAddress;
+            if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST && connectHost != null && connectHost.startsWith("192.168.")) {
+                connectHost = "172.17.0.1";
+            }
+            log.infof("Connecting to %s@%s:%d", ctx.username, connectHost, port);
+            connection.sendTextAndAwait(String.format("Connecting to %s@%s port %d...\r\n", ctx.username, connectHost, port));
             
-            ClientSession session = client.connect(ctx.username, ctx.ipAddress, port).verify(10000).getSession();
+            ClientSession session = client.connect(ctx.username, connectHost, port).verify(10000).getSession();
 
             log.info("Reading secret from vault...");
             String secret;

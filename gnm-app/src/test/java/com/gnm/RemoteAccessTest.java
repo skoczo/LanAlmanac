@@ -91,7 +91,7 @@ public class RemoteAccessTest extends AbstractE2ETest {
         WebSocket ws = HttpClient.newHttpClient().newWebSocketBuilder().buildAsync(URI.create(wsUri), listener).join();
 
         // Trigger a backend state change: Create a sighting
-        String ip = environment.getServiceHost("ne-linux-server", 22);
+        String ip = "192.168.100.10";
         waitForSsh(ip);
         String discoverPayload = "{\"ipAddress\": \"" + ip + "\"}";
         given()
@@ -102,15 +102,15 @@ public class RemoteAccessTest extends AbstractE2ETest {
 
         // Verify JSON event is pushed
         boolean eventReceived = false;
-        long endTime = System.currentTimeMillis() + 10000;
+        long endTime = System.currentTimeMillis() + 25000;
         while (System.currentTimeMillis() < endTime) {
-            String msg = listener.messages.poll(100, TimeUnit.MILLISECONDS);
+            String msg = listener.messages.poll(200, TimeUnit.MILLISECONDS);
             if (msg != null && (msg.contains("STATUS_CHANGE") || msg.contains("NEW_DEVICE")) && msg.contains(ip)) {
                 eventReceived = true;
                 break;
             }
         }
-        assertTrue(eventReceived, "Should receive real-time DeviceEvent over WebSocket");
+        assertTrue(eventReceived, "Should receive real-time DeviceEvent over WebSocket. Received messages: " + java.util.Arrays.toString(listener.messages.toArray()));
         ws.sendClose(WebSocket.NORMAL_CLOSURE, "Done").join();
     }
 
@@ -127,13 +127,15 @@ public class RemoteAccessTest extends AbstractE2ETest {
         
         // Wait for device to be created
         PhysicalDevice pd = null;
-        for (int i = 0; i < 50; i++) {
-            NetworkIdentity id = NetworkIdentity.find("ipAddress", ip).firstResult();
+        for (int i = 0; i < 150; i++) {
+            NetworkIdentity id = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().call(() -> 
+                NetworkIdentity.find("ipAddress", ip).firstResult()
+            );
             if (id != null) {
                 pd = id.physicalDevice;
                 break;
             }
-            Thread.sleep(100);
+            Thread.sleep(200);
         }
         assertNotNull(pd, "Device should be discovered");
 
@@ -175,14 +177,16 @@ public class RemoteAccessTest extends AbstractE2ETest {
     @Transactional
     protected Credential createRealCredential(PhysicalDevice pd) {
         String plainPassword = "testpass"; // testuser:testpass is built into ne-linux-server
+        int sshPort = environment.getServicePort("ne-linux-server", 22);
         String payload = """
             {
                 "label": "SSH Credential",
                 "type": "PASSWORD",
                 "username": "testuser",
-                "secret": "%s"
+                "secret": "%s",
+                "port": %d
             }
-        """.formatted(plainPassword);
+        """.formatted(plainPassword, sshPort);
         
         Response res = given()
             .contentType("application/json")

@@ -2,12 +2,14 @@ package com.gnm.resource;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.ObservesAsync;
+import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import io.quarkus.websockets.next.*;
 import org.jboss.logging.Logger;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gnm.fingerprint.FingerprintEngine.DeviceEvent;
 import com.gnm.model.ThreatEvent;
+import java.time.Instant;
 
 @WebSocket(path = "/ws/events")
 @ApplicationScoped
@@ -30,7 +32,15 @@ public class EventWebSocket {
         activeConnections.remove(conn);
     }
 
-    public void onDeviceEvent(@ObservesAsync DeviceEvent event) {
+    public void onDeviceEventAsync(@ObservesAsync DeviceEvent event) {
+        broadcastDeviceEvent(event);
+    }
+
+    public void onDeviceEventSync(@Observes DeviceEvent event) {
+        broadcastDeviceEvent(event);
+    }
+
+    private void broadcastDeviceEvent(DeviceEvent event) {
         LOG.info("Observing DeviceEvent: " + event.type + " for device: " + event.displayName);
         try {
             String json = MAPPER.writeValueAsString(event);
@@ -54,6 +64,33 @@ public class EventWebSocket {
             }
         } catch (Exception e) {
             LOG.error("Failed to broadcast threat event over WebSocket", e);
+        }
+    }
+
+    public static class DiscoveryActivityEvent {
+        public String type = "ACTIVITY";
+        public String action;
+        public String ipAddress;
+        public String details;
+        public String timestamp = Instant.now().toString();
+
+        public DiscoveryActivityEvent() {}
+
+        public DiscoveryActivityEvent(String action, String ipAddress, String details) {
+            this.action = action;
+            this.ipAddress = ipAddress;
+            this.details = details;
+        }
+    }
+
+    public void onDiscoveryActivity(@ObservesAsync DiscoveryActivityEvent event) {
+        try {
+            String json = MAPPER.writeValueAsString(event);
+            for (WebSocketConnection conn : activeConnections) {
+                conn.sendTextAndAwait(json);
+            }
+        } catch (Exception e) {
+            LOG.error("Failed to broadcast discovery activity event", e);
         }
     }
 }

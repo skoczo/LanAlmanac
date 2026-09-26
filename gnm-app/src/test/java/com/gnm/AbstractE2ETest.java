@@ -17,7 +17,8 @@ public abstract class AbstractE2ETest {
     public static ComposeContainer environment =
             new ComposeContainer(new File(COMPOSE_FILE_PATH))
                     .withPull(false)
-                    .withExposedService("ne-linux-server", 22, Wait.forListeningPort().withStartupTimeout(Duration.ofMinutes(5)));
+                    .withExposedService("ne-linux-server", 22, Wait.forListeningPort().withStartupTimeout(Duration.ofMinutes(5)))
+                    .withExposedService("ne-router-sim", 22, Wait.forListeningPort().withStartupTimeout(Duration.ofMinutes(5)));
 
     static {
         environment.start();

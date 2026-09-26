@@ -123,7 +123,7 @@ public class IcmpSweeper {
 
     private void probeIp(String ip, java.util.Set<String> liveIps) {
         try {
-            if (isReachable(ip)) {
+            if (checkTargetReachable(ip)) {
                 LOG.debug("Host responsive to hybrid probe: " + ip);
                 liveIps.add(ip);
 
@@ -141,7 +141,7 @@ public class IcmpSweeper {
         }
     }
 
-    private boolean isReachable(String ip) {
+    public boolean checkTargetReachable(String ip) {
         // 1. Try system ping (-W 1 is the minimum on Linux; waitFor enforces our tighter timeout)
         Process p = null;
         try {

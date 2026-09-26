@@ -37,6 +37,9 @@ public class DeviceResource {
 
     @Inject
     FingerprintEngine fingerprintEngine;
+    
+    @Inject
+    com.gnm.fingerprint.DeviceLivenessManager livenessManager;
 
     @GET
     @Transactional
@@ -93,11 +96,9 @@ public class DeviceResource {
     @POST
     @Path("/probe-update")
     public Response triggerProbeUpdate(java.util.List<String> liveIpList) {
-        java.util.Set<String> liveIps = liveIpList != null
-            ? new java.util.HashSet<>(liveIpList)
-            : java.util.Collections.emptySet();
-        fingerprintEngine.updateProbeCounters(liveIps);
-        return Response.accepted(Map.of("message", "Probe counters updated", "liveIpCount", liveIps.size())).build();
+        livenessManager.clearCache();
+        livenessManager.evaluatePresence();
+        return Response.accepted(Map.of("message", "Smart presence evaluated")).build();
     }
 
     @GET
