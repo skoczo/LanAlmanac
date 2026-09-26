@@ -50,11 +50,26 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         try {
           const data = JSON.parse(event.data)
           const isAlarm = data.type === 'ALARM';
+          const isActivity = data.type === 'ACTIVITY';
+          
+          let title = 'Status Update';
+          let text = `${data.displayName} (${data.ipAddress}) is now ${data.status}`;
+          
+          if (isAlarm) {
+            title = 'Security Alert';
+            text = data.message;
+          } else if (data.type === 'NEW_DEVICE') {
+            title = 'New Host Discovered';
+          } else if (isActivity) {
+            title = 'Discovery Activity';
+            text = `${data.ipAddress}: ${data.action} - ${data.details || ''}`;
+          }
+
           const newToast: ToastMessage = {
             id: Math.random().toString(),
             type: data.type,
-            title: isAlarm ? 'Security Alert' : (data.type === 'NEW_DEVICE' ? 'New Host Discovered' : 'Status Update'),
-            text: isAlarm ? data.message : `${data.displayName} (${data.ipAddress}) is now ${data.status}`
+            title: title,
+            text: text
           }
           
           setToasts((prev) => {
