@@ -407,11 +407,11 @@ public class DeviceResource {
     @POST
     @Path("/{id}/links")
     @Transactional
-    public Response addDeviceLink(@PathParam("id") UUID id, Map<String, String> payload) {
+    public Response addDeviceLink(@PathParam("id") UUID id, Map<String, Object> payload) {
         PhysicalDevice source = PhysicalDevice.findById(id);
         if (source == null) return Response.status(Response.Status.NOT_FOUND).build();
 
-        String targetIdStr = payload.get("targetDeviceId");
+        String targetIdStr = payload.get("targetDeviceId") != null ? payload.get("targetDeviceId").toString() : null;
         if (targetIdStr == null || targetIdStr.isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST).entity("Target device ID required").build();
         }
@@ -423,8 +423,8 @@ public class DeviceResource {
         NetworkLink link = new NetworkLink();
         link.sourceDevice = source;
         link.targetDevice = target;
-        link.sourceInterface = payload.getOrDefault("sourceInterface", "manual");
-        link.targetInterface = payload.getOrDefault("targetInterface", "manual");
+        link.sourceInterface = "N/A";
+        link.targetInterface = "N/A";
         link.discoveryProtocol = DiscoveryProtocol.MANUAL;
         link.lastVerified = Instant.now();
         link.persist();

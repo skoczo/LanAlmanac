@@ -150,7 +150,8 @@ export const DeviceDetail: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'identities' | 'fingerprint' | 'correlation' | 'status_history' | 'services' | 'credentials' | 'monitor' | 'connections' | 'settings'>('overview')
   const [newLabel, setNewLabel] = useState('')
   const [showAddLink, setShowAddLink] = useState(false)
-  const [newLink, setNewLink] = useState({ targetDeviceId: '', sourceInterface: 'manual', targetInterface: 'manual' })
+  const [newLink, setNewLink] = useState({ targetDeviceId: '' })
+  const [deviceSearch, setDeviceSearch] = useState('')
   
   const { sealed, setShowUnsealModal } = useVault()
   
@@ -359,7 +360,8 @@ export const DeviceDetail: React.FC = () => {
       const linksData = await apiClient<NetworkLink[]>(`/api/devices/${deviceId}/links`)
       setLinks(linksData)
       setShowAddLink(false)
-      setNewLink({ targetDeviceId: '', sourceInterface: 'manual', targetInterface: 'manual' })
+      setNewLink({ targetDeviceId: '' })
+      setDeviceSearch('')
     } catch (err) {
       console.error(err)
     }
@@ -1469,27 +1471,25 @@ export const DeviceDetail: React.FC = () => {
             {showAddLink && (
               <form onSubmit={handleAddLink} className="p-5 rounded-xl border border-border-subtle bg-bg-surface-raised space-y-4">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-text-secondary">New Connection</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Search / Filter</label>
+                    <input type="text" className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={deviceSearch} onChange={e => setDeviceSearch(e.target.value)} placeholder="Type to filter..." />
+                  </div>
                   <div>
                     <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Target Device</label>
                     <select required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newLink.targetDeviceId} onChange={e => setNewLink({...newLink, targetDeviceId: e.target.value})}>
                       <option value="">-- Select Device --</option>
-                      {allDevices.map(d => (
-                        <option key={d.id} value={d.id}>{d.displayName}</option>
+                      {allDevices
+                        .filter(d => d.displayName.toLowerCase().includes(deviceSearch.toLowerCase()))
+                        .map(d => (
+                          <option key={d.id} value={d.id}>{d.displayName}</option>
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Source Interface</label>
-                    <input type="text" required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newLink.sourceInterface} onChange={e => setNewLink({...newLink, sourceInterface: e.target.value})} placeholder="e.g. eth0" />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Target Interface</label>
-                    <input type="text" required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newLink.targetInterface} onChange={e => setNewLink({...newLink, targetInterface: e.target.value})} placeholder="e.g. eth1" />
-                  </div>
                 </div>
                 <div className="flex justify-end gap-2 mt-4">
-                  <button type="button" onClick={() => setShowAddLink(false)} className="px-4 py-2 rounded-lg border border-border-subtle text-xs font-semibold hover:bg-bg-surface cursor-pointer">Cancel</button>
+                  <button type="button" onClick={() => { setShowAddLink(false); setDeviceSearch(''); }} className="px-4 py-2 rounded-lg border border-border-subtle text-xs font-semibold hover:bg-bg-surface cursor-pointer">Cancel</button>
                   <button type="submit" className="px-4 py-2 rounded-lg bg-accent-primary text-text-primary text-xs font-semibold hover:bg-accent-primary/90 cursor-pointer">Save Connection</button>
                 </div>
               </form>
@@ -1504,8 +1504,6 @@ export const DeviceDetail: React.FC = () => {
                 {links.map((link) => {
                   const isSource = link.sourceDevice.id === deviceId
                   const peerDevice = isSource ? link.targetDevice : link.sourceDevice
-                  const peerInterface = isSource ? link.targetInterface : link.sourceInterface
-                  const localInterface = isSource ? link.sourceInterface : link.targetInterface
 
                   return (
                     <div key={link.id} className="p-4 rounded-xl bg-bg-surface-raised border border-border-subtle flex items-center justify-between gap-4">
@@ -1519,12 +1517,7 @@ export const DeviceDetail: React.FC = () => {
                               {peerDevice.displayName}
                             </Link>
                           </h4>
-                          <p className="text-[10px] text-text-secondary mt-0.5">
-                            Local: <span className="font-mono text-text-primary">{localInterface}</span> 
-                            {' <-> '}
-                            Peer: <span className="font-mono text-text-primary">{peerInterface}</span>
-                          </p>
-                          <p className="text-[10px] text-text-muted mt-0.5">Protocol: {link.discoveryProtocol}</p>
+                          <p className="text-[10px] text-text-muted mt-0.5">Protocol: {link.discoveryProtocol === 'MANUAL' ? 'Manual Connection' : link.discoveryProtocol}</p>
                         </div>
                       </div>
                       <button
