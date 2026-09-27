@@ -81,9 +81,8 @@ public class TopologyEngine {
 
         LOG.info("Polling topology data for " + device.displayName + " at " + ipAddress);
 
-        try {
-            TransportMapping<? extends Address> transport = new DefaultUdpTransportMapping();
-            Snmp snmp = new Snmp(transport);
+        try (TransportMapping<? extends Address> transport = new DefaultUdpTransportMapping();
+             Snmp snmp = new Snmp(transport)) {
             transport.listen();
 
             Address targetAddress = GenericAddress.parse("udp:" + ipAddress + "/161");

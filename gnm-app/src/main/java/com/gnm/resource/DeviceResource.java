@@ -81,11 +81,11 @@ public class DeviceResource {
 
     private void initializeLazyCollections(PhysicalDevice device) {
         if (device != null) {
-            if (device.identities != null) device.identities.size();
-            if (device.fingerprints != null) device.fingerprints.size();
-            if (device.credentials != null) device.credentials.size();
-            if (device.services != null) device.services.size();
-            if (device.labels != null) device.labels.size();
+            if (device.identities != null) org.hibernate.Hibernate.initialize(device.identities);
+            if (device.fingerprints != null) org.hibernate.Hibernate.initialize(device.fingerprints);
+            if (device.credentials != null) org.hibernate.Hibernate.initialize(device.credentials);
+            if (device.services != null) org.hibernate.Hibernate.initialize(device.services);
+            if (device.labels != null) org.hibernate.Hibernate.initialize(device.labels);
         }
     }
 

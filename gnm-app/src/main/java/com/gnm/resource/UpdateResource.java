@@ -91,28 +91,28 @@ public class UpdateResource {
             session.auth().verify(10000);
 
             String command = "sudo apt-get update && sudo apt-get upgrade -y";
-            ChannelExec channel = session.createExecChannel(command);
+            try (ChannelExec channel = session.createExecChannel(command)) {
 
-            InputStream in = channel.getInvertedOut();
-            InputStream err = channel.getInvertedErr();
+                InputStream in = channel.getInvertedOut();
+                InputStream err = channel.getInvertedErr();
 
-            channel.open().verify(5000);
+                channel.open().verify(5000);
 
-            byte[] buffer = new byte[1024];
-            int i;
-            while ((i = in.read(buffer)) != -1) {
-                String out = new String(buffer, 0, i, StandardCharsets.UTF_8);
-                sink.send(sse.newEvent(out.replace("\n", "\\n")));
+                byte[] buffer = new byte[1024];
+                int i;
+                while ((i = in.read(buffer)) != -1) {
+                    String out = new String(buffer, 0, i, StandardCharsets.UTF_8);
+                    sink.send(sse.newEvent(out.replace("\n", "\\n")));
+                }
+
+                while ((i = err.read(buffer)) != -1) {
+                    String out = new String(buffer, 0, i, StandardCharsets.UTF_8);
+                    sink.send(sse.newEvent("ERROR: " + out.replace("\n", "\\n")));
+                }
+
+                channel.waitFor(EnumSet.of(ClientChannelEvent.CLOSED), 0);
+                sink.send(sse.newEvent("Update Complete."));
             }
-
-            while ((i = err.read(buffer)) != -1) {
-                String out = new String(buffer, 0, i, StandardCharsets.UTF_8);
-                sink.send(sse.newEvent("ERROR: " + out.replace("\n", "\\n")));
-            }
-
-            channel.waitFor(EnumSet.of(ClientChannelEvent.CLOSED), 0);
-            sink.send(sse.newEvent("Update Complete."));
-            channel.close(false);
             session.close(false);
 
         } catch (Exception e) {

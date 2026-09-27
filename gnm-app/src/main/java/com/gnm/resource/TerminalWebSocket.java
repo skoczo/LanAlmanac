@@ -150,6 +150,7 @@ public class TerminalWebSocket {
         Thread.startVirtualThread(() -> connectSsh(connection, finalResult));
     }
 
+    @SuppressWarnings("java:S2095")
     private void connectSsh(WebSocketConnection connection, SetupResult ctx) {
         try {
             log.infof("Entering connectSsh for ip: %s", ctx.ipAddress);

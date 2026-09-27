@@ -122,8 +122,11 @@ public class IcmpSweeper {
                     subnet, SWEEP_TIMEOUT_SECONDS, liveIps.size());
                 // Cancel remaining probes
                 futures.forEach(f -> f.cancel(true));
-            } catch (Exception e) {
+            } catch (InterruptedException e) {
                 LOG.debug("ICMP sweep executor interrupted", e);
+                Thread.currentThread().interrupt();
+            } catch (Exception e) {
+                LOG.debug("ICMP sweep execution error", e);
             }
         }
 
