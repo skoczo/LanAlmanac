@@ -130,21 +130,25 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
         }
         if (!threatFound) {
             // Diagnostic dump
-            List<ThreatEvent> allThreats = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().call(() -> ThreatEvent.listAll());
-            System.out.println("DIAG: All threats count=" + allThreats.size());
-            for (ThreatEvent t : allThreats) {
-                System.out.println("DIAG:   threat ip=" + t.ipAddress + " sev=" + t.severity + " desc=" + t.description);
-            }
-            List<NetworkIdentity> allIds = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().call(() -> NetworkIdentity.listAll());
-            System.out.println("DIAG: All identities count=" + allIds.size());
-            for (NetworkIdentity ni : allIds) {
-                System.out.println("DIAG:   identity ip=" + ni.ipAddress + " mac=" + ni.macAddress + " device=" + ni.physicalDevice.displayName);
-            }
-            List<FingerprintVector> allFvs = io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().call(() -> FingerprintVector.listAll());
-            System.out.println("DIAG: All FVs count=" + allFvs.size());
-            for (FingerprintVector fv : allFvs) {
-                System.out.println("DIAG:   FV sshHostKeys=" + fv.sshHostKeys + " device=" + (fv.physicalDevice != null ? fv.physicalDevice.displayName : "null"));
-            }
+            io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
+                List<ThreatEvent> allThreats = ThreatEvent.listAll();
+                System.out.println("DIAG: All threats count=" + allThreats.size());
+                for (ThreatEvent t : allThreats) {
+                    System.out.println("DIAG:   threat ip=" + t.ipAddress + " sev=" + t.severity + " desc=" + t.description);
+                }
+                List<NetworkIdentity> allIds = NetworkIdentity.listAll();
+                System.out.println("DIAG: All identities count=" + allIds.size());
+                for (NetworkIdentity ni : allIds) {
+                    String devName = ni.physicalDevice != null ? ni.physicalDevice.displayName : "null";
+                    System.out.println("DIAG:   identity ip=" + ni.ipAddress + " mac=" + ni.macAddress + " device=" + devName);
+                }
+                List<FingerprintVector> allFvs = FingerprintVector.listAll();
+                System.out.println("DIAG: All FVs count=" + allFvs.size());
+                for (FingerprintVector fv : allFvs) {
+                    String devName = fv.physicalDevice != null ? fv.physicalDevice.displayName : "null";
+                    System.out.println("DIAG:   FV sshHostKeys=" + fv.sshHostKeys + " device=" + devName);
+                }
+            });
         }
         assertTrue(threatFound, "A HIGH severity ThreatEvent should be created for SSH key mismatch");
         } finally {

@@ -31,8 +31,19 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
+      - name: Setup docker-compose compatibility for Testcontainers
+        run: |
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.29.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+
+      - name: Build Testcontainer Docker Images
+        run: |
+          docker build -t gnm-ne-linux-server:latest -f Dockerfile.ne-linux-server .
+          docker build -t gnm-ne-router-sim:latest -f Dockerfile.ne-router-sim .
+          docker build -t gnm-traffic-generator:latest -f Dockerfile.traffic-generator .
+
       - name: Run Backend Tests & Generate Coverage
-        run: ./gradlew :gnm-app:test || true
+        run: ./gradlew :gnm-app:test
 
       - name: Run SonarCloud Static Analysis Scan
         env:
