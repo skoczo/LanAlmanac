@@ -23,7 +23,7 @@ public class SshHostKeyProbe implements NetworkProbe {
 
     @Override
     public int getTimeoutMs() {
-        return 2000;
+        return 10000;
     }
 
     @Override
@@ -68,8 +68,8 @@ public class SshHostKeyProbe implements NetworkProbe {
                         return false; // Intentionally abort session after capturing server public key
                     });
                     client.start();
-                    try (ClientSession session = client.connect("fakeuser", targetHost, port).verify(2000).getSession()) {
-                        session.auth().verify(2000); 
+                    try (ClientSession session = client.connect("fakeuser", targetHost, port).verify(10000).getSession()) {
+                        session.auth().verify(10000); 
                     } catch (Exception e) {
                         if (e instanceof java.net.ConnectException || 
                             e instanceof java.net.SocketTimeoutException || 

@@ -182,7 +182,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
                 activeThreat = threats.get(0);
                 break;
             }
-            Thread.sleep(200);
+            Thread.sleep(500);
         }
         assertNotNull(activeThreat, "Threat should be created for initial mismatch");
 
