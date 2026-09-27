@@ -1,7 +1,6 @@
 package com.gnm.service;
 
 import com.gnm.model.Credential;
-import com.gnm.model.NetworkIdentity;
 import com.gnm.model.PhysicalDevice;
 import com.gnm.model.GlobalSetting;
 import com.gnm.model.Telemetry;
@@ -41,7 +40,11 @@ public class TelemetryEngine {
         long intervalSec = 60;
         GlobalSetting setting = GlobalSetting.findById("POLL_INTERVAL_SEC");
         if (setting != null) {
-            try { intervalSec = Long.parseLong(setting.value); } catch (Exception e) {}
+            try { 
+                intervalSec = Long.parseLong(setting.value); 
+            } catch (NumberFormatException e) {
+                log.debug("Invalid POLL_INTERVAL_SEC value, using default 60s");
+            }
         }
         if (Instant.now().isBefore(lastPollTime.plusSeconds(intervalSec))) {
             return;
@@ -146,8 +149,7 @@ public class TelemetryEngine {
 
     private void pollSnmpMetrics(PhysicalDevice device, String ipAddress, Credential cred) {
         // Simplified SNMP polling (in a real scenario, this would use org.snmp4j to query OIDs)
-        // For demonstration of the pipeline, we generate simulated metrics if SNMP is configured.
-        log.info("Simulating SNMP metrics for " + ipAddress);
+        log.infof("Simulating SNMP metrics for %s (cred: %s)", ipAddress, cred != null ? cred.username : "none");
         saveMetric(device, "cpu_load_1m", Math.random() * 2.0);
         saveMetric(device, "ram_usage_percent", 30.0 + (Math.random() * 40.0));
     }
@@ -165,7 +167,11 @@ public class TelemetryEngine {
         long retentionDays = 30;
         GlobalSetting setting = GlobalSetting.findById("TELEMETRY_RETENTION_DAYS");
         if (setting != null) {
-            try { retentionDays = Long.parseLong(setting.value); } catch (Exception e) {}
+            try { 
+                retentionDays = Long.parseLong(setting.value); 
+            } catch (NumberFormatException e) {
+                log.debug("Invalid TELEMETRY_RETENTION_DAYS value, using default 30 days");
+            }
         }
         Instant cutoff = Instant.now().minus(retentionDays, java.time.temporal.ChronoUnit.DAYS);
         long deleted = Telemetry.delete("id.time < ?1", cutoff);

@@ -9,7 +9,6 @@ import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.scheduler.Scheduled;
 import org.jboss.logging.Logger;
 import com.gnm.model.GlobalSetting;
-import com.gnm.fingerprint.FingerprintEngine;
 
 @ApplicationScoped
 public class DiscoveryScheduler {
@@ -21,9 +20,6 @@ public class DiscoveryScheduler {
 
     @Inject
     private IcmpSweeper icmpSweeper;
-
-    @Inject
-    private FingerprintEngine fingerprintEngine;
 
     @Inject
     private ArpScanner arpScanner;

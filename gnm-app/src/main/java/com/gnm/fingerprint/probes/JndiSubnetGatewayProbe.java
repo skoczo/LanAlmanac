@@ -53,12 +53,12 @@ public class JndiSubnetGatewayProbe implements NetworkProbe {
      * Performs direct JNDI reverse PTR lookup against the specified local DNS server IP.
      */
     private String resolveViaJndi(String ipAddress, String dnsServer) throws Exception {
-        Hashtable<String, String> env = new Hashtable<>();
+        java.util.Map<String, String> env = new java.util.HashMap<>();
         env.put("java.naming.factory.initial", "com.sun.jndi.dns.DnsContextFactory");
         env.put("java.naming.provider.url", "dns://" + dnsServer);
         env.put("com.sun.jndi.dns.timeout.initial", "400");
         env.put("com.sun.jndi.dns.timeout.retries", "1");
-        DirContext ctx = new InitialDirContext(env);
+        DirContext ctx = new InitialDirContext(new Hashtable<>(env));
         String[] parts = ipAddress.split("\\.");
         if (parts.length == 4) {
             String reverseIp = parts[3] + "." + parts[2] + "." + parts[1] + "." + parts[0] + ".in-addr.arpa";

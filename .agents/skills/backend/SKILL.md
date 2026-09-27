@@ -29,3 +29,5 @@ description: Guidelines and stack for developing the Quarkus Java backend for Gr
 - Never log credentials, payloads, or cryptographic keys.
 - Write tests utilizing Quarkus Dev Services where appropriate.
 - Keep REST endpoints non-blocking where possible, delegating to virtual threads.
+- Run `./gradlew detectBackendIssues` to verify backend static analysis (PMD/Javac locally, or SonarCloud when `SONAR_TOKEN` is exported). Run `./gradlew sonar` to upload directly to SonarCloud.
+

@@ -48,5 +48,5 @@
       ]
     }
   },
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y libpcap-dev && ./gradlew eclipse"
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y libpcap-dev && (cd frontend && npm install) && ./gradlew eclipse"
 }

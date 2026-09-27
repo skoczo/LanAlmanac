@@ -2,7 +2,6 @@ package com.gnm.fingerprint;
 
 import com.gnm.model.*;
 import com.gnm.model.enums.DeviceStatus;
-import com.gnm.model.enums.DeviceType;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -27,6 +26,7 @@ public class DeviceIdentityManagerTest {
         FingerprintCorrelationEvent.deleteAll();
         NetworkService.deleteAll();
         NetworkIdentity.deleteAll();
+        DeviceStatusHistory.deleteAll();
         FingerprintVector.deleteAll();
         PhysicalDevice.deleteAll();
         ThreatEvent.deleteAll();

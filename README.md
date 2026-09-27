@@ -1,5 +1,10 @@
 # LanAlmanac
 
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=skoczo_LanAlmanac&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=skoczo_LanAlmanac)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=skoczo_LanAlmanac&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=skoczo_LanAlmanac)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=skoczo_LanAlmanac&metric=bugs)](https://sonarcloud.io/summary/new_code?id=skoczo_LanAlmanac)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=skoczo_LanAlmanac&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=skoczo_LanAlmanac)
+
 LanAlmanac is a self-hosted LAN management tool designed as a **modular monolith** with a Quarkus JAX-RS/WebSocket backend and a premium React 19 + Tailwind v4 dark-mode SPA frontend dashboard.
 
 ---

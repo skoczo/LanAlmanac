@@ -4,22 +4,13 @@ package com.gnm.fingerprint;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 import com.gnm.model.*;
 import com.gnm.model.enums.*;
-import org.apache.sshd.client.SshClient;
-import org.apache.sshd.client.session.ClientSession;
-import org.apache.sshd.common.config.keys.KeyUtils;
-import org.apache.sshd.common.digest.BuiltinDigests;
 
 @ApplicationScoped
 public class DeviceIdentityManager {

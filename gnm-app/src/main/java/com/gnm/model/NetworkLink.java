@@ -2,7 +2,6 @@ package com.gnm.model;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
-import org.hibernate.annotations.GenericGenerator;
 import java.time.Instant;
 import java.util.UUID;
 import com.gnm.model.enums.DiscoveryProtocol;

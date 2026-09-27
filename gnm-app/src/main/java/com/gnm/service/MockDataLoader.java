@@ -5,7 +5,6 @@ import jakarta.enterprise.event.Observes;
 import jakarta.transaction.Transactional;
 import io.quarkus.runtime.StartupEvent;
 import org.jboss.logging.Logger;
-import com.gnm.model.*;
 
 @ApplicationScoped
 public class MockDataLoader {

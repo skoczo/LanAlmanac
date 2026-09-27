@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.gnm.model.Credential;
-import com.gnm.model.NetworkIdentity;
 import com.gnm.model.NetworkService;
 import com.gnm.model.PhysicalDevice;
 import com.gnm.model.ThreatEvent;
@@ -17,7 +16,6 @@ import io.quarkus.websockets.next.PathParam;
 import io.quarkus.websockets.next.WebSocket;
 import io.quarkus.websockets.next.WebSocketConnection;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.channel.ChannelShell;
 import org.apache.sshd.client.channel.ClientChannelEvent;
@@ -28,7 +26,6 @@ import org.jboss.logging.Logger;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -322,7 +319,7 @@ public class TerminalWebSocket {
             connection.sendTextAndAwait("\r\nSSH Error: " + e.getMessage() + "\r\n");
             connection.close();
             cleanup(connection.id());
-            try { client.stop(); } catch (Exception ignored) {}
+            try { client.stop(); } catch (Exception stopEx) { log.debug("Error stopping SSH client", stopEx); }
         }
         } catch (Throwable t) {
             log.error("CRITICAL FATAL ERROR IN CONNECTSSH: ", t);
@@ -371,9 +368,9 @@ public class TerminalWebSocket {
     private void cleanup(String connectionId) {
         SshSessionContext ctx = activeSessions.remove(connectionId);
         if (ctx != null) {
-            try { if (ctx.channel != null) ctx.channel.close(true); } catch (Exception ignored) {}
-            try { if (ctx.session != null) ctx.session.close(true); } catch (Exception ignored) {}
-            try { if (ctx.client != null) ctx.client.stop(); } catch (Exception ignored) {}
+            try { if (ctx.channel != null) ctx.channel.close(true); } catch (Exception e) { log.debug("Error closing SSH channel", e); }
+            try { if (ctx.session != null) ctx.session.close(true); } catch (Exception e) { log.debug("Error closing SSH session", e); }
+            try { if (ctx.client != null) ctx.client.stop(); } catch (Exception e) { log.debug("Error stopping SSH client", e); }
         }
     }
 

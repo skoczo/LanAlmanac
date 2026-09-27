@@ -51,7 +51,9 @@ public class SshHostKeyProbe implements NetworkProbe {
                 if (!portsToTry.contains(testPort)) {
                     portsToTry.add(0, testPort);
                 }
-            } catch (Exception ignored) {}
+            } catch (NumberFormatException e) {
+                LOG.debug("Invalid test.ssh.port property, ignoring override");
+            }
         }
 
 

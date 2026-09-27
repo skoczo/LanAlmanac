@@ -28,7 +28,7 @@ public class DefaultPortScannerEngine implements PortScannerEngine {
                     openPorts.add(port);
                     LOG.debugf("Discovered open port %d on %s", port, ipAddress);
                 } catch (Exception e) {
-                    // Connection refused or timed out, port is closed or filtered
+                    LOG.debugf("Port %d on %s is closed or filtered: %s", port, ipAddress, e.getMessage());
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

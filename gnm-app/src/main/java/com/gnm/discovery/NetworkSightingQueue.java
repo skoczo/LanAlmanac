@@ -1,6 +1,7 @@
 package com.gnm.discovery;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import com.gnm.model.NetworkSighting;
 
@@ -23,7 +24,7 @@ import com.gnm.model.NetworkSighting;
 public class NetworkSightingQueue {
 
 
-    private final LinkedBlockingQueue<NetworkSighting> queue = new LinkedBlockingQueue<>(1000);
+    private final BlockingQueue<NetworkSighting> queue = new LinkedBlockingQueue<>(1000);
 
     public boolean offer(NetworkSighting sighting) {
         return queue.offer(sighting);

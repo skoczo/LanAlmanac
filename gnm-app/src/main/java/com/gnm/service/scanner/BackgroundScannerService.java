@@ -4,12 +4,9 @@ import com.gnm.dto.ScanProgress;
 import com.gnm.model.FingerprintVector;
 import com.gnm.model.PhysicalDevice;
 import com.gnm.model.enums.PortScanState;
-import io.quarkus.runtime.StartupEvent;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
 import java.util.ArrayList;
@@ -28,7 +25,7 @@ public class BackgroundScannerService {
     private final Semaphore scanSemaphore = new Semaphore(MAX_CONCURRENT_SCANS);
     
     private final BlockingQueue<UUID> scanQueue = new LinkedBlockingQueue<>();
-    private final ConcurrentHashMap<UUID, String> activeScans = new ConcurrentHashMap<>();
+    private final java.util.Map<UUID, String> activeScans = new ConcurrentHashMap<>();
     private final AtomicInteger totalScannedCount = new AtomicInteger(0);
 
     @Inject

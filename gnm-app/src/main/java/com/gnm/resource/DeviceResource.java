@@ -23,16 +23,18 @@ import com.gnm.model.enums.DeviceType;
 import com.gnm.discovery.NetworkSightingQueue;
 import com.gnm.fingerprint.FingerprintEngine;
 import jakarta.inject.Inject;
-import java.net.InetAddress;
 import java.time.Instant;
 import com.gnm.model.NetworkLink;
 import com.gnm.model.enums.DiscoveryProtocol;
+import org.jboss.logging.Logger;
 
 @Path("/api/devices")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @RolesAllowed("gnm-admin")
 public class DeviceResource {
+
+    private static final Logger LOG = Logger.getLogger(DeviceResource.class);
 
     @Inject
     NetworkSightingQueue sightingQueue;
@@ -206,7 +208,9 @@ public class DeviceResource {
         if (payload.containsKey("deviceType")) {
             try {
                 device.deviceType = com.gnm.model.enums.DeviceType.valueOf(payload.get("deviceType").toUpperCase());
-            } catch (Exception ignored) {}
+            } catch (IllegalArgumentException e) {
+                LOG.debug("Invalid deviceType provided in payload, keeping existing type");
+            }
         }
         if (payload.containsKey("manufacturer")) device.manufacturer = payload.get("manufacturer");
         if (payload.containsKey("model")) device.model = payload.get("model");
@@ -323,7 +327,7 @@ public class DeviceResource {
                     sightingQueue.offer(sighting);
                 }
             } catch (Exception e) {
-                // Ignored
+                LOG.debugf("Manual discovery check for IP %s failed: %s", ip, e.getMessage());
             }
         });
         

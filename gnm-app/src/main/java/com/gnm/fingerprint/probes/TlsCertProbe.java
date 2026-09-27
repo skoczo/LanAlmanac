@@ -1,7 +1,6 @@
 package com.gnm.fingerprint.probes;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import org.jboss.logging.Logger;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
@@ -22,7 +21,6 @@ import java.util.List;
  */
 @ApplicationScoped
 public class TlsCertProbe implements NetworkProbe {
-    private static final Logger LOG = Logger.getLogger(TlsCertProbe.class);
 
     @Override
     public int getTimeoutMs() {
@@ -43,8 +41,11 @@ public class TlsCertProbe implements NetworkProbe {
             // Trust manager that accepts self-signed network device certificates
             TrustManager[] trustAllCerts = new TrustManager[] {
                 new X509TrustManager() {
-                    public X509Certificate[] getAcceptedIssuers() { return null; }
+                    @Override
+                    public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+                    @Override
                     public void checkClientTrusted(X509Certificate[] certs, String authType) {}
+                    @Override
                     public void checkServerTrusted(X509Certificate[] certs, String authType) {}
                 }
             };

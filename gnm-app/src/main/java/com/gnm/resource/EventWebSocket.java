@@ -3,7 +3,6 @@ package com.gnm.resource;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.ObservesAsync;
 import jakarta.enterprise.event.Observes;
-import jakarta.inject.Inject;
 import io.quarkus.websockets.next.*;
 import org.jboss.logging.Logger;
 import com.fasterxml.jackson.databind.ObjectMapper;

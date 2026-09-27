@@ -5,7 +5,6 @@ import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import io.quarkus.scheduler.Scheduled;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.time.Instant;
@@ -77,9 +76,13 @@ public class DeviceLivenessManager {
                     int missed = Integer.parseInt(offlineSetting.value);
                     offlineSeconds = missed * 60;
                     activeCheckSeconds = Math.max(60, offlineSeconds - 60); // Check 1 min before it goes offline
-                } catch (Exception ignored) {}
+                } catch (NumberFormatException e) {
+                    LOG.debug("Invalid DEVICE_OFFLINE_MISSED_PROBES_THRESHOLD, using defaults");
+                }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            LOG.debug("Failed to read offline threshold setting, using defaults", e);
+        }
 
         List<PhysicalDevice> allDevices;
         try {

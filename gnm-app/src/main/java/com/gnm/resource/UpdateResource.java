@@ -9,7 +9,6 @@ import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.sse.Sse;
 import jakarta.ws.rs.sse.SseEventSink;
 import org.apache.sshd.client.SshClient;
@@ -121,7 +120,11 @@ public class UpdateResource {
             sink.send(sse.newEvent("Update Failed: " + e.getMessage()));
         } finally {
             sink.close();
-            try { client.stop(); } catch (Exception ignored) {}
+            try { 
+                client.stop(); 
+            } catch (Exception stopEx) {
+                log.debug("Error stopping SSH client", stopEx);
+            }
         }
     }
 }

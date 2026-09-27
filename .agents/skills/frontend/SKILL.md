@@ -29,3 +29,5 @@ description: Guidelines and stack for developing the React SPA frontend for Grea
 - Use `lucide-react` for icons.
 - Ensure all components are accessible (Shadcn handles most of this out of the box).
 - Format dates via `date-fns`.
+- Run `./gradlew detectFrontendIssues` to verify TypeScript types, ESLint rules, and detect unimported frontend files.
+

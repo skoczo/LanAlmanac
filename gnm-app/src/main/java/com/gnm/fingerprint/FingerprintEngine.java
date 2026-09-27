@@ -4,7 +4,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import io.quarkus.runtime.StartupEvent;
 import io.quarkus.runtime.ShutdownEvent;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -14,18 +13,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.util.UUID;
 
 import com.gnm.discovery.NetworkSightingQueue;
 import com.gnm.model.*;
-import com.gnm.model.enums.*;
-
-import org.apache.sshd.client.SshClient;
-import org.apache.sshd.client.session.ClientSession;
-import org.apache.sshd.common.config.keys.KeyUtils;
-import org.apache.sshd.common.digest.BuiltinDigests;
-import java.util.concurrent.atomic.AtomicReference;
 
 import jakarta.enterprise.inject.Instance;
 import com.gnm.fingerprint.probes.NetworkProbe;
@@ -152,11 +142,6 @@ public class FingerprintEngine {
 
                 String debounceKey = sighting.ipAddress + "|" + sighting.macAddress + "|" + (sighting.source != null ? sighting.source : "");
                 java.time.Instant lastDbUpdate = lastDbUpdateTimes.get(debounceKey);
-                boolean isArpScanOnly = sighting.rawMetadata != null
-                    && sighting.rawMetadata.contains("\"flags\":")
-                    && !sighting.rawMetadata.contains("\"host\"")
-                    && !sighting.rawMetadata.contains("\"dhcp\"")
-                    && !sighting.rawMetadata.contains("\"mdns\"");
 
                 boolean isIcmpSweep = "ICMP_SWEEP".equals(sighting.source);
                 boolean isManual = "MANUAL_DISCOVERY".equals(sighting.source);
@@ -167,7 +152,7 @@ public class FingerprintEngine {
 
                 lastDbUpdateTimes.put(debounceKey, java.time.Instant.now());
 
-                java.util.concurrent.Future<?> future = executorService.submit(() -> {
+                executorService.submit(() -> {
                     io.quarkus.arc.Arc.container().requestContext().activate();
                     try {
                         processSighting(sighting);
@@ -295,7 +280,7 @@ public class FingerprintEngine {
                     hostname = json.get("host").asText();
                 }
             } catch (Exception e) {
-                // Ignore
+                LOG.debugf("Failed parsing hostname from sighting metadata: %s", e.getMessage());
             }
         }
 
@@ -351,7 +336,7 @@ public class FingerprintEngine {
                     v.openPorts = pts;
                 }
             } catch (Exception e) {
-                // Parsing issues, fallback to empty metadata
+                LOG.debugf("Failed parsing metadata JSON for vector: %s", e.getMessage());
             }
         }
         return v;

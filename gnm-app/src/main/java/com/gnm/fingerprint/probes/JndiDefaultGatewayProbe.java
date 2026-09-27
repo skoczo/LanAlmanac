@@ -1,7 +1,6 @@
 package com.gnm.fingerprint.probes;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import org.jboss.logging.Logger;
 import javax.naming.directory.DirContext;
 import javax.naming.directory.InitialDirContext;
 import javax.naming.directory.Attributes;
@@ -22,7 +21,6 @@ import java.util.concurrent.TimeUnit;
  */
 @ApplicationScoped
 public class JndiDefaultGatewayProbe implements NetworkProbe {
-    private static final Logger LOG = Logger.getLogger(JndiDefaultGatewayProbe.class);
     private static final ExecutorService EXECUTOR = Executors.newCachedThreadPool();
 
     @Override
@@ -64,7 +62,7 @@ public class JndiDefaultGatewayProbe implements NetworkProbe {
                     }
                 }
             }
-        } catch (Exception e) {
+        } catch (Exception ignored) {
             // Return null if 'ip' utility is not installed or accessible on host OS
         }
         return null;
@@ -75,12 +73,12 @@ public class JndiDefaultGatewayProbe implements NetworkProbe {
      * Performs a direct DNS reverse PTR lookup for target IP via JNDI against specified DNS server.
      */
     private String resolveViaJndi(String ipAddress, String dnsServer) throws Exception {
-        Hashtable<String, String> env = new Hashtable<>();
+        java.util.Map<String, String> env = new java.util.HashMap<>();
         env.put("java.naming.factory.initial", "com.sun.jndi.dns.DnsContextFactory");
         env.put("java.naming.provider.url", "dns://" + dnsServer);
         env.put("com.sun.jndi.dns.timeout.initial", "400");
         env.put("com.sun.jndi.dns.timeout.retries", "1");
-        DirContext ctx = new InitialDirContext(env);
+        DirContext ctx = new InitialDirContext(new Hashtable<>(env));
         String[] parts = ipAddress.split("\\.");
         if (parts.length == 4) {
             String reverseIp = parts[3] + "." + parts[2] + "." + parts[1] + "." + parts[0] + ".in-addr.arpa";

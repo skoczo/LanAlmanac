@@ -172,7 +172,7 @@ public class PassivePacketListener {
             try {
                 handle.breakLoop();
             } catch (Exception e) {
-                // Ignore break loop exception
+                LOG.debugf("Ignored pcap breakLoop error: %s", e.getMessage());
             }
             handle.close();
         }
@@ -344,7 +344,7 @@ public class PassivePacketListener {
                                 }
                             }
                         } catch (Exception e) {
-                            // Best-effort parsing; fallback to empty metadata
+                            LOG.debugf("Failed parsing DHCP options: %s", e.getMessage());
                         }
                         
                         // Build JSON metadata from parsed options

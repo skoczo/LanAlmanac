@@ -82,7 +82,8 @@ public class ArpScanner {
             String errorMsg = "Missing RAW socket privileges (NET_RAW / NET_ADMIN in Docker) or interface " + iface + " is unavailable: " + e.getMessage();
             LOG.error("Active ARP scan failed: " + errorMsg);
             moduleManager.updateError(DiscoveryModuleManager.ACTIVE_ARP_ID, errorMsg);
-            return Collections.emptySet();
+            LOG.info("Falling back to system ARP cache (/proc/net/arp)...");
+            return runArpCacheFallback();
         }
     }
 
@@ -274,7 +275,8 @@ public class ArpScanner {
             if (setting != null && setting.value != null && !setting.value.trim().isEmpty()) {
                 return setting.value.trim();
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            LOG.debug("Could not read gnm.subnet setting, using default filter", e);
         }
         return subnetFilter.getSubnetConfig();
     }

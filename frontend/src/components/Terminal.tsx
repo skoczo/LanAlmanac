@@ -84,7 +84,9 @@ export const Terminal: React.FC<TerminalProps> = ({ deviceId, credentialId, onCl
             if (ws && ws.readyState === WebSocket.OPEN) {
               ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
             }
-          } catch (e) {}
+          } catch {
+            // Ignore fit error
+          }
         }
       }
 
@@ -119,7 +121,9 @@ export const Terminal: React.FC<TerminalProps> = ({ deviceId, credentialId, onCl
               rows: xtermRef.current.rows 
             }))
           }
-        } catch (e) {}
+        } catch {
+          // Ignore fit error
+        }
       }
     }
 

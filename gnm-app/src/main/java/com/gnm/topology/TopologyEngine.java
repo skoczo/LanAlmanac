@@ -1,10 +1,8 @@
 package com.gnm.topology;
 
 import com.gnm.model.Credential;
-import com.gnm.model.NetworkLink;
 import com.gnm.model.PhysicalDevice;
 import com.gnm.model.enums.DeviceType;
-import com.gnm.model.enums.DiscoveryProtocol;
 import com.gnm.model.enums.ManagementState;
 import com.gnm.service.VaultEngine;
 import io.quarkus.scheduler.Scheduled;
@@ -21,7 +19,6 @@ import org.snmp4j.mp.SnmpConstants;
 import org.snmp4j.smi.*;
 import org.snmp4j.transport.DefaultUdpTransportMapping;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 

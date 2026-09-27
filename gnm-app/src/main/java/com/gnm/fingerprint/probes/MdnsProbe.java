@@ -1,7 +1,6 @@
 package com.gnm.fingerprint.probes;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import org.jboss.logging.Logger;
 import java.net.DatagramSocket;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
@@ -21,7 +20,6 @@ import java.io.DataOutputStream;
  */
 @ApplicationScoped
 public class MdnsProbe implements NetworkProbe {
-    private static final Logger LOG = Logger.getLogger(MdnsProbe.class);
 
     @Override
     public int getTimeoutMs() {

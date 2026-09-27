@@ -16,6 +16,12 @@
 ## Documentation
 - Refer to `docs/architecture.md` for detailed architectural decisions, database schemas, and module breakdowns.
 
+## Issue & Dead Code Detection Tasks
+- `./gradlew detectBackendIssues`: Scans backend (`gnm-app`) Java source files using PMD/Javac, and executes SonarCloud analysis if `SONAR_TOKEN` is set.
+- `./gradlew detectFrontendIssues`: Runs TypeScript type checking (`tsc -b`), ESLint, and unimported dead code scanner on `frontend`.
+- `./gradlew detectAllIssues`: Executes both backend and frontend issue scans sequentially.
+- `./gradlew sonar`: Executes SonarCloud analysis (pass `-Dsonar.token=<your-token>`).
+
 Whenever you make changes to the backend, you must always run /home/skoczo/workspace/GreatNetworkManager/run_tests.sh to verify your changes before finishing.
 
 Don't use scripts to fix code. Just change code we are wasting tokens on script creation and still script is not working well.

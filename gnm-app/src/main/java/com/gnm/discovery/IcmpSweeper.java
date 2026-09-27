@@ -65,7 +65,9 @@ public class IcmpSweeper {
             for (CompletableFuture<java.util.Set<String>> f : subnetFutures) {
                 try {
                     allLiveIps.addAll(f.get(SWEEP_TIMEOUT_SECONDS + 5, TimeUnit.SECONDS));
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    LOG.debug("Subnet ICMP sweep task interrupted or timed out", e);
+                }
             }
         } catch (Exception e) {
             moduleManager.updateError(DiscoveryModuleManager.ICMP_SWEEPER_ID, "ICMP sweep error: " + e.getMessage());
@@ -120,7 +122,9 @@ public class IcmpSweeper {
                     subnet, SWEEP_TIMEOUT_SECONDS, liveIps.size());
                 // Cancel remaining probes
                 futures.forEach(f -> f.cancel(true));
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                LOG.debug("ICMP sweep executor interrupted", e);
+            }
         }
 
         LOG.info("Active ICMP sweep completed in " + (System.currentTimeMillis() - startTime) + " ms.");
@@ -143,7 +147,7 @@ public class IcmpSweeper {
                 sightingQueue.offer(sighting);
             }
         } catch (Exception e) {
-            // Skip unreachable hosts silently
+            LOG.debugf("Host %s unreachable via ICMP sweep: %s", ip, e.getMessage());
         }
     }
 
@@ -217,7 +221,9 @@ public class IcmpSweeper {
             if (setting != null && setting.value != null && !setting.value.isBlank()) {
                 return setting.value.trim();
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            LOG.debug("Could not read gnm.listen.interface setting, using default interface", e);
+        }
         return "eth0";
     }
 }
