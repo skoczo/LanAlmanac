@@ -30,14 +30,12 @@ public class PassivePacketListener {
     private final java.util.Map<String, String> dhcpCache = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Map<String, String> ipToMacCache = new java.util.concurrent.ConcurrentHashMap<>();
 
-    @Inject
-    NetworkSightingQueue sightingQueue;
+    private final NetworkSightingQueue sightingQueue;
 
     @Inject
     com.gnm.service.SubnetFilter subnetFilter;
 
-    @Inject
-    DiscoveryModuleManager moduleManager;
+    private final DiscoveryModuleManager moduleManager;
 
 
     @ConfigProperty(name = "gnm.listen.interface", defaultValue = "eth0")
@@ -425,5 +423,11 @@ public class PassivePacketListener {
             LOG.error("Failed to parse sniffed packet", e);
         }
         return Optional.empty();
+    }
+
+    @Inject
+    public PassivePacketListener(NetworkSightingQueue sightingQueue, DiscoveryModuleManager moduleManager) {
+        this.sightingQueue = sightingQueue;
+        this.moduleManager = moduleManager;
     }
 }

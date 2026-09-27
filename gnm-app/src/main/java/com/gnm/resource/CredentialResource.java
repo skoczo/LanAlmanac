@@ -22,8 +22,7 @@ import java.util.HashMap;
 @Consumes(MediaType.APPLICATION_JSON)
 public class CredentialResource {
 
-    @Inject
-    VaultEngine vaultEngine;
+    private final VaultEngine vaultEngine;
 
     @GET
     @Path("/device/{deviceId}")
@@ -156,5 +155,10 @@ public class CredentialResource {
         cred.persist();
         
         return Response.ok(Map.of("id", cred.id)).build();
+    }
+
+    @Inject
+    public CredentialResource(VaultEngine vaultEngine) {
+        this.vaultEngine = vaultEngine;
     }
 }

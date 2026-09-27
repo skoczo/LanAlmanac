@@ -15,14 +15,14 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
-public class LocalAuthResourceTest {
+class LocalAuthResourceTest {
 
     @Inject
     PasswordService passwordService;
 
     @BeforeEach
     @Transactional
-    public void setup() {
+    void setup() {
         GnmUser.deleteAll();
 
         GnmUser user = new GnmUser();
@@ -36,7 +36,7 @@ public class LocalAuthResourceTest {
     }
 
     @Test
-    public void testLoginSuccess() {
+    void testLoginSuccess() {
         given()
             .contentType(ContentType.JSON)
             .body(Map.of(
@@ -52,7 +52,7 @@ public class LocalAuthResourceTest {
     }
 
     @Test
-    public void testLoginInvalidCredentials() {
+    void testLoginInvalidCredentials() {
         // Wrong password
         given()
             .contentType(ContentType.JSON)
@@ -71,7 +71,7 @@ public class LocalAuthResourceTest {
     }
 
     @Test
-    public void testChangePasswordSuccess() {
+    void testChangePasswordSuccess() {
         // First login to get token
         String token = given()
             .contentType(ContentType.JSON)

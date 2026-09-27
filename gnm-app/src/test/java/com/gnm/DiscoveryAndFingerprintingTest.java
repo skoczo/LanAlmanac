@@ -2,7 +2,6 @@ package com.gnm;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
-import io.restassured.RestAssured;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
@@ -11,11 +10,11 @@ import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
-public class DiscoveryAndFingerprintingTest extends AbstractE2ETest {
+class DiscoveryAndFingerprintingTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testActiveScanDiscoversDevices() throws Exception {
+    void testActiveScanDiscoversDevices() throws Exception {
         // Given: The ne-router-sim container is running (192.168.100.20)
         // When: A manual discovery is triggered via the API
         String scanPayload = "{\"ipAddress\": \"192.168.100.20\"}";
@@ -58,7 +57,7 @@ public class DiscoveryAndFingerprintingTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testPassiveDhcpSniffing() throws Exception {
+    void testPassiveDhcpSniffing() throws Exception {
         // Given: In TEST mode, the passive packet sniffer is disabled because the test JVM
         // doesn't have Layer 2 access to the Docker bridge network. 
         // We simulate the PassivePacketListener intercepting a DHCP broadcast.
@@ -101,7 +100,7 @@ public class DiscoveryAndFingerprintingTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testCorrelationHistoryAPI() throws Exception {
+    void testCorrelationHistoryAPI() throws Exception {
         // Given: We process a new device sighting
         com.gnm.model.NetworkSighting sighting = new com.gnm.model.NetworkSighting();
         sighting.ipAddress = "192.168.100.80";

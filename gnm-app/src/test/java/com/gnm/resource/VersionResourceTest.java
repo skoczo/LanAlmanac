@@ -7,10 +7,10 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
-public class VersionResourceTest {
+class VersionResourceTest {
 
     @Test
-    public void testGetVersion() {
+    void testGetVersion() {
         given()
             .when().get("/api/version")
             .then()

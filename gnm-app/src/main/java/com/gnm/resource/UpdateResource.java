@@ -28,11 +28,9 @@ public class UpdateResource {
 
     private static final Logger log = Logger.getLogger(UpdateResource.class);
 
-    @Inject
-    VaultEngine vaultEngine;
+    private final VaultEngine vaultEngine;
 
-    @Inject
-    ManagedExecutor executor;
+    private final ManagedExecutor executor;
 
     @GET
     @Path("/{id}/update")
@@ -126,5 +124,11 @@ public class UpdateResource {
                 log.debug("Error stopping SSH client", stopEx);
             }
         }
+    }
+
+    @Inject
+    public UpdateResource(VaultEngine vaultEngine, ManagedExecutor executor) {
+        this.vaultEngine = vaultEngine;
+        this.executor = executor;
     }
 }

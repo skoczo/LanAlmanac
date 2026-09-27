@@ -64,3 +64,6 @@ frontend/test-results/
 
 # --- TypeScript Build Info ---
 frontend/*.tsbuildinfo
+
+# --- Agent Scripts ---
+.agent_scripts/

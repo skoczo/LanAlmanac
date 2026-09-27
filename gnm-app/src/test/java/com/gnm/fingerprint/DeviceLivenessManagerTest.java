@@ -15,14 +15,13 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import java.time.Instant;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 @QuarkusTest
-public class DeviceLivenessManagerTest {
+class DeviceLivenessManagerTest {
 
     @Inject
     DeviceLivenessManager livenessManager;
@@ -35,7 +34,7 @@ public class DeviceLivenessManagerTest {
 
     @BeforeEach
     @Transactional
-    public void setup() {
+    void setup() {
         // Clear cache between tests to avoid interference
         livenessManager.clearCache();
 
@@ -70,7 +69,7 @@ public class DeviceLivenessManagerTest {
 
     @AfterEach
     @Transactional
-    public void teardown() {
+    void teardown() {
         livenessManager.clearCache();
         DeviceStatusHistory.deleteAll();
         NetworkIdentity.deleteAll();
@@ -78,7 +77,7 @@ public class DeviceLivenessManagerTest {
     }
 
     @Test
-    public void testRecordActivity() {
+    void testRecordActivity() {
         livenessManager.recordActivity(testIp);
         Instant lastSeen = livenessManager.getLastSeen(testIp);
         assertNotNull(lastSeen);
@@ -87,7 +86,7 @@ public class DeviceLivenessManagerTest {
 
     @Test
     @Transactional
-    public void testEvaluatePresence_ActiveDevice() {
+    void testEvaluatePresence_ActiveDevice() {
         // Device is active in memory
         livenessManager.recordActivity(testIp);
         
@@ -102,7 +101,7 @@ public class DeviceLivenessManagerTest {
     }
 
     @Test
-    public void testEvaluatePresence_WarningDevice_RespondsToPing() throws InterruptedException {
+    void testEvaluatePresence_WarningDevice_RespondsToPing() throws InterruptedException {
         // Push device lastSeen backward into warning zone (effActiveCheck=60, effOffline=120)
         pushDeviceLastSeenBack(90);
 
@@ -121,7 +120,7 @@ public class DeviceLivenessManagerTest {
     }
 
     @Test
-    public void testEvaluatePresence_WarningDevice_FailsPing() throws InterruptedException {
+    void testEvaluatePresence_WarningDevice_FailsPing() throws InterruptedException {
         // Push device lastSeen backward into warning zone (90s)
         pushDeviceLastSeenBack(90);
 
@@ -140,7 +139,7 @@ public class DeviceLivenessManagerTest {
     }
 
     @Test
-    public void testEvaluatePresence_OfflineDevice() {
+    void testEvaluatePresence_OfflineDevice() {
         // Push device lastSeen backward beyond offline threshold (effOffline=120s)
         pushDeviceLastSeenBack(150);
 

@@ -32,7 +32,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 @QuarkusTest
-public class BackgroundScannerTest extends AbstractE2ETest {
+class BackgroundScannerTest extends AbstractE2ETest {
 
     @Inject
     BackgroundScannerService scannerService;
@@ -42,7 +42,7 @@ public class BackgroundScannerTest extends AbstractE2ETest {
 
     @BeforeEach
     @Transactional
-    public void setup() {
+    void setup() {
         scannerService.resetForTest();
         com.gnm.model.NetworkIdentity.deleteAll();
         com.gnm.model.FingerprintVector.deleteAll();
@@ -51,7 +51,7 @@ public class BackgroundScannerTest extends AbstractE2ETest {
 
     @AfterEach
     @Transactional
-    public void teardown() {
+    void teardown() {
         scannerService.resetForTest();
         com.gnm.model.NetworkIdentity.deleteAll();
         com.gnm.model.FingerprintVector.deleteAll();
@@ -59,7 +59,7 @@ public class BackgroundScannerTest extends AbstractE2ETest {
     }
 
     @Test
-    public void testStateTransitionsAndMerge() throws InterruptedException {
+    void testStateTransitionsAndMerge() throws InterruptedException {
         // Given: A device with some previous ports
         UUID deviceId = createMockDevice("192.168.1.50", List.of(80));
 
@@ -110,7 +110,7 @@ public class BackgroundScannerTest extends AbstractE2ETest {
     }
 
     @Test
-    public void testConcurrencyLimitAndProgressReporting() throws InterruptedException {
+    void testConcurrencyLimitAndProgressReporting() throws InterruptedException {
         // Given: 5 devices
         UUID d1 = createMockDevice("192.168.2.1", List.of());
         UUID d2 = createMockDevice("192.168.2.2", List.of());
@@ -220,7 +220,7 @@ public class BackgroundScannerTest extends AbstractE2ETest {
     }
 
     @Test
-    public void testOfflineDeviceSkipped() throws InterruptedException {
+    void testOfflineDeviceSkipped() throws InterruptedException {
         // Given: An offline device
         UUID deviceId = createMockOfflineDevice("192.168.1.60");
 

@@ -14,14 +14,14 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
-public class DeviceIdentityManagerTest {
+class DeviceIdentityManagerTest {
 
     @Inject
     DeviceIdentityManager identityManager;
 
     @BeforeEach
     @Transactional
-    public void setup() {
+    void setup() {
         NetworkSighting.deleteAll();
         FingerprintCorrelationEvent.deleteAll();
         NetworkService.deleteAll();
@@ -35,7 +35,7 @@ public class DeviceIdentityManagerTest {
 
     @Test
     @Transactional
-    public void testSaveSightingCreatesNewDevice() {
+    void testSaveSightingCreatesNewDevice() {
         NetworkSighting sighting = new NetworkSighting();
         sighting.ipAddress = "192.168.10.100";
         sighting.macAddress = "00:11:22:33:44:55";
@@ -61,7 +61,7 @@ public class DeviceIdentityManagerTest {
 
     @Test
     @Transactional
-    public void testIpUniquenessEnforcement() {
+    void testIpUniquenessEnforcement() {
         // Device 1 on 192.168.10.50
         NetworkSighting sighting1 = new NetworkSighting();
         sighting1.ipAddress = "192.168.10.50";
@@ -85,7 +85,7 @@ public class DeviceIdentityManagerTest {
     }
 
     @Test
-    public void testDetectionModeGeneratesThreat() {
+    void testDetectionModeGeneratesThreat() {
         io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
             GlobalSetting mode = new GlobalSetting();
             mode.key = "APP_MODE";

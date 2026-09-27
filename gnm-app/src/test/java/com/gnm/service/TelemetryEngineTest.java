@@ -7,13 +7,13 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 @QuarkusTest
-public class TelemetryEngineTest {
+class TelemetryEngineTest {
 
     @Inject
     TelemetryEngine telemetryEngine;
 
     @Test
-    public void testPollAndCleanupTelemetryDoesNotThrow() {
+    void testPollAndCleanupTelemetryDoesNotThrow() {
         assertDoesNotThrow(() -> telemetryEngine.pollMetrics());
         assertDoesNotThrow(() -> telemetryEngine.cleanupOldTelemetry());
     }

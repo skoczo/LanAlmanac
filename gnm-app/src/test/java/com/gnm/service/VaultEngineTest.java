@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
-public class VaultEngineTest {
+class VaultEngineTest {
 
     @Inject
     VaultEngine vaultEngine;
@@ -18,7 +18,7 @@ public class VaultEngineTest {
     private static final String VAULT_FILE_PATH = "keys/.vault_master";
 
     @BeforeEach
-    public void setup() {
+    void setup() {
         File file = new File(VAULT_FILE_PATH);
         if (file.exists()) {
             file.delete();
@@ -27,7 +27,7 @@ public class VaultEngineTest {
     }
     
     @AfterEach
-    public void cleanup() {
+    void cleanup() {
         File file = new File(VAULT_FILE_PATH);
         if (file.exists()) {
             file.delete();
@@ -35,7 +35,7 @@ public class VaultEngineTest {
     }
 
     @Test
-    public void testVaultInitializationAndUnsealing() {
+    void testVaultInitializationAndUnsealing() {
         assertFalse(vaultEngine.isInitialized());
         
         vaultEngine.initializeVault("my_strong_passcode");
@@ -56,7 +56,7 @@ public class VaultEngineTest {
     }
 
     @Test
-    public void testEncryptionAndDecryption() {
+    void testEncryptionAndDecryption() {
         vaultEngine.initializeVault("test_passcode");
         
         String secret = "super_secret_ssh_key";
@@ -70,7 +70,7 @@ public class VaultEngineTest {
     }
     
     @Test
-    public void testEncryptThrowsWhenSealed() {
+    void testEncryptThrowsWhenSealed() {
         vaultEngine.initializeVault("test");
         vaultEngine.lockVault();
         assertThrows(IllegalStateException.class, () -> vaultEngine.encrypt("hello".getBytes()));

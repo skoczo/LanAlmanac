@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * hostname-based pre-merge path for locally-administered MACs.
  */
 @QuarkusTest
-public class FingerprintEngineLocalMacHostnameMergeTest {
+class FingerprintEngineLocalMacHostnameMergeTest {
 
     @Inject
     FingerprintEngine engine;
@@ -42,7 +42,7 @@ public class FingerprintEngineLocalMacHostnameMergeTest {
 
     @BeforeEach
     @Transactional
-    public void cleanDatabase() {
+    void cleanDatabase() {
         engine.flushAndClear();
         NetworkSighting.deleteAll();
         NetworkIdentity.deleteAll();
@@ -63,7 +63,7 @@ public class FingerprintEngineLocalMacHostnameMergeTest {
      * (below the 0.75 merge threshold) to prevent hostname-spoofing attacks.
      */
     @Test
-    public void testLocalMacWithSameHostnameMergesToExistingDevice() throws InterruptedException {
+    void testLocalMacWithSameHostnameMergesToExistingDevice() throws InterruptedException {
         // Step 1: First sighting - creates the initial device with DHCP fingerprint
         NetworkSighting firstSighting = new NetworkSighting();
         firstSighting.ipAddress = "172.20.0.50";
@@ -133,7 +133,7 @@ public class FingerprintEngineLocalMacHostnameMergeTest {
      * must NOT be merged. Each should remain as its own PhysicalDevice.
      */
     @Test
-    public void testLocalMacWithDifferentHostnamesDoesNotMerge() throws InterruptedException {
+    void testLocalMacWithDifferentHostnamesDoesNotMerge() throws InterruptedException {
         // Device 1
         NetworkSighting firstDevice = new NetworkSighting();
         firstDevice.ipAddress = "172.20.0.50";
@@ -164,7 +164,7 @@ public class FingerprintEngineLocalMacHostnameMergeTest {
      * but different globally-unique MACs must remain separate.
      */
     @Test
-    public void testGloballyUniqueMacIsNotMergedByHostname() throws InterruptedException {
+    void testGloballyUniqueMacIsNotMergedByHostname() throws InterruptedException {
         // Two sightings with globally-unique MACs but same hostname
         // (unlikely in practice but must not merge)
         NetworkSighting first = new NetworkSighting();

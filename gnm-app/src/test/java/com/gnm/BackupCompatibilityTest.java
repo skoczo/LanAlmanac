@@ -9,7 +9,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.gnm.dto.backup.LanAlmanacBackup;
 import com.gnm.service.BackupService;
-import com.gnm.model.PhysicalDevice;
 
 import java.io.InputStream;
 import java.net.URL;
@@ -18,19 +17,18 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @QuarkusTest
-public class BackupCompatibilityTest {
+class BackupCompatibilityTest {
 
     @Inject
     BackupService backupService;
 
     @AfterEach
     @Transactional
-    public void cleanup() {
+    void cleanup() {
         com.gnm.model.Credential.deleteAll();
         com.gnm.model.NetworkService.deleteAll();
         com.gnm.model.NetworkIdentity.deleteAll();
@@ -38,7 +36,7 @@ public class BackupCompatibilityTest {
     }
 
     @Test
-    public void testBackupBackwardCompatibility() throws Exception {
+    void testBackupBackwardCompatibility() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         mapper.registerModule(new JavaTimeModule());
         mapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);

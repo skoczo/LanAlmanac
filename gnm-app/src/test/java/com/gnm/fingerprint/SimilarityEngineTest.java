@@ -6,12 +6,12 @@ import com.gnm.model.FingerprintVector;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class SimilarityEngineTest {
+class SimilarityEngineTest {
 
     private final SimilarityEngine engine = new SimilarityEngine();
 
     @Test
-    public void testExactMatch() {
+    void testExactMatch() {
         FingerprintVector v1 = new FingerprintVector();
         v1.dhcpOption55 = "1,3,6,15,119,252";
         v1.dhcpOption60 = "AppleTV";
@@ -33,7 +33,7 @@ public class SimilarityEngineTest {
     }
 
     @Test
-    public void testPartialMatchWithMacRandomization() {
+    void testPartialMatchWithMacRandomization() {
         // Candidate vector (e.g. captured when MAC randomization changed the IP and OUI)
         FingerprintVector candidate = new FingerprintVector();
         candidate.dhcpOption55 = "1,3,6,15,119,252"; // Same iOS parameter request list
@@ -56,7 +56,7 @@ public class SimilarityEngineTest {
     }
 
     @Test
-    public void testCompleteMismatch() {
+    void testCompleteMismatch() {
         // v1 (iPhone)
         FingerprintVector v1 = new FingerprintVector();
         v1.dhcpOption55 = "1,3,6,15,119,252";
@@ -74,7 +74,7 @@ public class SimilarityEngineTest {
     }
 
     @Test
-    public void testNullAndEmptyHandling() {
+    void testNullAndEmptyHandling() {
         SimilarityEngine.SimilarityResult resultNull = engine.calculateSimilarity(null, null);
         assertEquals(0.0, resultNull.score);
 

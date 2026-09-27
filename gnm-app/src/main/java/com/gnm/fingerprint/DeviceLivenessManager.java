@@ -23,8 +23,8 @@ public class DeviceLivenessManager {
     
     @Inject Event<FingerprintEngine.DeviceEvent> eventBroadcaster;
     @Inject Event<com.gnm.resource.EventWebSocket.DiscoveryActivityEvent> activityBroadcaster;
-    @Inject IcmpSweeper icmpSweeper;
-    @Inject DeviceLivenessManager self;
+    private final IcmpSweeper icmpSweeper;
+    private final DeviceLivenessManager self;
 
     // Track the exact last time an IP was seen (by passive sniffer, DHCP, manual scans, etc.)
     private final Map<String, Instant> lastSeenMap = new ConcurrentHashMap<>();
@@ -208,5 +208,11 @@ public class DeviceLivenessManager {
             eventBroadcaster.fireAsync(new FingerprintEngine.DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "OFFLINE", currentIp));
             LOG.infof("SmartPresence: Marked device %s as OFFLINE after prolonged silence.", device.displayName);
         }
+    }
+
+    @Inject
+    public DeviceLivenessManager(IcmpSweeper icmpSweeper, DeviceLivenessManager self) {
+        this.icmpSweeper = icmpSweeper;
+        this.self = self;
     }
 }

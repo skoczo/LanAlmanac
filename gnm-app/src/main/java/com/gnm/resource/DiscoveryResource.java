@@ -14,8 +14,7 @@ import java.util.List;
 @Consumes(MediaType.APPLICATION_JSON)
 public class DiscoveryResource {
 
-    @Inject
-    DiscoveryModuleManager moduleManager;
+    private final DiscoveryModuleManager moduleManager;
 
     @GET
     @Path("/modules")
@@ -58,5 +57,10 @@ public class DiscoveryResource {
 
     public static class ToggleRequest {
         public boolean enabled;
+    }
+
+    @Inject
+    public DiscoveryResource(DiscoveryModuleManager moduleManager) {
+        this.moduleManager = moduleManager;
     }
 }

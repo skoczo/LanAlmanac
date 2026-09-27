@@ -19,8 +19,7 @@ public class UserBootstrap {
 
     private static final Logger LOG = Logger.getLogger(UserBootstrap.class);
 
-    @Inject
-    private PasswordService passwordService;
+    private final PasswordService passwordService;
 
     @ConfigProperty(name = "gnm.auth.local.username", defaultValue = "admin")
     private String adminUsername;
@@ -46,5 +45,10 @@ public class UserBootstrap {
         admin.persist();
 
         LOG.infof("Created initial admin user '%s' with must_change_password=true.", adminUsername);
+    }
+
+    @Inject
+    public UserBootstrap(PasswordService passwordService) {
+        this.passwordService = passwordService;
     }
 }

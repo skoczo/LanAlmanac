@@ -5,7 +5,6 @@ import io.quarkus.test.security.TestSecurity;
 import io.quarkus.test.common.http.TestHTTPResource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.AfterEach;
 import io.restassured.response.Response;
 
 import jakarta.inject.Inject;
@@ -23,13 +22,9 @@ import com.gnm.model.PhysicalDevice;
 import com.gnm.model.NetworkIdentity;
 import com.gnm.model.NetworkService;
 import com.gnm.model.Credential;
-import com.gnm.model.enums.DeviceType;
-import com.gnm.model.enums.DeviceStatus;
-import com.gnm.model.enums.ManagementState;
 import com.gnm.service.VaultEngine;
 import com.gnm.fingerprint.FingerprintEngine;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.AfterEach;
 import jakarta.transaction.Transactional;
 
 import static io.restassured.RestAssured.given;
@@ -37,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @QuarkusTest
-public class RemoteAccessTest extends AbstractE2ETest {
+class RemoteAccessTest extends AbstractE2ETest {
 
     @TestHTTPResource("/ws/events")
     URI eventsUri;
@@ -62,7 +57,7 @@ public class RemoteAccessTest extends AbstractE2ETest {
     }
 
     @BeforeEach
-    public void setup() {
+    void setup() {
         if (!vaultEngine.isInitialized()) {
             given().contentType("application/json").when().post("/api/vault/init").then().statusCode(200);
         }
@@ -72,7 +67,7 @@ public class RemoteAccessTest extends AbstractE2ETest {
     }
 
     @BeforeEach
-    public void clearDatabase() {
+    void clearDatabase() {
         fingerprintEngine.flushAndClear();
         io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
             com.gnm.model.Credential.deleteAll();
@@ -84,7 +79,7 @@ public class RemoteAccessTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testWebSocketRealtimeUiUpdates() throws Exception {
+    void testWebSocketRealtimeUiUpdates() throws Exception {
         // Scenario 7.1
         String wsUri = eventsUri.toString().replace("http://", "ws://").replace("https://", "wss://");
         TestWebSocketListener listener = new TestWebSocketListener();
@@ -116,7 +111,7 @@ public class RemoteAccessTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testSshTerminalProxySession() throws Exception {
+    void testSshTerminalProxySession() throws Exception {
         // Scenario 7.2
         String ip = "192.168.100.10"; // Linux server with SSH
         

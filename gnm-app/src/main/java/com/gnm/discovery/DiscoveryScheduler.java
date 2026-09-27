@@ -15,19 +15,15 @@ public class DiscoveryScheduler {
 
     private static final Logger LOG = Logger.getLogger(DiscoveryScheduler.class);
 
-    @Inject
-    private PassivePacketListener passivePacketListener;
+    private final PassivePacketListener passivePacketListener;
 
-    @Inject
-    private IcmpSweeper icmpSweeper;
+    private final IcmpSweeper icmpSweeper;
 
-    @Inject
-    private ArpScanner arpScanner;
+    private final ArpScanner arpScanner;
 
 
 
-    @Inject
-    private DiscoveryModuleManager moduleManager;
+    private final DiscoveryModuleManager moduleManager;
 
     public void onStart(@Observes StartupEvent ev) {
         if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST) {
@@ -114,4 +110,12 @@ public class DiscoveryScheduler {
         arpScanner.scan(skipIps);
     }
 
+
+    @Inject
+    public DiscoveryScheduler(PassivePacketListener passivePacketListener, IcmpSweeper icmpSweeper, ArpScanner arpScanner, DiscoveryModuleManager moduleManager) {
+        this.passivePacketListener = passivePacketListener;
+        this.icmpSweeper = icmpSweeper;
+        this.arpScanner = arpScanner;
+        this.moduleManager = moduleManager;
+    }
 }

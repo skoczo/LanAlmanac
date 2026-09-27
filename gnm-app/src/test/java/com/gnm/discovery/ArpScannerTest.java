@@ -9,13 +9,13 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @QuarkusTest
-public class ArpScannerTest {
+class ArpScannerTest {
 
     @Inject
     ArpScanner arpScanner;
 
     @Test
-    public void testArpScanExecutesWithFallbackOrNative() {
+    void testArpScanExecutesWithFallbackOrNative() {
         // When: scan() is invoked
         Set<String> discoveredIps = arpScanner.scan();
 

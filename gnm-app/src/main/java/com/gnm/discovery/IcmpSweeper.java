@@ -34,11 +34,9 @@ public class IcmpSweeper {
     private static final int ARP_TIMEOUT_MS   =  800;  // arping covers Android Doze Mode devices
     private static final int[] PROBE_PORTS    = { 22, 80, 443, 445, 1883, 3000, 5000, 7125, 8000, 8006, 8080, 8123, 8443, 9000, 9443 };
 
-    @Inject
-    NetworkSightingQueue sightingQueue;
+    private final NetworkSightingQueue sightingQueue;
 
-    @Inject
-    DiscoveryModuleManager moduleManager;
+    private final DiscoveryModuleManager moduleManager;
 
     @ConfigProperty(name = "gnm.subnet", defaultValue = "192.168.1.0/24")
     String subnetConfig;
@@ -228,5 +226,11 @@ public class IcmpSweeper {
             LOG.debug("Could not read gnm.listen.interface setting, using default interface", e);
         }
         return "eth0";
+    }
+
+    @Inject
+    public IcmpSweeper(NetworkSightingQueue sightingQueue, DiscoveryModuleManager moduleManager) {
+        this.sightingQueue = sightingQueue;
+        this.moduleManager = moduleManager;
     }
 }

@@ -8,11 +8,11 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
-public class DiagnosticsResourceTest {
+class DiagnosticsResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testGetDiagnostics() {
+    void testGetDiagnostics() {
         given()
             .when().get("/api/diagnostics")
             .then()

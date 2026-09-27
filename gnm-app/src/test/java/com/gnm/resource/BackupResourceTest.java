@@ -7,10 +7,10 @@ import org.junit.jupiter.api.Test;
 import static io.restassured.RestAssured.given;
 
 @QuarkusTest
-public class BackupResourceTest {
+class BackupResourceTest {
 
     @Test
-    public void testDownloadBackupUnauthorized() {
+    void testDownloadBackupUnauthorized() {
         given()
           .when()
           .get("/api/backup/download?password=testpass")
@@ -20,7 +20,7 @@ public class BackupResourceTest {
 
     @Test
     @TestSecurity(user = "viewer", roles = "gnm-viewer")
-    public void testDownloadBackupForbiddenForViewer() {
+    void testDownloadBackupForbiddenForViewer() {
         given()
           .when()
           .get("/api/backup/download?password=testpass")
@@ -30,7 +30,7 @@ public class BackupResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testDownloadBackupMissingPassword() {
+    void testDownloadBackupMissingPassword() {
         given()
           .when()
           .get("/api/backup/download")
@@ -40,7 +40,7 @@ public class BackupResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testDownloadBackupSuccess() {
+    void testDownloadBackupSuccess() {
         given()
           .when()
           .get("/api/backup/download?password=testpassword123")

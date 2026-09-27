@@ -17,13 +17,13 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
-public class ScannerResourceTest {
+class ScannerResourceTest {
 
     private UUID deviceId;
 
     @BeforeEach
     @Transactional
-    public void setup() {
+    void setup() {
         PhysicalDevice.deleteAll();
 
         PhysicalDevice device = new PhysicalDevice();
@@ -40,7 +40,7 @@ public class ScannerResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testScannerProgressAndTrigger() {
+    void testScannerProgressAndTrigger() {
         // Get progress
         given()
             .when().get("/api/scanner/progress")

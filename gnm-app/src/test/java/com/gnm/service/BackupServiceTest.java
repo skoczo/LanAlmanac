@@ -17,14 +17,14 @@ import java.time.Instant;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
-public class BackupServiceTest {
+class BackupServiceTest {
 
     @Inject
     BackupService backupService;
 
     @Test
     @Transactional
-    public void testExportAndImportData() {
+    void testExportAndImportData() {
         PhysicalDevice.deleteAll();
 
         PhysicalDevice device = new PhysicalDevice();
@@ -51,7 +51,7 @@ public class BackupServiceTest {
     }
 
     @Test
-    public void testCreateBackup() throws Exception {
+    void testCreateBackup() throws Exception {
         Path keysDir = Paths.get("keys");
         if (!Files.exists(keysDir)) {
             Files.createDirectories(keysDir);

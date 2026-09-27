@@ -18,14 +18,14 @@ import com.gnm.service.BackupService;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
-public class E2EBackupTest {
+class E2EBackupTest {
 
     @Inject
     BackupService backupService;
 
     @AfterEach
     @Transactional
-    public void cleanup() {
+    void cleanup() {
         NetworkLink.deleteAll();
         Credential.deleteAll();
         NetworkIdentity.deleteAll();
@@ -34,7 +34,7 @@ public class E2EBackupTest {
     }
 
     @Test
-    public void testFullE2EBackupAndRestore() throws Exception {
+    void testFullE2EBackupAndRestore() throws Exception {
         // Skip test if pg_dump is not available
         org.junit.jupiter.api.Assumptions.assumeTrue(isCommandAvailable("pg_dump"), "pg_dump is required for this test");
 

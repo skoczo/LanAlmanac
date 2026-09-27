@@ -12,13 +12,11 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
-import java.nio.ByteBuffer;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.List;
-import java.util.UUID;
 
 import com.gnm.model.PhysicalDevice;
 import com.gnm.model.NetworkIdentity;
@@ -40,7 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @QuarkusTest
-public class SecurityAndThreatTest extends AbstractE2ETest {
+class SecurityAndThreatTest extends AbstractE2ETest {
 
     public static class TestWebSocketListener implements WebSocket.Listener {
         public final BlockingQueue<String> messages = new LinkedBlockingQueue<>();
@@ -66,7 +64,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
 
     @BeforeEach
     @Transactional
-    public void setup() {
+    void setup() {
         com.gnm.model.ThreatEvent.deleteAll();
         com.gnm.model.Credential.deleteAll();
         com.gnm.model.NetworkService.deleteAll();
@@ -83,7 +81,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
 
     @AfterEach
     @Transactional
-    public void cleanup() {
+    void cleanup() {
         com.gnm.model.ThreatEvent.deleteAll();
         com.gnm.model.Credential.deleteAll();
         com.gnm.model.NetworkService.deleteAll();
@@ -93,7 +91,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testSshHostKeyChangeDetectedOnPeriodicScan() throws Exception {
+    void testSshHostKeyChangeDetectedOnPeriodicScan() throws Exception {
         // Given: The ne-linux-server (192.168.100.10) is discovered and its original
         // key is "fake-old-key"
         String ip = environment.getServiceHost("ne-linux-server", 22);
@@ -160,7 +158,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testAlarmAutoMitigationOnHostKeyReversion() throws Exception {
+    void testAlarmAutoMitigationOnHostKeyReversion() throws Exception {
         // Given: The device has an unresolved ThreatEvent for a key mismatch
         String ip = environment.getServiceHost("ne-linux-server", 22);
         setupFakeSshHostKey(ip, "fake-old-key");
@@ -233,7 +231,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testConnectionBlockedAndAlarmRaisedOnManualConnect() throws Exception {
+    void testConnectionBlockedAndAlarmRaisedOnManualConnect() throws Exception {
         // Given: We have a device with a fake trusted SSH key
         String ip = environment.getServiceHost("ne-linux-server", 22);
         setupFakeSshHostKey(ip, "fake-old-key");
@@ -282,7 +280,7 @@ public class SecurityAndThreatTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testHostKeyTrustOnFirstConnectTofu() throws Exception {
+    void testHostKeyTrustOnFirstConnectTofu() throws Exception {
         // Given: We have a device with NO sshHostKey stored yet
         String serviceName = "ne-router-sim";
         String ip = environment.getServiceHost(serviceName, 22); // Router sim

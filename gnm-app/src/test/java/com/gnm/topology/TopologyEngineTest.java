@@ -7,13 +7,13 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 @QuarkusTest
-public class TopologyEngineTest {
+class TopologyEngineTest {
 
     @Inject
     TopologyEngine topologyEngine;
 
     @Test
-    public void testRunTopologyScanDoesNotThrow() {
+    void testRunTopologyScanDoesNotThrow() {
         assertDoesNotThrow(() -> topologyEngine.runTopologyScan());
     }
 }

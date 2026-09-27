@@ -17,14 +17,14 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
-public class UserResourceTest {
+class UserResourceTest {
 
     @Inject
     PasswordService passwordService;
 
     @BeforeEach
     @Transactional
-    public void setup() {
+    void setup() {
         GnmUser.deleteAll();
         
         GnmUser admin = new GnmUser();
@@ -39,7 +39,7 @@ public class UserResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testListUsers() {
+    void testListUsers() {
         given()
             .when().get("/api/users")
             .then()
@@ -51,7 +51,7 @@ public class UserResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testCreateUserSuccess() {
+    void testCreateUserSuccess() {
         given()
             .contentType(ContentType.JSON)
             .body(Map.of(
@@ -70,7 +70,7 @@ public class UserResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testCreateUserValidationFailures() {
+    void testCreateUserValidationFailures() {
         // Missing username/password
         given()
             .contentType(ContentType.JSON)
@@ -106,7 +106,7 @@ public class UserResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testUpdateUser() {
+    void testUpdateUser() {
         GnmUser user = GnmUser.findByUsername("admin");
 
         given()
@@ -132,7 +132,7 @@ public class UserResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testDeleteUserLastAdminProtection() {
+    void testDeleteUserLastAdminProtection() {
         GnmUser admin = GnmUser.findByUsername("admin");
 
         // Attempt deleting the only admin -> should fail
@@ -150,7 +150,7 @@ public class UserResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testResetPassword() {
+    void testResetPassword() {
         GnmUser admin = GnmUser.findByUsername("admin");
 
         // Success reset

@@ -16,8 +16,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 @PermitAll
 public class VaultResource {
 
-    @Inject
-    VaultEngine vaultEngine;
+    private final VaultEngine vaultEngine;
 
     @ConfigProperty(name = "gnm.vault.password")
     Optional<String> vaultPassword;
@@ -82,5 +81,10 @@ public class VaultResource {
     public Response lock() {
         vaultEngine.lockVault();
         return Response.ok(Map.of("success", true)).build();
+    }
+
+    @Inject
+    public VaultResource(VaultEngine vaultEngine) {
+        this.vaultEngine = vaultEngine;
     }
 }

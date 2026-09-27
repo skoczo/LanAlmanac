@@ -16,14 +16,14 @@ import com.gnm.fingerprint.probes.ProbeContext;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
-public class FingerprintEngineTest {
+class FingerprintEngineTest {
 
     @Inject
     FingerprintEngine engine;
 
     @BeforeEach
     @Transactional
-    public void cleanDatabase() {
+    void cleanDatabase() {
         // Clean out previous records to avoid test collisions
         NetworkSighting.deleteAll();
         NetworkIdentity.deleteAll();
@@ -34,7 +34,7 @@ public class FingerprintEngineTest {
     }
 
     @Test
-    public void testSightingCreatesNewDevice() {
+    void testSightingCreatesNewDevice() {
         NetworkSighting sighting = new NetworkSighting();
         sighting.ipAddress = "192.168.1.105";
         sighting.macAddress = "00:11:22:33:44:55";
@@ -68,7 +68,7 @@ public class FingerprintEngineTest {
     }
 
     @Test
-    public void testRandomizedMacMergesToExistingDevice() {
+    void testRandomizedMacMergesToExistingDevice() {
         Instant past = Instant.now().minusSeconds(3600);
 
         // 1. Manually create an existing device profile in the database
@@ -146,7 +146,7 @@ public class FingerprintEngineTest {
     }
 
     @Test
-    public void testSightingOnOldIdentityDeactivatesNewerIdentity() {
+    void testSightingOnOldIdentityDeactivatesNewerIdentity() {
         Instant past = Instant.now().minusSeconds(3600);
 
         // NOTE: Setup must be committed before the engine processes the sighting.
@@ -213,7 +213,7 @@ public class FingerprintEngineTest {
     }
 
     @Test
-    public void testPlaceholderMacUnifiesToExistingIdentity() {
+    void testPlaceholderMacUnifiesToExistingIdentity() {
         Instant past = Instant.now().minusSeconds(3600);
 
         // NOTE: Setup must be committed before the engine processes the sighting.
@@ -262,7 +262,7 @@ public class FingerprintEngineTest {
     }
 
     @Test
-    public void testSpoofingRejected() {
+    void testSpoofingRejected() {
         Instant past = Instant.now().minusSeconds(3600);
         
         // 1. Set up a device with a hostname and specific fingerprint
@@ -312,7 +312,7 @@ public class FingerprintEngineTest {
     }
 
     @Test
-    public void testProbeContextThrowsExceptionWhenOverwritingHostname() {
+    void testProbeContextThrowsExceptionWhenOverwritingHostname() {
         ProbeContext context = new ProbeContext("192.168.1.100", new FingerprintVector());
         context.setResolvedHostname("first-resolved-host");
         assertEquals("first-resolved-host", context.getResolvedHostname());

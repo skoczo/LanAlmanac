@@ -16,8 +16,7 @@ import java.util.UUID;
 @Consumes(MediaType.APPLICATION_JSON)
 public class UserResource {
 
-    @Inject
-    PasswordService passwordService;
+    private final PasswordService passwordService;
 
     // --- DTOs ---
 
@@ -199,5 +198,10 @@ public class UserResource {
 
     private boolean isValidRole(String role) {
         return "gnm-admin".equals(role) || "gnm-operator".equals(role) || "gnm-viewer".equals(role);
+    }
+
+    @Inject
+    public UserResource(PasswordService passwordService) {
+        this.passwordService = passwordService;
     }
 }

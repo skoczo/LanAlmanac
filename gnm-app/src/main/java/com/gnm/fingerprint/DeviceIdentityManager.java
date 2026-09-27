@@ -17,10 +17,10 @@ public class DeviceIdentityManager {
     private static final Logger LOG = Logger.getLogger(DeviceIdentityManager.class);
 
     @Inject Event<FingerprintEngine.DeviceEvent> eventBroadcaster;
-    @Inject Event<ThreatEvent> threatBroadcaster;
-    @Inject SimilarityEngine similarityEngine;
-    @Inject DeviceIdentityManager self;
-    @Inject FingerprintEngine fingerprintEngine;
+    private final Event<ThreatEvent> threatBroadcaster;
+    private final SimilarityEngine similarityEngine;
+    private final DeviceIdentityManager self;
+    private final FingerprintEngine fingerprintEngine;
 
     @ConfigProperty(name = "gnm.fingerprint.merge-threshold", defaultValue = "0.75") Double mergeThreshold;
     private final java.util.concurrent.locks.ReentrantLock dbLock = new java.util.concurrent.locks.ReentrantLock();
@@ -509,5 +509,13 @@ public class DeviceIdentityManager {
                 });
             }
         }
+    }
+
+    @Inject
+    public DeviceIdentityManager(Event<ThreatEvent> threatBroadcaster, SimilarityEngine similarityEngine, DeviceIdentityManager self, FingerprintEngine fingerprintEngine) {
+        this.threatBroadcaster = threatBroadcaster;
+        this.similarityEngine = similarityEngine;
+        this.self = self;
+        this.fingerprintEngine = fingerprintEngine;
     }
 }

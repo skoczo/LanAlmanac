@@ -41,14 +41,12 @@ public class ArpScanner {
 
     private static final Logger LOG = Logger.getLogger(ArpScanner.class);
 
-    @Inject
-    private NetworkSightingQueue sightingQueue;
+    private final NetworkSightingQueue sightingQueue;
 
     @Inject
     private com.gnm.service.SubnetFilter subnetFilter;
 
-    @Inject
-    private DiscoveryModuleManager moduleManager;
+    private final DiscoveryModuleManager moduleManager;
 
     @ConfigProperty(name = "gnm.listen.interface", defaultValue = "eth0")
     private String networkInterfaceProp;
@@ -333,5 +331,11 @@ public class ArpScanner {
             LOG.error("Failed to read system ARP cache", e);
         }
         return liveIps;
+    }
+
+    @Inject
+    public ArpScanner(NetworkSightingQueue sightingQueue, DiscoveryModuleManager moduleManager) {
+        this.sightingQueue = sightingQueue;
+        this.moduleManager = moduleManager;
     }
 }

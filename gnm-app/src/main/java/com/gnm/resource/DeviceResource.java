@@ -36,11 +36,9 @@ public class DeviceResource {
 
     private static final Logger LOG = Logger.getLogger(DeviceResource.class);
 
-    @Inject
-    NetworkSightingQueue sightingQueue;
+    private final NetworkSightingQueue sightingQueue;
 
-    @Inject
-    FingerprintEngine fingerprintEngine;
+    private final FingerprintEngine fingerprintEngine;
     
     @Inject
     com.gnm.fingerprint.DeviceLivenessManager livenessManager;
@@ -465,5 +463,11 @@ public class DeviceResource {
             link.delete();
         }
         return Response.noContent().build();
+    }
+
+    @Inject
+    public DeviceResource(NetworkSightingQueue sightingQueue, FingerprintEngine fingerprintEngine) {
+        this.sightingQueue = sightingQueue;
+        this.fingerprintEngine = fingerprintEngine;
     }
 }

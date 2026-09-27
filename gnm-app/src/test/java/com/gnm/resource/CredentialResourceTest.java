@@ -20,7 +20,7 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
-public class CredentialResourceTest {
+class CredentialResourceTest {
 
     private PhysicalDevice testDevice;
 
@@ -29,7 +29,7 @@ public class CredentialResourceTest {
 
     @BeforeEach
     @Transactional
-    public void setup() {
+    void setup() {
         Credential.deleteAll();
         PhysicalDevice.deleteAll();
         
@@ -51,7 +51,7 @@ public class CredentialResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testCreateAndListCredentials() {
+    void testCreateAndListCredentials() {
         // Create credential
         given()
           .contentType(ContentType.JSON)

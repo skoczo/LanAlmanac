@@ -19,8 +19,7 @@ import java.util.stream.Collectors;
 @Consumes(MediaType.APPLICATION_JSON)
 public class SettingsResource {
 
-    @Inject
-    Event<SettingChangedEvent> settingChangedEvent;
+    private final Event<SettingChangedEvent> settingChangedEvent;
 
     @GET
     public List<GlobalSetting> getAllSettings() {
@@ -74,5 +73,10 @@ public class SettingsResource {
             "clientId", clientId != null ? clientId.value : "",
             "roleClaimPath", roleClaimPath != null && !roleClaimPath.value.isBlank() ? roleClaimPath.value : "groups"
         );
+    }
+
+    @Inject
+    public SettingsResource(Event<SettingChangedEvent> settingChangedEvent) {
+        this.settingChangedEvent = settingChangedEvent;
     }
 }

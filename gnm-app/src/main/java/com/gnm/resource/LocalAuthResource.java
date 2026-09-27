@@ -18,8 +18,7 @@ import java.util.List;
 @Consumes(MediaType.APPLICATION_JSON)
 public class LocalAuthResource {
 
-    @Inject
-    PasswordService passwordService;
+    private final PasswordService passwordService;
 
     public static class LoginRequest {
         public String username;
@@ -159,5 +158,10 @@ public class LocalAuthResource {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    @Inject
+    public LocalAuthResource(PasswordService passwordService) {
+        this.passwordService = passwordService;
     }
 }

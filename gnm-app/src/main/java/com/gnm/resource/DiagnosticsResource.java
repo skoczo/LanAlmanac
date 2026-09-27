@@ -26,11 +26,9 @@ import com.gnm.model.PhysicalDevice;
 @RolesAllowed("gnm-admin")
 public class DiagnosticsResource {
 
-    @Inject
-    NetworkSightingQueue sightingQueue;
+    private final NetworkSightingQueue sightingQueue;
 
-    @Inject
-    FingerprintEngine fingerprintEngine;
+    private final FingerprintEngine fingerprintEngine;
 
     @GET
     @Transactional
@@ -94,5 +92,11 @@ public class DiagnosticsResource {
         stats.put("uptimeSeconds", uptimeMs / 1000);
 
         return stats;
+    }
+
+    @Inject
+    public DiagnosticsResource(NetworkSightingQueue sightingQueue, FingerprintEngine fingerprintEngine) {
+        this.sightingQueue = sightingQueue;
+        this.fingerprintEngine = fingerprintEngine;
     }
 }

@@ -27,8 +27,7 @@ public class TopologyEngine {
 
     private static final Logger LOG = Logger.getLogger(TopologyEngine.class);
 
-    @Inject
-    VaultEngine vaultEngine;
+    private final VaultEngine vaultEngine;
 
     // Standard LLDP MIB for Remote System Name: lldpRemSysName
     private static final OID LLDP_REM_SYS_NAME = new OID("1.0.8802.1.1.2.1.4.1.1.9");
@@ -118,5 +117,10 @@ public class TopologyEngine {
         } catch (Exception e) {
             LOG.error("Failed SNMP poll for device " + device.displayName, e);
         }
+    }
+
+    @Inject
+    public TopologyEngine(VaultEngine vaultEngine) {
+        this.vaultEngine = vaultEngine;
     }
 }

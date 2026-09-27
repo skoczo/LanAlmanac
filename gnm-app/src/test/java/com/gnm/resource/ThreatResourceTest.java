@@ -4,7 +4,6 @@ import com.gnm.AbstractE2ETest;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import org.junit.jupiter.api.Test;
-import jakarta.transaction.Transactional;
 import java.time.Instant;
 import java.util.Map;
 
@@ -16,11 +15,11 @@ import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
-public class ThreatResourceTest extends AbstractE2ETest {
+class ThreatResourceTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = {"gnm-admin", "ADMIN"})
-    public void testApproveDeviceResolvesAllAlertsForSameMac() {
+    void testApproveDeviceResolvesAllAlertsForSameMac() {
         String testMac = "AA:BB:CC:DD:EE:FF";
         final java.util.concurrent.atomic.AtomicReference<java.util.UUID> threat1Id = new java.util.concurrent.atomic.AtomicReference<>();
         final java.util.concurrent.atomic.AtomicReference<java.util.UUID> threat2Id = new java.util.concurrent.atomic.AtomicReference<>();

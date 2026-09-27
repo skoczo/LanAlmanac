@@ -26,8 +26,7 @@ public class TelemetryEngine {
 
     private static final Logger log = Logger.getLogger(TelemetryEngine.class);
 
-    @Inject
-    VaultEngine vaultEngine;
+    private final VaultEngine vaultEngine;
 
     private Instant lastPollTime = Instant.MIN;
 
@@ -178,5 +177,10 @@ public class TelemetryEngine {
         if (deleted > 0) {
             log.info("Deleted " + deleted + " old telemetry records beyond retention of " + retentionDays + " days.");
         }
+    }
+
+    @Inject
+    public TelemetryEngine(VaultEngine vaultEngine) {
+        this.vaultEngine = vaultEngine;
     }
 }

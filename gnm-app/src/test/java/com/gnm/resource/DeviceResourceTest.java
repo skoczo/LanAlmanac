@@ -20,11 +20,11 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
-public class DeviceResourceTest {
+class DeviceResourceTest {
 
     @BeforeEach
     @Transactional
-    public void setup() {
+    void setup() {
         PhysicalDevice.deleteAll();
         
         PhysicalDevice device = new PhysicalDevice();
@@ -37,7 +37,7 @@ public class DeviceResourceTest {
     }
 
     @Test
-    public void testGetAllDevicesWithoutAuth() {
+    void testGetAllDevicesWithoutAuth() {
         given()
           .when().get("/api/devices")
           .then()
@@ -46,7 +46,7 @@ public class DeviceResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testGetAllDevicesWithAuth() {
+    void testGetAllDevicesWithAuth() {
         given()
           .when().get("/api/devices")
           .then()
@@ -58,7 +58,7 @@ public class DeviceResourceTest {
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
     @Transactional
-    public void testGetDeviceById() {
+    void testGetDeviceById() {
         PhysicalDevice device = PhysicalDevice.findAll().firstResult();
         
         given()
@@ -70,7 +70,7 @@ public class DeviceResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testGetDeviceByIdNotFound() {
+    void testGetDeviceByIdNotFound() {
         given()
           .when().get("/api/devices/00000000-0000-0000-0000-000000000000")
           .then()
@@ -80,7 +80,7 @@ public class DeviceResourceTest {
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
     @Transactional
-    public void testUpdateDeviceDetails() {
+    void testUpdateDeviceDetails() {
         PhysicalDevice device = PhysicalDevice.findAll().firstResult();
         
         given()
@@ -96,7 +96,7 @@ public class DeviceResourceTest {
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
     @Transactional
-    public void testUpdateDeviceState() {
+    void testUpdateDeviceState() {
         PhysicalDevice device = PhysicalDevice.findAll().firstResult();
         
         given()
@@ -111,7 +111,7 @@ public class DeviceResourceTest {
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
     @Transactional
-    public void testUpdateDeviceLabels() {
+    void testUpdateDeviceLabels() {
         PhysicalDevice device = PhysicalDevice.findAll().firstResult();
         
         given()
@@ -125,7 +125,7 @@ public class DeviceResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testAddDeviceLink() {
+    void testAddDeviceLink() {
         io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
             PhysicalDevice target = new PhysicalDevice();
             target.displayName = "Target Device";
@@ -150,7 +150,7 @@ public class DeviceResourceTest {
     }
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testGetTopology() {
+    void testGetTopology() {
         io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
             PhysicalDevice source = new PhysicalDevice();
             source.displayName = "Topo Source";
@@ -187,7 +187,7 @@ public class DeviceResourceTest {
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
     @Transactional
-    public void testManualAddDevice() {
+    void testManualAddDevice() {
         given()
           .contentType(ContentType.JSON)
           .body(Map.of(
@@ -206,7 +206,7 @@ public class DeviceResourceTest {
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
     @Transactional
-    public void testDeleteDevice() {
+    void testDeleteDevice() {
         PhysicalDevice device = PhysicalDevice.findAll().firstResult();
         given()
           .when().delete("/api/devices/" + device.id)
@@ -222,7 +222,7 @@ public class DeviceResourceTest {
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
     @Transactional
-    public void testDeviceServicesCrud() {
+    void testDeviceServicesCrud() {
         PhysicalDevice device = PhysicalDevice.findAll().firstResult();
 
         // Add service
@@ -270,7 +270,7 @@ public class DeviceResourceTest {
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
     @Transactional
-    public void testProbeUpdateAndHistories() {
+    void testProbeUpdateAndHistories() {
         PhysicalDevice device = PhysicalDevice.findAll().firstResult();
 
         // Trigger probe update

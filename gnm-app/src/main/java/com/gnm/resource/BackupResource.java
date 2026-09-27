@@ -22,8 +22,7 @@ public class BackupResource {
 
     private static final Logger LOG = Logger.getLogger(BackupResource.class);
 
-    @Inject
-    BackupService backupService;
+    private final BackupService backupService;
 
     @GET
     @Path("/download")
@@ -90,5 +89,10 @@ public class BackupResource {
             LOG.error("Failed to initiate restore", e);
             return Response.serverError().entity("Failed to initiate restore: " + e.getMessage()).build();
         }
+    }
+
+    @Inject
+    public BackupResource(BackupService backupService) {
+        this.backupService = backupService;
     }
 }

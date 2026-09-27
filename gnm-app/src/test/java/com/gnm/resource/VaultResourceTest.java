@@ -8,13 +8,12 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import java.io.File;
-import java.util.Map;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
-public class VaultResourceTest {
+class VaultResourceTest {
 
     @Inject
     VaultEngine vaultEngine;
@@ -22,7 +21,7 @@ public class VaultResourceTest {
     private static final String VAULT_FILE_PATH = "keys/.vault_master";
 
     @BeforeEach
-    public void setup() {
+    void setup() {
         File file = new File(VAULT_FILE_PATH);
         if (file.exists()) {
             file.delete();
@@ -31,7 +30,7 @@ public class VaultResourceTest {
     }
     
     @AfterEach
-    public void cleanup() {
+    void cleanup() {
         File file = new File(VAULT_FILE_PATH);
         if (file.exists()) {
             file.delete();
@@ -39,7 +38,7 @@ public class VaultResourceTest {
     }
 
     @Test
-    public void testVaultStatusAndLifecycle() {
+    void testVaultStatusAndLifecycle() {
         // Status should be not initialized
         given()
           .when().get("/api/vault/status")

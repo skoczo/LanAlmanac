@@ -7,13 +7,13 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 @QuarkusTest
-public class KeyGeneratorServiceTest {
+class KeyGeneratorServiceTest {
 
     @Inject
     KeyGeneratorService keyGeneratorService;
 
     @Test
-    public void testGenerateKeysIfNeeded() {
+    void testGenerateKeysIfNeeded() {
         assertDoesNotThrow(() -> keyGeneratorService.generateKeysIfNeeded());
     }
 }

@@ -10,11 +10,11 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
-public class DiscoveryResourceTest extends AbstractE2ETest {
+class DiscoveryResourceTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testGetModulesList() {
+    void testGetModulesList() {
         given()
           .when().get("/api/discovery/modules")
           .then()
@@ -25,7 +25,7 @@ public class DiscoveryResourceTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testToggleModule() {
+    void testToggleModule() {
         given()
           .contentType(MediaType.APPLICATION_JSON)
           .body("{\"enabled\": false}")
@@ -38,7 +38,7 @@ public class DiscoveryResourceTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testTriggerScan() {
+    void testTriggerScan() {
         given()
           .contentType(MediaType.APPLICATION_JSON)
           .when().post("/api/discovery/modules/icmp-sweeper/trigger")

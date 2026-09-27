@@ -22,6 +22,8 @@
 - `./gradlew detectAllIssues`: Executes both backend and frontend issue scans sequentially.
 - `./gradlew sonar`: Executes SonarCloud analysis (pass `-Dsonar.token=<your-token>`).
 
-Whenever you make changes to the backend, you must always run /home/skoczo/workspace/GreatNetworkManager/run_tests.sh to verify your changes before finishing.
+Whenever you make changes to the backend, you must always run `./gradlew spotlessApply` and then run `/workspaces/GreatNetworkManager/run_tests.sh` (or `/home/skoczo/workspace/GreatNetworkManager/run_tests.sh`) to verify your changes and ensure code formatting before finishing.
+
+When writing temporary scripts (e.g., Python/Bash) to automate project tasks or refactoring, you MUST place them inside the `.agent_scripts/` directory so they are ignored by Git.
 
 Don't use scripts to fix code. Just change code we are wasting tokens on script creation and still script is not working well.

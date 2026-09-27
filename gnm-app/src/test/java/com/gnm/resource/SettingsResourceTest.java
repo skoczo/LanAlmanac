@@ -14,11 +14,11 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
-public class SettingsResourceTest {
+class SettingsResourceTest {
 
     @BeforeEach
     @Transactional
-    public void setup() {
+    void setup() {
         GlobalSetting.deleteAll();
         
         GlobalSetting mode = new GlobalSetting();
@@ -29,7 +29,7 @@ public class SettingsResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testGetAllSettings() {
+    void testGetAllSettings() {
         given()
             .when().get("/api/settings")
             .then()
@@ -39,7 +39,7 @@ public class SettingsResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testUpdateSetting() {
+    void testUpdateSetting() {
         given()
             .contentType(ContentType.JSON)
             .body(Map.of("value", "DETECTION"))
@@ -51,7 +51,7 @@ public class SettingsResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testGetInterfaces() {
+    void testGetInterfaces() {
         given()
             .when().get("/api/settings/interfaces")
             .then()
@@ -59,7 +59,7 @@ public class SettingsResourceTest {
     }
 
     @Test
-    public void testGetPublicOidcSettings() {
+    void testGetPublicOidcSettings() {
         given()
             .when().get("/api/settings/public/oidc")
             .then()

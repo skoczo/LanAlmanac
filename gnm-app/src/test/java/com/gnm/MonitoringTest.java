@@ -3,18 +3,17 @@ package com.gnm;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import org.junit.jupiter.api.Test;
-import io.restassured.RestAssured;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
-public class MonitoringTest extends AbstractE2ETest {
+class MonitoringTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testSnmpPolling() throws Exception {
+    void testSnmpPolling() throws Exception {
         // Given: The environment is running (ne-router-sim is up)
         
         // Trigger discovery for the router so it's added to the DB
@@ -43,7 +42,7 @@ public class MonitoringTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testSshCommandExecution() {
+    void testSshCommandExecution() {
         // Given: A target device and a command to execute
         String commandPayload = "{\"command\": \"echo 'Hello GNM'\"}";
         

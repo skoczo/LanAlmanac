@@ -32,8 +32,7 @@ public class FingerprintEngine {
     // Limits max concurrent network scans globally
     private final java.util.concurrent.Semaphore activeScanConcurrency = new java.util.concurrent.Semaphore(5);
 
-    @Inject
-    Instance<NetworkProbe> networkProbes;
+    private final Instance<NetworkProbe> networkProbes;
 
     private List<NetworkProbe> sortedProbes = new ArrayList<>();
     private int dynamicTimeoutMs = 60000; // default fallback
@@ -43,23 +42,20 @@ public class FingerprintEngine {
     private java.util.concurrent.ScheduledExecutorService timeoutScheduler;
     private Thread pollingThread;
 
-    @Inject NetworkSightingQueue sightingQueue;
-    @Inject SimilarityEngine similarityEngine;
-    @Inject DeviceIdentityManager identityManager;
-    @Inject DeviceLivenessManager livenessManager;
+    private final NetworkSightingQueue sightingQueue;
+    private final SimilarityEngine similarityEngine;
+    private final DeviceIdentityManager identityManager;
+    private final DeviceLivenessManager livenessManager;
     @Inject com.gnm.service.SubnetFilter subnetFilter;
 
     private final java.util.concurrent.atomic.AtomicInteger activeProcessingCount = new java.util.concurrent.atomic.AtomicInteger(0);
     private final java.util.Map<String, java.time.Instant> lastDbUpdateTimes = new java.util.concurrent.ConcurrentHashMap<>();
 
-    @Inject
-    Event<DeviceEvent> eventBroadcaster;
+    private final Event<DeviceEvent> eventBroadcaster;
 
-    @Inject
-    Event<ThreatEvent> threatBroadcaster;
+    private final Event<ThreatEvent> threatBroadcaster;
 
-    @Inject
-    FingerprintEngine self;
+    private final FingerprintEngine self;
 
     @ConfigProperty(name = "gnm.fingerprint.merge-threshold", defaultValue = "0.75")
     Double mergeThreshold;
@@ -454,4 +450,16 @@ public class FingerprintEngine {
         dest.capturedAt = Instant.now();
         dest.persist();
 }
+
+    @Inject
+    public FingerprintEngine(Instance<NetworkProbe> networkProbes, NetworkSightingQueue sightingQueue, SimilarityEngine similarityEngine, DeviceIdentityManager identityManager, DeviceLivenessManager livenessManager, Event<DeviceEvent> eventBroadcaster, Event<ThreatEvent> threatBroadcaster, FingerprintEngine self) {
+        this.networkProbes = networkProbes;
+        this.sightingQueue = sightingQueue;
+        this.similarityEngine = similarityEngine;
+        this.identityManager = identityManager;
+        this.livenessManager = livenessManager;
+        this.eventBroadcaster = eventBroadcaster;
+        this.threatBroadcaster = threatBroadcaster;
+        this.self = self;
+    }
 }

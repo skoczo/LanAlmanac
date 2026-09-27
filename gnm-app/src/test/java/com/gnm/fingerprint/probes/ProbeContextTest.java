@@ -7,10 +7,10 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
-public class ProbeContextTest {
+class ProbeContextTest {
 
     @Test
-    public void testProbeContextGettersAndSetters() {
+    void testProbeContextGettersAndSetters() {
         FingerprintVector vector = new FingerprintVector();
         ProbeContext ctx = new ProbeContext("192.168.1.10", vector);
 

@@ -2,7 +2,6 @@ package com.gnm;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
-import io.restassured.RestAssured;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import io.restassured.response.Response;
@@ -16,19 +15,18 @@ import com.gnm.model.enums.DeviceStatus;
 import com.gnm.model.enums.ManagementState;
 import com.gnm.service.VaultEngine;
 
-import java.util.Map;
 
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
-public class CredentialVaultTest extends AbstractE2ETest {
+class CredentialVaultTest extends AbstractE2ETest {
 
     @Inject
     VaultEngine vaultEngine;
 
     @BeforeEach
-    public void setup() {
+    void setup() {
         if (!vaultEngine.isInitialized()) {
             given().contentType("application/json").when().post("/api/vault/init").then().statusCode(200);
         }
@@ -40,7 +38,7 @@ public class CredentialVaultTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testVaultKeySealingAndUnsealing() {
+    void testVaultKeySealingAndUnsealing() {
         // Given: The vault is initially unsealed
         given().when().get("/api/vault/status")
             .then().statusCode(200)
@@ -73,7 +71,7 @@ public class CredentialVaultTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testEncryptionAtRestVerification() {
+    void testEncryptionAtRestVerification() {
         // Given: We have a physical device in the DB
         PhysicalDevice pd = createMockDevice();
 

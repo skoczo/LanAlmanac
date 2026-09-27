@@ -7,13 +7,13 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
-public class SubnetFilterTest {
+class SubnetFilterTest {
 
     @Inject
     SubnetFilter subnetFilter;
 
     @Test
-    public void testIsIpInSubnet() {
+    void testIsIpInSubnet() {
         assertTrue(subnetFilter.isIpInSubnet("192.168.1.100"));
         assertFalse(subnetFilter.isIpInSubnet(null));
         assertFalse(subnetFilter.isIpInSubnet(""));
@@ -22,7 +22,7 @@ public class SubnetFilterTest {
     }
 
     @Test
-    public void testMatchesCidr() {
+    void testMatchesCidr() {
         assertTrue(SubnetFilter.matchesCidr("192.168.1.50", "192.168.1.0/24"));
         assertFalse(SubnetFilter.matchesCidr("10.0.0.1", "192.168.1.0/24"));
         assertTrue(SubnetFilter.matchesCidr("10.0.0.1", "10.0.0.1"));

@@ -16,8 +16,7 @@ import java.util.List;
 @Consumes(MediaType.APPLICATION_JSON)
 public class ScannerResource {
 
-    @Inject
-    BackgroundScannerService scannerService;
+    private final BackgroundScannerService scannerService;
 
     @GET
     @Path("/progress")
@@ -47,5 +46,10 @@ public class ScannerResource {
             scannerService.enqueueDevice(device.id);
         }
         return Response.accepted().entity(devices.size() + " devices queued for scanning").build();
+    }
+
+    @Inject
+    public ScannerResource(BackgroundScannerService scannerService) {
+        this.scannerService = scannerService;
     }
 }

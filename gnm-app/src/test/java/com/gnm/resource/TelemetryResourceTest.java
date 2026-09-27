@@ -7,18 +7,17 @@ import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
-import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
-public class TelemetryResourceTest {
+class TelemetryResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
     @Transactional
-    public void testGetTelemetry() {
+    void testGetTelemetry() {
         PhysicalDevice device = new PhysicalDevice();
         device.displayName = "Telemetry Device";
         device.firstSeen = Instant.now();

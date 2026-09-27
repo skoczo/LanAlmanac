@@ -28,8 +28,7 @@ public class BackgroundScannerService {
     private final java.util.Map<UUID, String> activeScans = new ConcurrentHashMap<>();
     private final AtomicInteger totalScannedCount = new AtomicInteger(0);
 
-    @Inject
-    PortScannerEngine scannerEngine;
+    private final PortScannerEngine scannerEngine;
 
     // A default list of top 100 common ports to scan. 
     private static final List<Integer> TOP_PORTS = List.of(
@@ -180,5 +179,10 @@ public class BackgroundScannerService {
             latestVector.openPorts = new ArrayList<>(merged);
             latestVector.persist();
         }
+    }
+
+    @Inject
+    public BackgroundScannerService(PortScannerEngine scannerEngine) {
+        this.scannerEngine = scannerEngine;
     }
 }

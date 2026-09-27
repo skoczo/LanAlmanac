@@ -39,8 +39,7 @@ public class TerminalWebSocket {
 
     private static final Logger log = Logger.getLogger(TerminalWebSocket.class);
 
-    @Inject
-    VaultEngine vaultEngine;
+    private final VaultEngine vaultEngine;
 
     @Inject
     jakarta.enterprise.event.Event<ThreatEvent> threatBroadcaster;
@@ -387,5 +386,10 @@ public class TerminalWebSocket {
             this.channel = channel;
             this.out = out;
         }
+    }
+
+    @Inject
+    public TerminalWebSocket(VaultEngine vaultEngine) {
+        this.vaultEngine = vaultEngine;
     }
 }

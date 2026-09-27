@@ -2,8 +2,6 @@ package com.gnm.fingerprint;
 
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
@@ -11,7 +9,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 
 import com.gnm.model.*;
@@ -19,7 +16,7 @@ import com.gnm.model.*;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @QuarkusTest
-public class ManualNetworkElementDiscoveryTest {
+class ManualNetworkElementDiscoveryTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(ManualNetworkElementDiscoveryTest.class);
 
@@ -27,17 +24,17 @@ public class ManualNetworkElementDiscoveryTest {
     FingerprintEngine engine;
 
     @BeforeEach
-    public void setup() {
+    void setup() {
         System.setProperty("forceNetworkScan", "true");
     }
 
     @AfterEach
-    public void teardown() {
+    void teardown() {
         System.clearProperty("forceNetworkScan");
     }
 
     @Test
-    public void testManualDiscoveryOfSelectedNodes() {
+    void testManualDiscoveryOfSelectedNodes() {
         // Map of IP addresses to MAC addresses from dhcp_backup.txt
         Map<String, String> networkElements = Map.of(
                 "192.168.1.37", "8C:CE:4E:18:F4:61",   // roleta-salon

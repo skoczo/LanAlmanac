@@ -10,13 +10,13 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 @QuarkusTest
-public class DiscoveryModuleManagerTest {
+class DiscoveryModuleManagerTest {
 
     @Inject
     DiscoveryModuleManager moduleManager;
 
     @Test
-    public void testModuleRegistrationAndStatusUpdates() {
+    void testModuleRegistrationAndStatusUpdates() {
         List<DiscoveryModuleStatus> modules = moduleManager.getAllModuleStatuses();
         Assertions.assertTrue(modules.size() >= 3);
 

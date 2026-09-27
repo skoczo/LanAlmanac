@@ -3,18 +3,17 @@ package com.gnm;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import org.junit.jupiter.api.Test;
-import io.restassured.RestAssured;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
-public class DeviceStatusTest extends AbstractE2ETest {
+class DeviceStatusTest extends AbstractE2ETest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
-    public void testDeviceOfflineStatusChange() throws Exception {
+    void testDeviceOfflineStatusChange() throws Exception {
         // Given: The ne-linux-server container is running
         ProcessBuilder pbStart = new ProcessBuilder("docker", "compose", "-f", "../docker-compose.e2e.yml", "start",
                 "ne-linux-server");
