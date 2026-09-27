@@ -53,11 +53,17 @@ sonar {
         property("sonar.projectKey", System.getenv("SONAR_PROJECT_KEY") ?: "skoczo_LanAlmanac")
         property("sonar.projectName", "GreatNetworkManager (LanAlmanac)")
         property("sonar.token", resolvedSonarToken)
-        property("sonar.sources", "frontend/src")
+        property("sonar.sources", "gnm-app/src/main/java,frontend/src")
+        property("sonar.java.binaries", "gnm-app/build/classes/java/main")
         property("sonar.coverage.jacoco.xmlReportPaths", "gnm-app/build/jacoco-report/jacoco.xml,gnm-app/build/reports/jacoco/test/jacocoTestReport.xml")
         property("sonar.javascript.lcov.reportPaths", "frontend/coverage/lcov.info")
+        property("sonar.scm.disabled", "true")
         property("sonar.exclusions", "**/node_modules/**,**/build/**,**/dist/**,**/test-results/**")
     }
+}
+
+tasks.named("sonar") {
+    dependsOn(":gnm-app:test")
 }
 
 tasks.register("detectBackendIssues") {

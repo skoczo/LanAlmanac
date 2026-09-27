@@ -9,7 +9,7 @@ import java.time.Duration;
 
 @QuarkusTest
 @org.junit.jupiter.api.Tag("e2e")
-abstract class AbstractE2ETest {
+public abstract class AbstractE2ETest {
 
     private static final String COMPOSE_FILE_PATH = "../docker-compose.e2e.yml";
 
