@@ -20,7 +20,9 @@ export const LiveDiscoveryFeed: React.FC = () => {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
-        if (data.type === 'ACTIVITY') {
+        // PASSIVE_HEARTBEAT events come from the BPF sniffer on every network packet
+        // and produce too much noise — filter them out entirely.
+        if (data.type === 'ACTIVITY' && data.action !== 'PASSIVE_HEARTBEAT') {
           setEvents((prev) => [data, ...prev].slice(0, 50)) // Keep last 50 events
         }
       } catch (err) {

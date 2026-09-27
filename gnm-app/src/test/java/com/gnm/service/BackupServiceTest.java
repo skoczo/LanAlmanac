@@ -1,14 +1,20 @@
 package com.gnm.service;
 
+import com.gnm.dto.backup.LanAlmanacBackup;
+import com.gnm.model.PhysicalDevice;
+import com.gnm.model.enums.DeviceStatus;
+import com.gnm.model.enums.DeviceType;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
 public class BackupServiceTest {
@@ -17,8 +23,35 @@ public class BackupServiceTest {
     BackupService backupService;
 
     @Test
+    @Transactional
+    public void testExportAndImportData() {
+        PhysicalDevice.deleteAll();
+
+        PhysicalDevice device = new PhysicalDevice();
+        device.displayName = "Backup Test Device";
+        device.deviceType = DeviceType.SERVER;
+        device.status = DeviceStatus.ONLINE;
+        device.firstSeen = Instant.now();
+        device.lastSeen = Instant.now();
+        device.persist();
+
+        // Export with secrets
+        LanAlmanacBackup backupWithSecrets = backupService.exportData(true);
+        assertNotNull(backupWithSecrets);
+        assertEquals("4", backupWithSecrets.version);
+        assertFalse(backupWithSecrets.devices.isEmpty());
+
+        // Export without secrets
+        LanAlmanacBackup backupNoSecrets = backupService.exportData(false);
+        assertNotNull(backupNoSecrets);
+
+        // Import backup
+        backupService.importData(backupWithSecrets);
+        assertEquals(1, PhysicalDevice.count());
+    }
+
+    @Test
     public void testCreateBackup() throws Exception {
-        // Create dummy keys directory to test inclusion
         Path keysDir = Paths.get("keys");
         if (!Files.exists(keysDir)) {
             Files.createDirectories(keysDir);
@@ -27,14 +60,15 @@ public class BackupServiceTest {
         Files.writeString(dummyKey, "dummy_content");
 
         try {
-            // Create backup
             Path encryptedBackup = backupService.createBackup("test_password123");
-            
-            // Assert backup file is created
             assertTrue(Files.exists(encryptedBackup));
             assertTrue(Files.size(encryptedBackup) > 0);
-            
-            // Clean up
+
+            // Test restoring with incorrect password fails
+            assertThrows(IllegalArgumentException.class, () -> {
+                backupService.restoreBackup(encryptedBackup, "wrong_password");
+            });
+
             Files.deleteIfExists(encryptedBackup);
         } finally {
             Files.deleteIfExists(dummyKey);

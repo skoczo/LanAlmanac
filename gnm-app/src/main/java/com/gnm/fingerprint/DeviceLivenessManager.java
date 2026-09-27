@@ -34,9 +34,11 @@ public class DeviceLivenessManager {
 
     public void recordActivity(String ip) {
         if (ip == null || ip.isBlank() || "0.0.0.0".equals(ip) || "255.255.255.255".equals(ip)) return;
+        // Update in-memory liveness map — used by the smart presence engine.
+        // We intentionally do NOT broadcast PASSIVE_HEARTBEAT over WebSocket:
+        // these events originate from the BPF sniffer on every network packet
+        // and produce too much noise in the UI without actionable value.
         lastSeenMap.put(ip, Instant.now());
-        activityBroadcaster.fireAsync(new com.gnm.resource.EventWebSocket.DiscoveryActivityEvent(
-            "PASSIVE_HEARTBEAT", ip, "Passive network activity detected", null));
     }
 
     public Instant getLastSeen(String ip) {

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
@@ -182,4 +183,121 @@ public class DeviceResourceTest {
         response.then().statusCode(200);
         System.out.println("TOPOLOGY RESPONSE: " + response.getBody().asString());
     }
+
+    @Test
+    @TestSecurity(user = "admin", roles = "gnm-admin")
+    @Transactional
+    public void testManualAddDevice() {
+        given()
+          .contentType(ContentType.JSON)
+          .body(Map.of(
+              "ipAddress", "192.168.1.50",
+              "displayName", "Manual Server",
+              "deviceType", "SERVER",
+              "locationNote", "Rack 1"
+          ))
+          .when().post("/api/devices/manual")
+          .then()
+             .statusCode(201)
+             .body("displayName", is("Manual Server"))
+             .body("deviceType", is("SERVER"));
+    }
+
+    @Test
+    @TestSecurity(user = "admin", roles = "gnm-admin")
+    @Transactional
+    public void testDeleteDevice() {
+        PhysicalDevice device = PhysicalDevice.findAll().firstResult();
+        given()
+          .when().delete("/api/devices/" + device.id)
+          .then()
+             .statusCode(204);
+
+        given()
+          .when().get("/api/devices/" + device.id)
+          .then()
+             .statusCode(404);
+    }
+
+    @Test
+    @TestSecurity(user = "admin", roles = "gnm-admin")
+    @Transactional
+    public void testDeviceServicesCrud() {
+        PhysicalDevice device = PhysicalDevice.findAll().firstResult();
+
+        // Add service
+        com.gnm.model.NetworkService service = new com.gnm.model.NetworkService();
+        service.port = 8080;
+        service.serviceType = "HTTP";
+        service.protocol = "TCP";
+        service.label = "Web UI";
+
+        given()
+          .contentType(ContentType.JSON)
+          .body(service)
+          .when().post("/api/devices/" + device.id + "/services")
+          .then()
+             .statusCode(200)
+             .body("port", is(8080))
+             .body("serviceType", is("HTTP"));
+
+        // Get services
+        List<Map<String, Object>> services = given()
+          .when().get("/api/devices/" + device.id + "/services")
+          .then()
+             .statusCode(200)
+             .extract().body().jsonPath().getList(".");
+
+        assertThat(services.size(), greaterThanOrEqualTo(1));
+        String serviceId = (String) services.get(0).get("id");
+
+        // Update service
+        given()
+          .contentType(ContentType.JSON)
+          .body(Map.of("label", "Custom Web"))
+          .when().put("/api/devices/" + device.id + "/services/" + serviceId)
+          .then()
+             .statusCode(200)
+             .body("label", is("Custom Web"));
+
+        // Delete service
+        given()
+          .when().delete("/api/devices/services/" + serviceId)
+          .then()
+             .statusCode(204);
+    }
+
+    @Test
+    @TestSecurity(user = "admin", roles = "gnm-admin")
+    @Transactional
+    public void testProbeUpdateAndHistories() {
+        PhysicalDevice device = PhysicalDevice.findAll().firstResult();
+
+        // Trigger probe update
+        given()
+          .contentType(ContentType.JSON)
+          .body(List.of("192.168.1.1"))
+          .when().post("/api/devices/probe-update")
+          .then()
+             .statusCode(202);
+
+        // Get correlation history
+        given()
+          .when().get("/api/devices/" + device.id + "/correlation-history")
+          .then()
+             .statusCode(200);
+
+        // Get status history
+        given()
+          .when().get("/api/devices/" + device.id + "/status-history")
+          .then()
+             .statusCode(200);
+
+        // Get telemetry
+        given()
+          .when().get("/api/devices/" + device.id + "/telemetry")
+          .then()
+             .statusCode(200);
+    }
 }
+
