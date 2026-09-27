@@ -143,12 +143,13 @@ public class RemoteAccessTest extends AbstractE2ETest {
         Credential cred = createRealCredential(pd);
         
         // Ensure SSH host key is trusted (bypass TOFU)
-        trustSshHostKey(pd, cred);
-
-        // Connect via Terminal WebSocket
         System.setProperty("test.ssh.host", environment.getServiceHost("ne-linux-server", 22));
         System.setProperty("test.ssh.port", String.valueOf(environment.getServicePort("ne-linux-server", 22)));
         try {
+            trustSshHostKey(pd, cred);
+
+            // Connect via Terminal WebSocket
+
             String wsUri = terminalUri.toString().replace("http://", "ws://").replace("https://", "wss://") + "/" + pd.id + "/" + cred.id;
         TestWebSocketListener listener = new TestWebSocketListener();
         WebSocket ws = HttpClient.newHttpClient().newWebSocketBuilder().buildAsync(URI.create(wsUri), listener).join();

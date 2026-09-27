@@ -53,9 +53,7 @@ public class SshHostKeyProbe implements NetworkProbe {
                 }
             } catch (Exception ignored) {}
         }
-        if (io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST && "172.17.0.1".equals(targetHost)) {
-            targetHost = "127.0.0.1";
-        }
+
 
         for (Integer port : portsToTry) {
             if (port == 22 || port == 2222 || port == 2223 || port == 2224 || Boolean.getBoolean("forceNetworkScan")) {

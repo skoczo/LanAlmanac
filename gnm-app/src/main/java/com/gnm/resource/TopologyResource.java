@@ -83,57 +83,7 @@ public class TopologyResource {
             linkedDeviceIds.add(link.targetDevice.id.toString());
         }
 
-        // Add virtual hierarchical links
-        PhysicalDevice mainRouter = devices.stream()
-            .filter(d -> d.deviceType == com.gnm.model.enums.DeviceType.ROUTER || d.displayName.toLowerCase().contains("router") || d.displayName.toLowerCase().contains("openwrt"))
-            .findFirst()
-            .orElse(null);
-            
-        PhysicalDevice proxmox = devices.stream()
-            .filter(d -> d.displayName.toLowerCase().contains("proxmox") || d.displayName.toLowerCase().contains("server") || d.deviceType == com.gnm.model.enums.DeviceType.SERVER)
-            .findFirst()
-            .orElse(null);
 
-        for (PhysicalDevice device : devices) {
-            boolean isVirtualLinkNeeded = !linkedDeviceIds.contains(device.id.toString());
-            
-            if (isVirtualLinkNeeded) {
-                boolean isContainer = device.displayName.toLowerCase().contains("docker") || device.displayName.toLowerCase().contains("container");
-                
-                if (isContainer && proxmox != null && !device.id.equals(proxmox.id)) {
-                    Map<String, Object> edge = new HashMap<>();
-                    edge.put("id", "virtual-" + device.id.toString());
-                    edge.put("source", proxmox.id.toString());
-                    edge.put("target", device.id.toString());
-                    edge.put("label", "Virtual (Host)");
-                    edge.put("type", "smoothstep");
-                    edges.add(edge);
-                    linkedDeviceIds.add(device.id.toString());
-                } else if (mainRouter != null && !device.id.equals(mainRouter.id)) {
-                    Map<String, Object> edge = new HashMap<>();
-                    edge.put("id", "virtual-" + device.id.toString());
-                    edge.put("source", mainRouter.id.toString());
-                    edge.put("target", device.id.toString());
-                    edge.put("label", "Virtual Link");
-                    edge.put("type", "smoothstep");
-                    edges.add(edge);
-                    linkedDeviceIds.add(device.id.toString());
-                }
-            }
-        }
-
-        // Ensure proxmox is connected to mainRouter if neither is linked to each other
-        if (proxmox != null && mainRouter != null && !proxmox.id.equals(mainRouter.id)) {
-            if (!linkedDeviceIds.contains(proxmox.id.toString())) {
-                Map<String, Object> edge = new HashMap<>();
-                edge.put("id", "virtual-proxmox-router");
-                edge.put("source", mainRouter.id.toString());
-                edge.put("target", proxmox.id.toString());
-                edge.put("label", "Virtual Link");
-                edge.put("type", "smoothstep");
-                edges.add(edge);
-            }
-        }
 
         Map<String, Object> graph = new HashMap<>();
         graph.put("nodes", nodes);
