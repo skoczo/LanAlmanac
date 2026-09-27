@@ -85,12 +85,13 @@ public class DeviceIdentityManagerTest {
     }
 
     @Test
-    @Transactional
     public void testDetectionModeGeneratesThreat() {
-        GlobalSetting mode = new GlobalSetting();
-        mode.key = "APP_MODE";
-        mode.value = "DETECTION";
-        mode.persist();
+        io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
+            GlobalSetting mode = new GlobalSetting();
+            mode.key = "APP_MODE";
+            mode.value = "DETECTION";
+            mode.persist();
+        });
 
         NetworkSighting sighting = new NetworkSighting();
         sighting.ipAddress = "192.168.10.99";
@@ -100,13 +101,15 @@ public class DeviceIdentityManagerTest {
 
         identityManager.saveSightingInTransaction(sighting, new FingerprintVector(), "rogue-host");
 
-        // Device should NOT be created in detection mode
-        assertEquals(0, PhysicalDevice.count());
+        io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
+            // Device should NOT be created in detection mode
+            assertEquals(0, PhysicalDevice.count());
 
-        // ThreatEvent should be created
-        assertEquals(1, ThreatEvent.count());
-        ThreatEvent threat = ThreatEvent.findAll().firstResult();
-        assertEquals("192.168.10.99", threat.ipAddress);
-        assertEquals("CRITICAL", threat.severity);
+            // ThreatEvent should be created
+            assertEquals(1, ThreatEvent.count());
+            ThreatEvent threat = ThreatEvent.findAll().firstResult();
+            assertEquals("192.168.10.99", threat.ipAddress);
+            assertEquals("CRITICAL", threat.severity);
+        });
     }
 }

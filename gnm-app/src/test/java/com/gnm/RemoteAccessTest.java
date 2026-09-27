@@ -242,7 +242,7 @@ public class RemoteAccessTest extends AbstractE2ETest {
                     }
                 }
                 if (ns != null && ns.sshHostKey != null) break;
-                Thread.sleep(100);
+                Thread.sleep(500);
             }
             ws.sendClose(WebSocket.NORMAL_CLOSURE, "Done").join();
         }

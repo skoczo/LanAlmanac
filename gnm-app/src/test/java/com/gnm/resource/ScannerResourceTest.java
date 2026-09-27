@@ -49,20 +49,23 @@ public class ScannerResourceTest {
 
         // Scan specific device
         given()
+            .contentType("application/json")
             .when().post("/api/scanner/scan/" + deviceId)
             .then()
-                .statusCode(222);
+                .statusCode(202);
 
         // Scan non-existing device
         given()
+            .contentType("application/json")
             .when().post("/api/scanner/scan/" + UUID.randomUUID())
             .then()
                 .statusCode(404);
 
         // Scan all pending
         given()
+            .contentType("application/json")
             .when().post("/api/scanner/scan-all")
             .then()
-                .statusCode(222);
+                .statusCode(202);
     }
 }

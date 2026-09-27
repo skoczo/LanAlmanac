@@ -35,6 +35,9 @@ public class E2EBackupTest {
 
     @Test
     public void testFullE2EBackupAndRestore() throws Exception {
+        // Skip test if pg_dump is not available
+        org.junit.jupiter.api.Assumptions.assumeTrue(isCommandAvailable("pg_dump"), "pg_dump is required for this test");
+
         // 1. Full Configuration (Create devices, identities, credentials, links)
         createEntities();
 
@@ -120,5 +123,15 @@ public class E2EBackupTest {
         link.discoveryProtocol = DiscoveryProtocol.LLDP;
         link.lastVerified = Instant.now();
         link.persist();
+    }
+    
+    private boolean isCommandAvailable(String command) {
+        try {
+            Process process = new ProcessBuilder(command, "--version").start();
+            process.waitFor();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

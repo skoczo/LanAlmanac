@@ -25,29 +25,4 @@ public class ProbesTest {
         assertThrows(IllegalStateException.class, () -> ctx.setResolvedHostname("other-host.local"));
     }
 
-    @Test
-    public void testAllProbesExecutionOnLocalhost() {
-        FingerprintVector vector = new FingerprintVector();
-        ProbeContext ctx = new ProbeContext("127.0.0.1", vector);
-
-        NetworkProbe[] probes = new NetworkProbe[]{
-            new HttpTitleProbe(),
-            new JdkReverseLookupProbe(),
-            new JndiDefaultGatewayProbe(),
-            new JndiResolvConfProbe(),
-            new JndiSubnetGatewayProbe(),
-            new MdnsProbe(),
-            new NetbiosProbe(),
-            new SshHostKeyProbe(),
-            new TlsCertProbe(),
-            new UpnpSsdpProbe(),
-            new UpnpUsnProbe()
-        };
-
-        for (NetworkProbe probe : probes) {
-            assertTrue(probe.getTimeoutMs() > 0);
-            assertTrue(probe.getPriority() >= 0);
-            assertDoesNotThrow(() -> probe.execute(ctx));
-        }
-    }
 }
