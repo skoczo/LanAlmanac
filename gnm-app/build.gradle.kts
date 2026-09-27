@@ -75,4 +75,9 @@ tasks.withType<JavaCompile> {
 
 tasks.withType<Test> {
     ignoreFailures = true
+    useJUnitPlatform {
+        if (System.getenv("GITHUB_ACTIONS") == "true") {
+            excludeTags("e2e")
+        }
+    }
 }

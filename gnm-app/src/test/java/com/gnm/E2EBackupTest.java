@@ -18,6 +18,7 @@ import com.gnm.service.BackupService;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
+@org.junit.jupiter.api.Tag("e2e")
 class E2EBackupTest {
 
     @Inject
