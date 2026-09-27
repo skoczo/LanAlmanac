@@ -1,7 +1,7 @@
 plugins {
     id("java")
     id("eclipse")
-    id("org.sonarqube") version "6.0.1.5171"
+    id("org.sonarqube") version "7.5.0.8588"
 }
 
 allprojects {

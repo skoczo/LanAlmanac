@@ -48,6 +48,8 @@ public class FingerprintEngineLocalMacHostnameMergeTest {
         NetworkIdentity.deleteAll();
         FingerprintVector.deleteAll();
         PhysicalDevice.deleteAll();
+        ThreatEvent.deleteAll();
+        GlobalSetting.deleteAll();
     }
 
     /**
