@@ -33,18 +33,18 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
  * Extract a nested value from an object using a dot/slash-separated path.
  * E.g., extractClaim(profile, "realm_access/roles") or extractClaim(profile, "groups")
  */
-function extractClaim(obj: Record<string, any>, path: string): string[] {
+function extractClaim(obj: Record<string, unknown>, path: string): string[] {
   if (!obj || !path) return []
   
   const parts = path.split(/[/.]/);
-  let current: any = obj
+  let current: unknown = obj
   for (const part of parts) {
     if (current == null || typeof current !== 'object') return []
-    current = current[part]
+    current = (current as Record<string, unknown>)[part]
   }
   
   if (Array.isArray(current)) {
-    return current.filter((item: any) => typeof item === 'string')
+    return current.filter((item: unknown): item is string => typeof item === 'string')
   }
   if (typeof current === 'string') {
     return [current]
@@ -101,7 +101,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 window.history.replaceState({}, document.title, window.location.pathname)
                 
                 if (cbUser) {
-                  const claimedRoles = extractClaim(cbUser.profile as Record<string, any>, roleClaimPath)
+                  const claimedRoles = extractClaim(cbUser.profile as Record<string, unknown>, roleClaimPath)
                   const gnmRoles = mapToGnmRoles(claimedRoles)
                   
                   setToken(cbUser.access_token)
@@ -120,7 +120,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               // Try to load existing OIDC user
               const oidcUser = await um.getUser()
               if (oidcUser && !oidcUser.expired) {
-                const claimedRoles = extractClaim(oidcUser.profile as Record<string, any>, roleClaimPath)
+                const claimedRoles = extractClaim(oidcUser.profile as Record<string, unknown>, roleClaimPath)
                 const gnmRoles = mapToGnmRoles(claimedRoles)
                 
                 setToken(oidcUser.access_token)

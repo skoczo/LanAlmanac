@@ -16,7 +16,13 @@ import com.gnm.model.enums.*;
 public class DeviceIdentityManager {
     private static final Logger LOG = Logger.getLogger(DeviceIdentityManager.class);
 
-    @Inject Event<FingerprintEngine.DeviceEvent> eventBroadcaster;
+    private static final String DEFAULT_MAC_ZERO = "00:00:00:00:00:00";
+    private static final String PHYSICAL_DEVICE_ID = "physicalDevice.id";
+    private static final String PHYSICAL_DEVICE_ID_PARAM = "physicalDevice.id = ?1";
+    private static final String DEFAULT_MAC_COMPACT = "000000000000";
+    private static final String STATUS_ONLINE = "ONLINE";
+
+    private final Event<FingerprintEngine.DeviceEvent> eventBroadcaster;
     private final Event<ThreatEvent> threatBroadcaster;
     private final SimilarityEngine similarityEngine;
     private final DeviceIdentityManager self;
@@ -37,8 +43,8 @@ public class DeviceIdentityManager {
             // Check if there is an active identity on this IP first
             NetworkIdentity activeIdOnIp = NetworkIdentity.find("select n from NetworkIdentity n join fetch n.physicalDevice where n.ipAddress = ?1 and n.current = true", sighting.ipAddress).firstResult();
             if (activeIdOnIp != null) {
-                boolean sightingIsPlaceholder = sighting.macAddress == null || sighting.macAddress.equals("00:00:00:00:00:00") || sighting.macAddress.isEmpty();
-                boolean activeIsPlaceholder = activeIdOnIp.macAddress == null || activeIdOnIp.macAddress.equals("00:00:00:00:00:00") || activeIdOnIp.macAddress.isEmpty();
+                boolean sightingIsPlaceholder = sighting.macAddress == null || sighting.macAddress.equals(DEFAULT_MAC_ZERO) || sighting.macAddress.isEmpty();
+                boolean activeIsPlaceholder = activeIdOnIp.macAddress == null || activeIdOnIp.macAddress.equals(DEFAULT_MAC_ZERO) || activeIdOnIp.macAddress.isEmpty();
                 boolean derivedMacMatch = isDerivedMacMatch(sighting.macAddress, activeIdOnIp.macAddress);
 
                 // Reuse activeIdOnIp if placeholder OR if sighting MAC is derived from active MAC (e.g. VAP / randomized MAC on OpenWrt/Linux)
@@ -512,7 +518,8 @@ public class DeviceIdentityManager {
     }
 
     @Inject
-    public DeviceIdentityManager(Event<ThreatEvent> threatBroadcaster, SimilarityEngine similarityEngine, DeviceIdentityManager self, FingerprintEngine fingerprintEngine) {
+    public DeviceIdentityManager(Event<FingerprintEngine.DeviceEvent> eventBroadcaster, Event<ThreatEvent> threatBroadcaster, SimilarityEngine similarityEngine, DeviceIdentityManager self, FingerprintEngine fingerprintEngine) {
+        this.eventBroadcaster = eventBroadcaster;
         this.threatBroadcaster = threatBroadcaster;
         this.similarityEngine = similarityEngine;
         this.self = self;

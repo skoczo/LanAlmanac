@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../auth/auth-context'
 
 interface VaultStatus {
@@ -26,7 +26,7 @@ export const VaultProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [autoUnsealEnabled, setAutoUnsealEnabled] = useState(false)
   const [showUnsealModal, setShowUnsealModal] = useState(false)
 
-  const refreshStatus = async () => {
+  const refreshStatus = useCallback(async () => {
     if (!isAuthenticated) return
     try {
       const res = await apiClient<VaultStatus>('/api/vault/status')
@@ -36,11 +36,11 @@ export const VaultProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (e) {
       console.error("Failed to fetch vault status", e)
     }
-  }
+  }, [isAuthenticated, apiClient])
 
   useEffect(() => {
     refreshStatus()
-  }, [isAuthenticated])
+  }, [refreshStatus])
 
   return (
     <VaultContext.Provider value={{

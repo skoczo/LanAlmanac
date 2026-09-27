@@ -14,13 +14,20 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import java.util.HashMap;
 
 @Path("/api/credentials")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class CredentialResource {
+
+    private static final String KEY_ERROR = "error";
+    private static final String MSG_VAULT_SEALED = "Vault is sealed";
+    private static final String KEY_SECRET = "secret";
+    private static final String KEY_LABEL = "label";
+    private static final String KEY_TYPE = "type";
+    private static final String KEY_USERNAME = "username";
+    private static final String KEY_PORT = "port";
 
     private final VaultEngine vaultEngine;
 
@@ -31,13 +38,13 @@ public class CredentialResource {
         List<Map<String, Object>> response = creds.stream().map(c -> {
             Map<String, Object> map = new HashMap<>();
             map.put("id", c.id);
-            map.put("label", c.label);
-            map.put("type", c.credentialType);
-            map.put("username", c.username == null ? "" : c.username);
-            map.put("port", c.port == null ? "" : c.port);
+            map.put(KEY_LABEL, c.label);
+            map.put(KEY_TYPE, c.credentialType);
+            map.put(KEY_USERNAME, c.username == null ? "" : c.username);
+            map.put(KEY_PORT, c.port == null ? "" : c.port);
             map.put("createdAt", c.createdAt);
             return map;
-        }).collect(Collectors.toList());
+        }).toList();
         return Response.ok(response).build();
     }
 
@@ -46,7 +53,7 @@ public class CredentialResource {
     @Transactional
     public Response addCredential(@PathParam("deviceId") UUID deviceId, Map<String, Object> payload) {
         if (!vaultEngine.isUnsealed()) {
-            return Response.status(Response.Status.FORBIDDEN).entity(Map.of("error", "Vault is sealed")).build();
+            return Response.status(Response.Status.FORBIDDEN).entity(Map.of(KEY_ERROR, MSG_VAULT_SEALED)).build();
         }
         
         PhysicalDevice device = PhysicalDevice.findById(deviceId);
@@ -56,14 +63,14 @@ public class CredentialResource {
         
         Credential cred = new Credential();
         cred.physicalDevice = device;
-        cred.label = (String) payload.get("label");
-        cred.credentialType = CredentialType.valueOf((String) payload.get("type"));
-        cred.username = (String) payload.get("username");
-        if (payload.get("port") != null && !payload.get("port").toString().isBlank()) {
-            cred.port = Integer.parseInt(payload.get("port").toString());
+        cred.label = (String) payload.get(KEY_LABEL);
+        cred.credentialType = CredentialType.valueOf((String) payload.get(KEY_TYPE));
+        cred.username = (String) payload.get(KEY_USERNAME);
+        if (payload.get(KEY_PORT) != null && !payload.get(KEY_PORT).toString().isBlank()) {
+            cred.port = Integer.parseInt(payload.get(KEY_PORT).toString());
         }
         
-        String secret = (String) payload.get("secret");
+        String secret = (String) payload.get(KEY_SECRET);
         if (secret != null && !secret.isEmpty()) {
             VaultEngine.EncryptedRecord encrypted = vaultEngine.encrypt(secret.getBytes(StandardCharsets.UTF_8));
             cred.encryptedPayload = encrypted.ciphertext;
@@ -84,7 +91,7 @@ public class CredentialResource {
     @Path("/{id}/reveal")
     public Response revealCredential(@PathParam("id") UUID id) {
         if (!vaultEngine.isUnsealed()) {
-            return Response.status(Response.Status.FORBIDDEN).entity(Map.of("error", "Vault is sealed")).build();
+            return Response.status(Response.Status.FORBIDDEN).entity(Map.of(KEY_ERROR, MSG_VAULT_SEALED)).build();
         }
         
         Credential cred = Credential.findById(id);
@@ -93,15 +100,15 @@ public class CredentialResource {
         }
         
         if (cred.encryptedPayload == null || cred.encryptedPayload.length == 0) {
-             return Response.ok(Map.of("secret", "")).build();
+             return Response.ok(Map.of(KEY_SECRET, "")).build();
         }
         
         try {
             byte[] plaintext = vaultEngine.decrypt(cred.encryptedPayload, cred.noncePayload);
-            String secret = new String(plaintext, StandardCharsets.UTF_8);
-            return Response.ok(Map.of("secret", secret)).build();
+            String secretStr = new String(plaintext, StandardCharsets.UTF_8);
+            return Response.ok(Map.of(KEY_SECRET, secretStr)).build();
         } catch (Exception e) {
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(Map.of("error", "Decryption failed")).build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(Map.of(KEY_ERROR, "Decryption failed")).build();
         }
     }
     
@@ -121,7 +128,7 @@ public class CredentialResource {
     @Transactional
     public Response updateCredential(@PathParam("id") UUID id, Map<String, Object> payload) {
         if (!vaultEngine.isUnsealed()) {
-            return Response.status(Response.Status.FORBIDDEN).entity(Map.of("error", "Vault is sealed")).build();
+            return Response.status(Response.Status.FORBIDDEN).entity(Map.of(KEY_ERROR, MSG_VAULT_SEALED)).build();
         }
         
         Credential cred = Credential.findById(id);
@@ -129,12 +136,12 @@ public class CredentialResource {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
         
-        if (payload.containsKey("label")) cred.label = (String) payload.get("label");
-        if (payload.containsKey("type")) cred.credentialType = CredentialType.valueOf((String) payload.get("type"));
-        if (payload.containsKey("username")) cred.username = (String) payload.get("username");
+        if (payload.containsKey(KEY_LABEL)) cred.label = (String) payload.get(KEY_LABEL);
+        if (payload.containsKey(KEY_TYPE)) cred.credentialType = CredentialType.valueOf((String) payload.get(KEY_TYPE));
+        if (payload.containsKey(KEY_USERNAME)) cred.username = (String) payload.get(KEY_USERNAME);
         
-        if (payload.containsKey("port")) {
-            Object portObj = payload.get("port");
+        if (payload.containsKey(KEY_PORT)) {
+            Object portObj = payload.get(KEY_PORT);
             if (portObj != null && !portObj.toString().isBlank()) {
                 cred.port = Integer.parseInt(portObj.toString());
             } else {
@@ -142,8 +149,8 @@ public class CredentialResource {
             }
         }
         
-        if (payload.containsKey("secret")) {
-            String secret = (String) payload.get("secret");
+        if (payload.containsKey(KEY_SECRET)) {
+            String secret = (String) payload.get(KEY_SECRET);
             if (secret != null && !secret.isEmpty()) {
                 VaultEngine.EncryptedRecord encrypted = vaultEngine.encrypt(secret.getBytes(StandardCharsets.UTF_8));
                 cred.encryptedPayload = encrypted.ciphertext;

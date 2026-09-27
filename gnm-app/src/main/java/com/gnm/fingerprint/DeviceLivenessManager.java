@@ -21,8 +21,8 @@ import com.gnm.discovery.IcmpSweeper;
 public class DeviceLivenessManager {
     private static final Logger LOG = Logger.getLogger(DeviceLivenessManager.class);
     
-    @Inject Event<FingerprintEngine.DeviceEvent> eventBroadcaster;
-    @Inject Event<com.gnm.resource.EventWebSocket.DiscoveryActivityEvent> activityBroadcaster;
+    private final Event<FingerprintEngine.DeviceEvent> eventBroadcaster;
+    private final Event<com.gnm.resource.EventWebSocket.DiscoveryActivityEvent> activityBroadcaster;
     private final IcmpSweeper icmpSweeper;
     private final DeviceLivenessManager self;
 
@@ -211,8 +211,14 @@ public class DeviceLivenessManager {
     }
 
     @Inject
-    public DeviceLivenessManager(IcmpSweeper icmpSweeper, DeviceLivenessManager self) {
+    public DeviceLivenessManager(
+            IcmpSweeper icmpSweeper,
+            DeviceLivenessManager self,
+            Event<FingerprintEngine.DeviceEvent> eventBroadcaster,
+            Event<com.gnm.resource.EventWebSocket.DiscoveryActivityEvent> activityBroadcaster) {
         this.icmpSweeper = icmpSweeper;
         this.self = self;
+        this.eventBroadcaster = eventBroadcaster;
+        this.activityBroadcaster = activityBroadcaster;
     }
 }

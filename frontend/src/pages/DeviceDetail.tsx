@@ -200,7 +200,7 @@ export const DeviceDetail: React.FC = () => {
         console.error(err)
         setLoading(false)
       })
-  }, [deviceId])
+  }, [deviceId, apiClient])
   
   const navigate = useNavigate()
 
@@ -211,8 +211,8 @@ export const DeviceDetail: React.FC = () => {
     try {
       await apiClient(`/api/devices/${deviceId}`, { method: 'DELETE' })
       navigate({ to: '/devices' })
-    } catch (err: any) {
-      alert('Failed to delete device: ' + (err.message || 'Unknown error'))
+    } catch (err: unknown) {
+      alert('Failed to delete device: ' + (err instanceof Error ? err.message : 'Unknown error'))
     }
   }
 
@@ -552,13 +552,13 @@ export const DeviceDetail: React.FC = () => {
               {isEditing ? (
                 <form onSubmit={handleSaveEdits} className="space-y-4 text-xs">
                   <div>
-                    <label className="text-text-secondary block mb-1">Display Name</label>
-                    <input type="text" value={editForm.displayName} onChange={e => setEditForm({...editForm, displayName: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" required />
+                    <label htmlFor="edit-display-name" className="text-text-secondary block mb-1">Display Name</label>
+                    <input id="edit-display-name" type="text" value={editForm.displayName} onChange={e => setEditForm({...editForm, displayName: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" required />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-text-secondary block mb-1">Device Type</label>
-                      <select value={editForm.deviceType} onChange={e => setEditForm({...editForm, deviceType: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none">
+                      <label htmlFor="edit-device-type" className="text-text-secondary block mb-1">Device Type</label>
+                      <select id="edit-device-type" value={editForm.deviceType} onChange={e => setEditForm({...editForm, deviceType: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none">
                         <option value="ROUTER">Router</option>
                         <option value="SWITCH">Switch</option>
                         <option value="FIREWALL">Firewall</option>
@@ -574,28 +574,28 @@ export const DeviceDetail: React.FC = () => {
                       </select>
                     </div>
                     <div>
-                      <label className="text-text-secondary block mb-1">Location</label>
-                      <input type="text" value={editForm.locationNote} onChange={e => setEditForm({...editForm, locationNote: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" />
+                      <label htmlFor="edit-location" className="text-text-secondary block mb-1">Location</label>
+                      <input id="edit-location" type="text" value={editForm.locationNote} onChange={e => setEditForm({...editForm, locationNote: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-text-secondary block mb-1">Manufacturer</label>
-                      <input type="text" value={editForm.manufacturer} onChange={e => setEditForm({...editForm, manufacturer: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" />
+                      <label htmlFor="edit-manufacturer" className="text-text-secondary block mb-1">Manufacturer</label>
+                      <input id="edit-manufacturer" type="text" value={editForm.manufacturer} onChange={e => setEditForm({...editForm, manufacturer: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" />
                     </div>
                     <div>
-                      <label className="text-text-secondary block mb-1">Model</label>
-                      <input type="text" value={editForm.model} onChange={e => setEditForm({...editForm, model: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" />
+                      <label htmlFor="edit-model" className="text-text-secondary block mb-1">Model</label>
+                      <input id="edit-model" type="text" value={editForm.model} onChange={e => setEditForm({...editForm, model: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-text-secondary block mb-1">OS Family</label>
-                      <input type="text" value={editForm.osFamily} onChange={e => setEditForm({...editForm, osFamily: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" />
+                      <label htmlFor="edit-os-family" className="text-text-secondary block mb-1">OS Family</label>
+                      <input id="edit-os-family" type="text" value={editForm.osFamily} onChange={e => setEditForm({...editForm, osFamily: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" />
                     </div>
                     <div>
-                      <label className="text-text-secondary block mb-1">OS Version</label>
-                      <input type="text" value={editForm.osVersion} onChange={e => setEditForm({...editForm, osVersion: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" />
+                      <label htmlFor="edit-os-version" className="text-text-secondary block mb-1">OS Version</label>
+                      <input id="edit-os-version" type="text" value={editForm.osVersion} onChange={e => setEditForm({...editForm, osVersion: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg px-3 py-2 text-text-primary focus:border-accent-primary focus:outline-none" />
                     </div>
                   </div>
                   <div className="flex justify-end gap-2 pt-2 border-t border-border-subtle/50">
@@ -1061,8 +1061,9 @@ export const DeviceDetail: React.FC = () => {
                     
                     <form id="add-cred-form" onSubmit={handleSaveCredential} className="space-y-4">
                       <div>
-                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Label</label>
+                        <label htmlFor="cred-label" className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Label</label>
                         <input
+                          id="cred-label"
                           autoFocus
                           type="text"
                           required
@@ -1075,8 +1076,9 @@ export const DeviceDetail: React.FC = () => {
                       
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Type</label>
+                          <label htmlFor="cred-type" className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Type</label>
                           <select
+                            id="cred-type"
                             value={newCred.type}
                             onChange={e => setNewCred({...newCred, type: e.target.value})}
                             className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-primary appearance-none"
@@ -1089,8 +1091,9 @@ export const DeviceDetail: React.FC = () => {
                           </select>
                         </div>
                         <div>
-                          <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Port (Optional)</label>
+                          <label htmlFor="cred-port" className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Port (Optional)</label>
                           <input
+                            id="cred-port"
                             type="number"
                             value={newCred.port}
                             onChange={e => setNewCred({...newCred, port: e.target.value})}
@@ -1101,8 +1104,9 @@ export const DeviceDetail: React.FC = () => {
                       </div>
                       
                       <div>
-                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Username</label>
+                        <label htmlFor="cred-username" className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Username</label>
                         <input
+                          id="cred-username"
                           type="text"
                           value={newCred.username}
                           onChange={e => setNewCred({...newCred, username: e.target.value})}
@@ -1112,8 +1116,9 @@ export const DeviceDetail: React.FC = () => {
                       </div>
                       
                       <div>
-                        <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Secret / Key</label>
+                        <label htmlFor="cred-secret" className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Secret / Key</label>
                         <textarea
+                          id="cred-secret"
                           required={!editingCredId}
                           value={newCred.secret}
                           onChange={e => setNewCred({...newCred, secret: e.target.value})}
@@ -1265,12 +1270,12 @@ export const DeviceDetail: React.FC = () => {
                 <h4 className="text-xs font-bold uppercase tracking-wider text-text-secondary">{editingServiceId ? 'Edit Service' : 'New Service'}</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Label</label>
-                    <input type="text" placeholder="e.g. Ubuntu SSH" required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newService.label} onChange={e => setNewService({...newService, label: e.target.value})} />
+                    <label htmlFor="svc-label" className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Label</label>
+                    <input id="svc-label" type="text" placeholder="e.g. Ubuntu SSH" required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newService.label} onChange={e => setNewService({...newService, label: e.target.value})} />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Type</label>
-                    <select className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newService.type} onChange={e => setNewService({...newService, type: e.target.value})}>
+                    <label htmlFor="svc-type" className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Type</label>
+                    <select id="svc-type" className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newService.type} onChange={e => setNewService({...newService, type: e.target.value})}>
                       <option value="SSH">SSH</option>
                       <option value="HTTP">HTTP</option>
                       <option value="HTTPS">HTTPS</option>
@@ -1278,12 +1283,12 @@ export const DeviceDetail: React.FC = () => {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Port</label>
-                    <input type="number" placeholder="Port" required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newService.port} onChange={e => setNewService({...newService, port: e.target.value})} />
+                    <label htmlFor="svc-port" className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Port</label>
+                    <input id="svc-port" type="number" placeholder="Port" required className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newService.port} onChange={e => setNewService({...newService, port: e.target.value})} />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Credential (Optional)</label>
-                    <select className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newService.credentialId} onChange={e => setNewService({...newService, credentialId: e.target.value})}>
+                    <label htmlFor="svc-cred" className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Credential (Optional)</label>
+                    <select id="svc-cred" className="bg-bg-surface border border-border-subtle rounded-lg py-2 px-3 text-xs w-full focus:outline-none focus:border-accent-primary" value={newService.credentialId} onChange={e => setNewService({...newService, credentialId: e.target.value})}>
                       <option value="">-- None --</option>
                       {device.credentials?.map(c => (
                         <option key={c.id} value={c.id}>{c.label} ({c.username})</option>

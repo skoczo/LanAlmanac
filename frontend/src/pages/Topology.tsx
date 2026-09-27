@@ -18,7 +18,7 @@ import 'reactflow/dist/style.css'
 import dagre from 'dagre'
 
 // Custom Node Component to maintain our dark theme aesthetic
-const CustomDeviceNode = ({ data }: { data: any }) => {
+const CustomDeviceNode = ({ data }: { data: { status?: string; type?: string; label?: string } }) => {
   const isOnline = data.status === 'ONLINE'
 
   const renderIcon = (type: string) => {
@@ -39,7 +39,7 @@ const CustomDeviceNode = ({ data }: { data: any }) => {
     <div className={`px-4 py-3 shadow-lg rounded-xl border-2 bg-bg-surface-raised flex items-center gap-3 w-48 ${isOnline ? 'border-accent-success/50 shadow-accent-success/10' : 'border-accent-danger/50 shadow-accent-danger/10'}`}>
       <Handle type="target" position={Position.Top} className="w-1.5 h-1.5 bg-text-secondary border-none" />
       <div className={`p-2 rounded-lg bg-bg-surface flex-shrink-0 ${isOnline ? 'animate-pulse-slow' : ''}`}>
-        {isOnline ? renderIcon(data.type) : <ServerCrash className="w-5 h-5 text-accent-danger" />}
+        {isOnline ? renderIcon(data.type || '') : <ServerCrash className="w-5 h-5 text-accent-danger" />}
       </div>
       <div className="flex flex-col overflow-hidden">
         <span className="font-bold text-sm text-text-primary truncate" title={data.label}>{data.label}</span>
@@ -98,7 +98,7 @@ export const Topology: React.FC = () => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    apiClient<{ nodes: any[], edges: any[] }>('/api/topology')
+    apiClient<{ nodes: Array<{ id: string; data: Record<string, unknown> }>; edges: Array<{ id: string; source: string; target: string; animated?: boolean }> }>('/api/topology')
       .then((data) => {
         const initialNodes: Node[] = data.nodes.map((n) => ({
           id: n.id,
@@ -131,7 +131,7 @@ export const Topology: React.FC = () => {
       })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [])
+  }, [apiClient, setEdges, setNodes])
 
   const onNodeDoubleClick = useCallback(
     (_: React.MouseEvent, node: Node) => {

@@ -58,7 +58,7 @@ export const Terminal: React.FC<TerminalProps> = ({ deviceId, credentialId, onCl
                 rows: term.rows 
               }))
             }
-          } catch (e) {
+          } catch {
             // Ignore fit errors during transitions
           }
         }
@@ -66,7 +66,7 @@ export const Terminal: React.FC<TerminalProps> = ({ deviceId, credentialId, onCl
       resizeObserver.observe(terminalRef.current)
       
       // Save observer to clean it up
-      ;(term as any)._resizeObserver = resizeObserver
+      ;(term as unknown as Record<string, unknown>)._resizeObserver = resizeObserver
 
       // Connect WebSocket inside the timeout to avoid Strict Mode double-connections
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -133,8 +133,9 @@ export const Terminal: React.FC<TerminalProps> = ({ deviceId, credentialId, onCl
       isDisposed = true
       clearTimeout(timeoutId)
       window.removeEventListener('resize', handleResize)
-      if ((term as any)._resizeObserver) {
-        (term as any)._resizeObserver.disconnect()
+      const termExt = term as unknown as Record<string, ResizeObserver | undefined>
+      if (termExt._resizeObserver) {
+        termExt._resizeObserver.disconnect()
       }
       if (ws) {
         ws.close()

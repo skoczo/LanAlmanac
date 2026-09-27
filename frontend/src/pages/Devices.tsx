@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useAuth } from '../lib/auth/auth-context'
 import {
@@ -54,7 +54,7 @@ export const Devices: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState(() => sessionStorage.getItem('devices_statusFilter') || 'ALL')
   const [typeFilter, setTypeFilter] = useState(() => sessionStorage.getItem('devices_typeFilter') || 'ALL')
   const [mgmtStateFilter, setMgmtStateFilter] = useState(() => sessionStorage.getItem('devices_mgmtStateFilter') || 'ALL')
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => (sessionStorage.getItem('devices_viewMode') as any) || 'grid')
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => (sessionStorage.getItem('devices_viewMode') as 'grid' | 'table') || 'grid')
   const [showAddModal, setShowAddModal] = useState(false)
 
   useEffect(() => {
@@ -65,7 +65,7 @@ export const Devices: React.FC = () => {
     sessionStorage.setItem('devices_viewMode', viewMode)
   }, [search, statusFilter, typeFilter, mgmtStateFilter, viewMode])
 
-  const fetchDevices = () => {
+  const fetchDevices = useCallback(() => {
     apiClient<Device[]>('/api/devices')
       .then((data) => {
         setDevices(data)
@@ -75,7 +75,7 @@ export const Devices: React.FC = () => {
         console.error(err)
         setLoading(false)
       })
-  }
+  }, [apiClient])
 
   useEffect(() => {
     // Initial fetch
@@ -100,7 +100,7 @@ export const Devices: React.FC = () => {
         ws.close()
       }
     }
-  }, [])
+  }, [fetchDevices])
 
   // Filter logic
   const filteredDevices = devices.filter((d) => {

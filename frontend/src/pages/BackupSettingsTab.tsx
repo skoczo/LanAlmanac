@@ -88,8 +88,8 @@ export const BackupSettingsTab = () => {
       }
 
       setRestoreMessage("Restore initiated. The system will restart shortly. Please refresh the page in a minute.")
-    } catch (err: any) {
-      alert('Restore failed: ' + err.message)
+    } catch (err: unknown) {
+      alert('Restore failed: ' + (err instanceof Error ? err.message : String(err)))
     } finally {
       setIsRestoring(false)
     }
@@ -109,8 +109,9 @@ export const BackupSettingsTab = () => {
           </p>
           <div className="flex flex-col md:flex-row gap-4 items-end">
             <div className="flex-1 w-full">
-              <label className="block text-sm font-medium text-text-primary mb-1">Backup Password</label>
+              <label htmlFor="backup-password" className="block text-sm font-medium text-text-primary mb-1">Backup Password</label>
               <input
+                id="backup-password"
                 type="password"
                 value={backupPassword}
                 onChange={e => setBackupPassword(e.target.value)}
@@ -145,8 +146,9 @@ export const BackupSettingsTab = () => {
           
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-1">Backup File (.gnmbak)</label>
+              <label htmlFor="backup-file" className="block text-sm font-medium text-text-primary mb-1">Backup File (.gnmbak)</label>
               <input
+                id="backup-file"
                 type="file"
                 accept=".gnmbak"
                 onChange={e => setFile(e.target.files?.[0] || null)}
@@ -154,8 +156,9 @@ export const BackupSettingsTab = () => {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-1">Decryption Password</label>
+              <label htmlFor="restore-password" className="block text-sm font-medium text-text-primary mb-1">Decryption Password</label>
               <input
+                id="restore-password"
                 type="password"
                 value={restorePassword}
                 onChange={e => setRestorePassword(e.target.value)}

@@ -23,8 +23,8 @@ export const VaultUnsealModal = () => {
       setShowUnsealModal(false)
       setError(null)
       setPassword('')
-    } catch (err: any) {
-      setError(err.message || 'Invalid passcode')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Invalid passcode')
     }
   }
 
@@ -50,8 +50,9 @@ export const VaultUnsealModal = () => {
 
         <form onSubmit={handleUnseal} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-text-secondary mb-1">Master Password</label>
+            <label htmlFor="vault-unseal-password" className="block text-xs font-semibold text-text-secondary mb-1">Master Password</label>
             <input
+              id="vault-unseal-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

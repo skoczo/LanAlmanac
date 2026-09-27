@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '../lib/auth/auth-context'
 import { ShieldAlert, CheckCircle, ShieldCheck, MessageSquare, Key, Network, AlertOctagon, RotateCcw } from 'lucide-react'
 
@@ -36,7 +36,7 @@ export const Alerts: React.FC = () => {
   const [noteEdits, setNoteEdits] = useState<{ [key: string]: string }>({})
   const [expandedNotes, setExpandedNotes] = useState<{ [key: string]: boolean }>({})
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [threatsData, devicesData] = await Promise.all([
         apiClient<ThreatEvent[]>('/api/threats'),
@@ -63,11 +63,11 @@ export const Alerts: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [apiClient])
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [fetchData])
 
   const handleResolve = async (id: string) => {
     try {

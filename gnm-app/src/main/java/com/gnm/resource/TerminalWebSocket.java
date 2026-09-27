@@ -40,9 +40,7 @@ public class TerminalWebSocket {
     private static final Logger log = Logger.getLogger(TerminalWebSocket.class);
 
     private final VaultEngine vaultEngine;
-
-    @Inject
-    jakarta.enterprise.event.Event<ThreatEvent> threatBroadcaster;
+    private final jakarta.enterprise.event.Event<ThreatEvent> threatBroadcaster;
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
@@ -149,7 +147,6 @@ public class TerminalWebSocket {
         Thread.startVirtualThread(() -> connectSsh(connection, finalResult));
     }
 
-    @SuppressWarnings("java:S2095")
     private void connectSsh(WebSocketConnection connection, SetupResult ctx) {
         try {
             log.infof("Entering connectSsh for ip: %s", ctx.ipAddress);
@@ -389,7 +386,10 @@ public class TerminalWebSocket {
     }
 
     @Inject
-    public TerminalWebSocket(VaultEngine vaultEngine) {
+    public TerminalWebSocket(
+            VaultEngine vaultEngine,
+            jakarta.enterprise.event.Event<ThreatEvent> threatBroadcaster) {
         this.vaultEngine = vaultEngine;
+        this.threatBroadcaster = threatBroadcaster;
     }
 }

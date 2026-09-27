@@ -43,8 +43,7 @@ public class ArpScanner {
 
     private final NetworkSightingQueue sightingQueue;
 
-    @Inject
-    private com.gnm.service.SubnetFilter subnetFilter;
+    private final com.gnm.service.SubnetFilter subnetFilter;
 
     private final DiscoveryModuleManager moduleManager;
 
@@ -199,8 +198,8 @@ public class ArpScanner {
         Enumeration<InetAddress> addrs = netIf.getInetAddresses();
         while (addrs.hasMoreElements()) {
             InetAddress addr = addrs.nextElement();
-            if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
-                return (Inet4Address) addr;
+            if (addr instanceof Inet4Address ipv4 && !ipv4.isLoopbackAddress()) {
+                return ipv4;
             }
         }
         throw new IllegalArgumentException("Interface does not have a valid IPv4 address");
@@ -252,14 +251,14 @@ public class ArpScanner {
                             (byte) (cur & 0xFF)
                     };
                     InetAddress addr = InetAddress.getByAddress(ipBytes);
-                    if (addr instanceof Inet4Address && !addr.equals(localIp)) {
-                        String ipStr = addr.getHostAddress();
+                    if (addr instanceof Inet4Address inet4 && !inet4.equals(localIp)) {
+                        String ipStr = inet4.getHostAddress();
                         if (skipIps == null || !skipIps.contains(ipStr)) {
-                            targets.add((Inet4Address) addr);
+                            targets.add(inet4);
                         }
-                    }
                     totalCount++;
                 }
+            }
             }
         } catch (Exception e) {
             LOG.warn("Failed to calculate target IPs for active ARP scan", e);
@@ -334,8 +333,12 @@ public class ArpScanner {
     }
 
     @Inject
-    public ArpScanner(NetworkSightingQueue sightingQueue, DiscoveryModuleManager moduleManager) {
+    public ArpScanner(
+            NetworkSightingQueue sightingQueue,
+            DiscoveryModuleManager moduleManager,
+            com.gnm.service.SubnetFilter subnetFilter) {
         this.sightingQueue = sightingQueue;
         this.moduleManager = moduleManager;
+        this.subnetFilter = subnetFilter;
     }
 }

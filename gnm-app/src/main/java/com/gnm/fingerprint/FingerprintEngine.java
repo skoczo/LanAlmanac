@@ -46,7 +46,7 @@ public class FingerprintEngine {
     private final SimilarityEngine similarityEngine;
     private final DeviceIdentityManager identityManager;
     private final DeviceLivenessManager livenessManager;
-    @Inject com.gnm.service.SubnetFilter subnetFilter;
+    private final com.gnm.service.SubnetFilter subnetFilter;
 
     private final java.util.concurrent.atomic.AtomicInteger activeProcessingCount = new java.util.concurrent.atomic.AtomicInteger(0);
     private final java.util.Map<String, java.time.Instant> lastDbUpdateTimes = new java.util.concurrent.ConcurrentHashMap<>();
@@ -452,12 +452,22 @@ public class FingerprintEngine {
 }
 
     @Inject
-    public FingerprintEngine(Instance<NetworkProbe> networkProbes, NetworkSightingQueue sightingQueue, SimilarityEngine similarityEngine, DeviceIdentityManager identityManager, DeviceLivenessManager livenessManager, Event<DeviceEvent> eventBroadcaster, Event<ThreatEvent> threatBroadcaster, FingerprintEngine self) {
+    public FingerprintEngine(
+            Instance<NetworkProbe> networkProbes,
+            NetworkSightingQueue sightingQueue,
+            SimilarityEngine similarityEngine,
+            DeviceIdentityManager identityManager,
+            DeviceLivenessManager livenessManager,
+            com.gnm.service.SubnetFilter subnetFilter,
+            Event<DeviceEvent> eventBroadcaster,
+            Event<ThreatEvent> threatBroadcaster,
+            FingerprintEngine self) {
         this.networkProbes = networkProbes;
         this.sightingQueue = sightingQueue;
         this.similarityEngine = similarityEngine;
         this.identityManager = identityManager;
         this.livenessManager = livenessManager;
+        this.subnetFilter = subnetFilter;
         this.eventBroadcaster = eventBroadcaster;
         this.threatBroadcaster = threatBroadcaster;
         this.self = self;

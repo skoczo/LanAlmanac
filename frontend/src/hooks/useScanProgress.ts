@@ -23,9 +23,9 @@ export const useScanProgress = (pollIntervalMs = 5000) => {
           setProgress(data)
           setError(null)
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (isMounted) {
-          setError(err)
+          setError(err instanceof Error ? err : new Error(String(err)))
         }
       }
     }

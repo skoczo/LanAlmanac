@@ -1,6 +1,7 @@
 package com.gnm.discovery;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
@@ -22,15 +23,15 @@ public class DiscoveryModuleManager {
     public static final String ACTIVE_ARP_ID = "active-arp-scanner";
     public static final String ICMP_SWEEPER_ID = "icmp-sweeper";
 
-    @Inject
-    ArpScanner arpScanner;
-
-    @Inject
-    IcmpSweeper icmpSweeper;
+    private final Instance<ArpScanner> arpScanner;
+    private final Instance<IcmpSweeper> icmpSweeper;
 
     private final Map<String, DiscoveryModuleStatus> moduleStatusMap = new ConcurrentHashMap<>();
 
-    public DiscoveryModuleManager() {
+    @Inject
+    public DiscoveryModuleManager(Instance<ArpScanner> arpScanner, Instance<IcmpSweeper> icmpSweeper) {
+        this.arpScanner = arpScanner;
+        this.icmpSweeper = icmpSweeper;
         initDefaultModules();
     }
 
@@ -130,10 +131,10 @@ public class DiscoveryModuleManager {
             try {
                 if (ACTIVE_ARP_ID.equals(id)) {
                     updateStatus(id, Status.RUNNING, "Running active ARP scan on demand...");
-                    arpScanner.scan();
+                    arpScanner.get().scan();
                 } else if (ICMP_SWEEPER_ID.equals(id)) {
                     updateStatus(id, Status.RUNNING, "Running ICMP sweep on demand...");
-                    icmpSweeper.sweep();
+                    icmpSweeper.get().sweep();
                 } else if (PASSIVE_SNIFFER_ID.equals(id)) {
                     LOG.info("Triggered refresh for passive sniffer status.");
                 }

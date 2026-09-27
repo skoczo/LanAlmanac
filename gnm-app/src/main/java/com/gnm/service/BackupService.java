@@ -25,10 +25,10 @@ public class BackupService {
         backup.exportDate = Instant.now();
 
         List<PhysicalDevice> devices = PhysicalDevice.listAll();
-        backup.devices = devices.stream().map(d -> mapToBackup(d, includeSecrets)).collect(Collectors.toList());
+        backup.devices = devices.stream().map(d -> mapToBackup(d, includeSecrets)).toList();
 
         List<NetworkLink> links = NetworkLink.listAll();
-        backup.links = links.stream().map(this::mapToBackup).collect(Collectors.toList());
+        backup.links = links.stream().map(this::mapToBackup).toList();
 
         return backup;
     }
@@ -93,13 +93,13 @@ public class BackupService {
         if (device.labels != null) dto.labels.addAll(device.labels);
         
         if (device.identities != null) {
-            dto.identities = device.identities.stream().map(this::mapToBackup).collect(Collectors.toList());
+            dto.identities = device.identities.stream().map(this::mapToBackup).toList();
         }
         if (device.fingerprints != null) {
-            dto.fingerprints = device.fingerprints.stream().map(this::mapToBackup).collect(Collectors.toList());
+            dto.fingerprints = device.fingerprints.stream().map(this::mapToBackup).toList();
         }
         if (device.credentials != null) {
-            dto.credentials = device.credentials.stream().map(c -> mapToBackup(c, includeSecrets)).collect(Collectors.toList());
+            dto.credentials = device.credentials.stream().map(c -> mapToBackup(c, includeSecrets)).toList();
         }
         return dto;
     }
@@ -241,7 +241,7 @@ public class BackupService {
         if (dto.openPorts != null && !dto.openPorts.isEmpty()) {
             fp.openPorts = java.util.Arrays.stream(dto.openPorts.split(","))
                     .map(Integer::parseInt)
-                    .collect(Collectors.toList());
+                    .toList();
         }
         fp.macOui = dto.macOui;
         fp.capturedAt = dto.capturedAt;

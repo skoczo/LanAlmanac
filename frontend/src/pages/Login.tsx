@@ -44,8 +44,8 @@ export const Login: React.FC = () => {
       const data = await response.json()
       login(data.token, data.username, data.roles, data.mustChangePassword)
       navigate({ to: '/', replace: true })
-    } catch (err: any) {
-      setError(err.message || 'Something went wrong')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
       setIsSubmitting(false)
     }
@@ -99,7 +99,7 @@ export const Login: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+            <label htmlFor="login-username" className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
               Username
             </label>
             <div className="relative">
@@ -107,6 +107,7 @@ export const Login: React.FC = () => {
                 <User className="w-4 h-4" />
               </div>
               <input
+                id="login-username"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -119,7 +120,7 @@ export const Login: React.FC = () => {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+            <label htmlFor="login-password" className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
               Password
             </label>
             <div className="relative">
@@ -127,6 +128,7 @@ export const Login: React.FC = () => {
                 <KeyRound className="w-4 h-4" />
               </div>
               <input
+                id="login-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

@@ -41,7 +41,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     LOG_ws_connect(wsUrl)
     
     let ws: WebSocket
-    let reconnectTimer: any
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined
 
     const connect = () => {
       ws = new WebSocket(wsUrl)

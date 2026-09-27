@@ -16,6 +16,13 @@ import java.util.UUID;
 @Consumes(MediaType.APPLICATION_JSON)
 public class UserResource {
 
+    private static final String ERR_USER_NOT_FOUND = "{\"error\":\"User not found\"}";
+    private static final String ERR_INVALID_ROLE = "{\"error\":\"Invalid role. Must be gnm-admin, gnm-operator, or gnm-viewer\"}";
+    private static final String ERR_PASSWORD_MIN_LENGTH = "{\"error\":\"Password must be at least 8 characters\"}";
+    private static final String ROLE_ADMIN = "gnm-admin";
+    private static final String ROLE_OPERATOR = "gnm-operator";
+    private static final String ROLE_VIEWER = "gnm-viewer";
+
     private final PasswordService passwordService;
 
     // --- DTOs ---
@@ -82,7 +89,7 @@ public class UserResource {
 
         if (request.password.length() < 8) {
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("{\"error\":\"Password must be at least 8 characters\"}")
+                    .entity(ERR_PASSWORD_MIN_LENGTH)
                     .build();
         }
 
@@ -92,10 +99,10 @@ public class UserResource {
                     .build();
         }
 
-        String role = request.role != null ? request.role : "gnm-viewer";
+        String role = request.role != null ? request.role : ROLE_VIEWER;
         if (!isValidRole(role)) {
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("{\"error\":\"Invalid role. Must be gnm-admin, gnm-operator, or gnm-viewer\"}")
+                    .entity(ERR_INVALID_ROLE)
                     .build();
         }
 
@@ -118,7 +125,7 @@ public class UserResource {
         GnmUser user = GnmUser.findById(id);
         if (user == null) {
             return Response.status(Response.Status.NOT_FOUND)
-                    .entity("{\"error\":\"User not found\"}")
+                    .entity(ERR_USER_NOT_FOUND)
                     .build();
         }
 
@@ -129,7 +136,7 @@ public class UserResource {
         if (request.role != null) {
             if (!isValidRole(request.role)) {
                 return Response.status(Response.Status.BAD_REQUEST)
-                        .entity("{\"error\":\"Invalid role. Must be gnm-admin, gnm-operator, or gnm-viewer\"}")
+                        .entity(ERR_INVALID_ROLE)
                         .build();
             }
             user.role = request.role;
@@ -150,13 +157,13 @@ public class UserResource {
         GnmUser user = GnmUser.findById(id);
         if (user == null) {
             return Response.status(Response.Status.NOT_FOUND)
-                    .entity("{\"error\":\"User not found\"}")
+                    .entity(ERR_USER_NOT_FOUND)
                     .build();
         }
 
         // Prevent deleting the last admin
-        long adminCount = GnmUser.count("role", "gnm-admin");
-        if ("gnm-admin".equals(user.role) && adminCount <= 1) {
+        long adminCount = GnmUser.count("role", ROLE_ADMIN);
+        if (ROLE_ADMIN.equals(user.role) && adminCount <= 1) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("{\"error\":\"Cannot delete the last admin user\"}")
                     .build();
@@ -173,7 +180,7 @@ public class UserResource {
         GnmUser user = GnmUser.findById(id);
         if (user == null) {
             return Response.status(Response.Status.NOT_FOUND)
-                    .entity("{\"error\":\"User not found\"}")
+                    .entity(ERR_USER_NOT_FOUND)
                     .build();
         }
 
@@ -185,7 +192,7 @@ public class UserResource {
 
         if (request.newPassword.length() < 8) {
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("{\"error\":\"Password must be at least 8 characters\"}")
+                    .entity(ERR_PASSWORD_MIN_LENGTH)
                     .build();
         }
 
@@ -197,7 +204,7 @@ public class UserResource {
     }
 
     private boolean isValidRole(String role) {
-        return "gnm-admin".equals(role) || "gnm-operator".equals(role) || "gnm-viewer".equals(role);
+        return ROLE_ADMIN.equals(role) || ROLE_OPERATOR.equals(role) || ROLE_VIEWER.equals(role);
     }
 
     @Inject

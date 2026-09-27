@@ -41,8 +41,8 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ onClose, onDevic
       })
       setDiscoverMessage(res.message || 'Discovery initiated')
       setDiscoverIp('')
-    } catch (err: any) {
-      setDiscoverError(err.message || 'Failed to trigger discovery')
+    } catch (err: unknown) {
+      setDiscoverError(err instanceof Error ? err.message : 'Failed to trigger discovery')
     } finally {
       setDiscoverLoading(false)
     }
@@ -60,8 +60,8 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ onClose, onDevic
       })
       onDeviceAdded()
       onClose()
-    } catch (err: any) {
-      setManualError(err.message || 'Failed to add device manually')
+    } catch (err: unknown) {
+      setManualError(err instanceof Error ? err.message : 'Failed to add device manually')
     } finally {
       setManualLoading(false)
     }
@@ -124,10 +124,11 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ onClose, onDevic
 
               <form onSubmit={handleDiscover} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">Target IP Address</label>
+                  <label htmlFor="discover-target-ip" className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">Target IP Address</label>
                   <div className="relative">
                     <Target className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                     <input 
+                      id="discover-target-ip"
                       type="text" 
                       required
                       placeholder="192.168.1.100"
@@ -158,12 +159,12 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ onClose, onDevic
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">Display Name *</label>
-                  <input type="text" required value={manualForm.displayName} onChange={e => setManualForm({...manualForm, displayName: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg py-2.5 px-3 text-xs text-text-primary focus:outline-none focus:border-accent-primary" placeholder="Core Switch" />
+                  <label htmlFor="manual-display-name" className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">Display Name *</label>
+                  <input id="manual-display-name" type="text" required value={manualForm.displayName} onChange={e => setManualForm({...manualForm, displayName: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg py-2.5 px-3 text-xs text-text-primary focus:outline-none focus:border-accent-primary" placeholder="Core Switch" />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">Device Type</label>
-                  <select value={manualForm.deviceType} onChange={e => setManualForm({...manualForm, deviceType: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg py-2.5 px-3 text-xs text-text-primary focus:outline-none focus:border-accent-primary">
+                  <label htmlFor="manual-device-type" className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">Device Type</label>
+                  <select id="manual-device-type" value={manualForm.deviceType} onChange={e => setManualForm({...manualForm, deviceType: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg py-2.5 px-3 text-xs text-text-primary focus:outline-none focus:border-accent-primary">
                     <option value="ROUTER">Router</option>
                     <option value="SWITCH">Switch</option>
                     <option value="FIREWALL">Firewall</option>
@@ -179,16 +180,16 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ onClose, onDevic
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">IP Address *</label>
-                  <input type="text" required value={manualForm.ipAddress} onChange={e => setManualForm({...manualForm, ipAddress: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg py-2.5 px-3 text-xs font-mono text-text-primary focus:outline-none focus:border-accent-primary" placeholder="10.0.0.1" />
+                  <label htmlFor="manual-ip-address" className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">IP Address *</label>
+                  <input id="manual-ip-address" type="text" required value={manualForm.ipAddress} onChange={e => setManualForm({...manualForm, ipAddress: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg py-2.5 px-3 text-xs font-mono text-text-primary focus:outline-none focus:border-accent-primary" placeholder="10.0.0.1" />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">MAC Address</label>
-                  <input type="text" value={manualForm.macAddress} onChange={e => setManualForm({...manualForm, macAddress: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg py-2.5 px-3 text-xs font-mono text-text-primary focus:outline-none focus:border-accent-primary" placeholder="00:00:00:00:00:00 (Optional)" />
+                  <label htmlFor="manual-mac-address" className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">MAC Address</label>
+                  <input id="manual-mac-address" type="text" value={manualForm.macAddress} onChange={e => setManualForm({...manualForm, macAddress: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg py-2.5 px-3 text-xs font-mono text-text-primary focus:outline-none focus:border-accent-primary" placeholder="00:00:00:00:00:00 (Optional)" />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">Location Note</label>
-                  <input type="text" value={manualForm.locationNote} onChange={e => setManualForm({...manualForm, locationNote: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg py-2.5 px-3 text-xs text-text-primary focus:outline-none focus:border-accent-primary" placeholder="Server Room Rack 2" />
+                  <label htmlFor="manual-location-note" className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">Location Note</label>
+                  <input id="manual-location-note" type="text" value={manualForm.locationNote} onChange={e => setManualForm({...manualForm, locationNote: e.target.value})} className="w-full bg-bg-surface-raised border border-border-subtle rounded-lg py-2.5 px-3 text-xs text-text-primary focus:outline-none focus:border-accent-primary" placeholder="Server Room Rack 2" />
                 </div>
               </div>
 

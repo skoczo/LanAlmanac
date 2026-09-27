@@ -20,13 +20,17 @@ import java.time.Instant;
 @Consumes(MediaType.APPLICATION_JSON)
 public class ThreatResource {
 
+    private static final String QUERY_MAC_ADDRESS = "macAddress = ?1";
+    private static final String MARKER_FROM = "from ";
+    private static final String UNKNOWN_HOST = "Unknown";
+
     @GET
     @Transactional
     public List<ThreatEvent> getThreats() {
         List<ThreatEvent> threats = ThreatEvent.list("ORDER BY resolved ASC, detectedAt DESC");
         for (ThreatEvent threat : threats) {
             if (threat.macAddress != null && !threat.macAddress.isEmpty()) {
-                NetworkIdentity identity = NetworkIdentity.find("macAddress = ?1", threat.macAddress).firstResult();
+                NetworkIdentity identity = NetworkIdentity.find(QUERY_MAC_ADDRESS, threat.macAddress).firstResult();
                 if (identity != null && identity.physicalDevice != null) {
                     boolean updated = false;
                     if (threat.physicalDeviceId == null) {
@@ -138,7 +142,7 @@ public class ThreatResource {
             }
 
             if (targetDevice == null && threat.macAddress != null && !threat.macAddress.isEmpty()) {
-                NetworkIdentity existingId = NetworkIdentity.find("macAddress = ?1", threat.macAddress).firstResult();
+                NetworkIdentity existingId = NetworkIdentity.find(QUERY_MAC_ADDRESS, threat.macAddress).firstResult();
                 if (existingId != null) {
                     targetDevice = existingId.physicalDevice;
                 }
@@ -162,13 +166,13 @@ public class ThreatResource {
                 if (customName != null && !customName.trim().isEmpty()) {
                     newDevice.displayName = customName.trim();
                 } else {
-                    newDevice.displayName = "Approved Device: " + (threat.ipAddress != null ? threat.ipAddress : "Unknown");
+                    newDevice.displayName = "Approved Device: " + (threat.ipAddress != null ? threat.ipAddress : UNKNOWN_HOST);
                 }
 
                 String desc = threat.description;
-                if (desc != null && desc.contains("from ")) {
-                    String hostname = desc.substring(desc.indexOf("from ") + 5).trim();
-                    if (!hostname.equalsIgnoreCase("Unknown") && (customName == null || customName.trim().isEmpty())) {
+                if (desc != null && desc.contains(MARKER_FROM)) {
+                    String hostname = desc.substring(desc.indexOf(MARKER_FROM) + MARKER_FROM.length()).trim();
+                    if (!hostname.equalsIgnoreCase(UNKNOWN_HOST) && (customName == null || customName.trim().isEmpty())) {
                         newDevice.displayName = hostname;
                     }
                 }
@@ -182,9 +186,9 @@ public class ThreatResource {
                 newId.lastSeen = newDevice.lastSeen;
                 newId.current = true;
 
-                if (desc != null && desc.contains("from ")) {
-                    String hostname = desc.substring(desc.indexOf("from ") + 5).trim();
-                    if (!hostname.equalsIgnoreCase("Unknown")) {
+                if (desc != null && desc.contains(MARKER_FROM)) {
+                    String hostname = desc.substring(desc.indexOf(MARKER_FROM) + MARKER_FROM.length()).trim();
+                    if (!hostname.equalsIgnoreCase(UNKNOWN_HOST)) {
                         newId.hostname = hostname;
                     }
                 }
@@ -200,7 +204,7 @@ public class ThreatResource {
 
                 // Link and resolve all other threats matching this MAC address
                 if (threat.macAddress != null && !threat.macAddress.isEmpty()) {
-                    List<ThreatEvent> matching = ThreatEvent.list("macAddress = ?1", threat.macAddress);
+                    List<ThreatEvent> matching = ThreatEvent.list(QUERY_MAC_ADDRESS, threat.macAddress);
                     for (ThreatEvent t : matching) {
                         t.physicalDeviceId = targetDevice.id;
                         t.resolved = true;

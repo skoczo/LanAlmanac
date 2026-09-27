@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Loader2, AlertCircle, Plus, Trash2, ShieldAlert, KeyRound, Check, X } from 'lucide-react'
 import { useAuth } from '../lib/auth/auth-context'
 
@@ -26,21 +26,21 @@ export const UsersTab: React.FC = () => {
   const { apiClient, user } = useAuth()
   const isAdmin = user?.roles.includes('gnm-admin')
 
-  useEffect(() => {
-    fetchUsers()
-  }, [])
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       setLoading(true)
       const data = await apiClient<UserDto[]>('/api/users')
       setUsers(data)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
-  }
+  }, [apiClient])
+
+  useEffect(() => {
+    fetchUsers()
+  }, [fetchUsers])
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -53,8 +53,8 @@ export const UsersTab: React.FC = () => {
       setShowAddModal(false)
       setNewUser({ username: '', password: '', displayName: '', role: 'gnm-viewer' })
       fetchUsers()
-    } catch (err: any) {
-      alert(err.message)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err))
     } finally {
       setSaving(false)
     }
@@ -65,8 +65,8 @@ export const UsersTab: React.FC = () => {
     try {
       await apiClient(`/api/users/${id}`, { method: 'DELETE' })
       fetchUsers()
-    } catch (err: any) {
-      alert(err.message)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -80,8 +80,8 @@ export const UsersTab: React.FC = () => {
       })
       alert('Password reset successfully. The user will be forced to change it on next login.')
       fetchUsers()
-    } catch (err: any) {
-      alert(err.message)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -92,8 +92,8 @@ export const UsersTab: React.FC = () => {
         body: JSON.stringify({ role })
       })
       fetchUsers()
-    } catch (err: any) {
-      alert(err.message)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -104,8 +104,8 @@ export const UsersTab: React.FC = () => {
         body: JSON.stringify({ enabled })
       })
       fetchUsers()
-    } catch (err: any) {
-      alert(err.message)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -222,8 +222,9 @@ export const UsersTab: React.FC = () => {
             <h3 className="text-xl font-bold text-text-primary mb-6">Add New User</h3>
             <form onSubmit={handleAddUser} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-text-secondary uppercase mb-1">Username</label>
+                <label htmlFor="user-username" className="block text-xs font-semibold text-text-secondary uppercase mb-1">Username</label>
                 <input
+                  id="user-username"
                   type="text"
                   required
                   value={newUser.username}
@@ -232,8 +233,9 @@ export const UsersTab: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-text-secondary uppercase mb-1">Display Name</label>
+                <label htmlFor="user-displayname" className="block text-xs font-semibold text-text-secondary uppercase mb-1">Display Name</label>
                 <input
+                  id="user-displayname"
                   type="text"
                   value={newUser.displayName}
                   onChange={e => setNewUser({...newUser, displayName: e.target.value})}
@@ -241,8 +243,9 @@ export const UsersTab: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-text-secondary uppercase mb-1">Initial Password</label>
+                <label htmlFor="user-password" className="block text-xs font-semibold text-text-secondary uppercase mb-1">Initial Password</label>
                 <input
+                  id="user-password"
                   type="password"
                   required
                   value={newUser.password}
@@ -252,8 +255,9 @@ export const UsersTab: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-text-secondary uppercase mb-1">Role</label>
+                <label htmlFor="user-role" className="block text-xs font-semibold text-text-secondary uppercase mb-1">Role</label>
                 <select
+                  id="user-role"
                   value={newUser.role}
                   onChange={e => setNewUser({...newUser, role: e.target.value})}
                   className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary outline-none focus:border-accent-primary"

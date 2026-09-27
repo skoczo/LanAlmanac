@@ -11,7 +11,6 @@ import java.util.List;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.util.Collections;
-import java.util.stream.Collectors;
 
 
 @Path("/api/settings")
@@ -56,7 +55,7 @@ public class SettingsResource {
                     }
                 })
                 .map(NetworkInterface::getName)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @GET

@@ -63,8 +63,11 @@ public class IcmpSweeper {
             for (CompletableFuture<java.util.Set<String>> f : subnetFutures) {
                 try {
                     allLiveIps.addAll(f.get(SWEEP_TIMEOUT_SECONDS + 5, TimeUnit.SECONDS));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    LOG.debug("Subnet ICMP sweep task interrupted", e);
                 } catch (Exception e) {
-                    LOG.debug("Subnet ICMP sweep task interrupted or timed out", e);
+                    LOG.debug("Subnet ICMP sweep task timed out or failed", e);
                 }
             }
         } catch (Exception e) {
@@ -171,6 +174,9 @@ public class IcmpSweeper {
             } finally {
                 processPermits.release();
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            if (p != null && p.isAlive()) p.destroyForcibly();
         } catch (Exception e) {
             if (p != null && p.isAlive()) p.destroyForcibly();
         }
@@ -207,6 +213,9 @@ public class IcmpSweeper {
             } finally {
                 processPermits.release();
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            if (arp != null && arp.isAlive()) arp.destroyForcibly();
         } catch (Exception e) {
             if (arp != null && arp.isAlive()) arp.destroyForcibly();
             // arping may not be installed; fall through silently

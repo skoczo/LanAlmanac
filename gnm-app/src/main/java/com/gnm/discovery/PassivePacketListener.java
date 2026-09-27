@@ -31,10 +31,7 @@ public class PassivePacketListener {
     private final java.util.Map<String, String> ipToMacCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     private final NetworkSightingQueue sightingQueue;
-
-    @Inject
-    com.gnm.service.SubnetFilter subnetFilter;
-
+    private final com.gnm.service.SubnetFilter subnetFilter;
     private final DiscoveryModuleManager moduleManager;
 
 
@@ -426,8 +423,12 @@ public class PassivePacketListener {
     }
 
     @Inject
-    public PassivePacketListener(NetworkSightingQueue sightingQueue, DiscoveryModuleManager moduleManager) {
+    public PassivePacketListener(
+            NetworkSightingQueue sightingQueue,
+            DiscoveryModuleManager moduleManager,
+            com.gnm.service.SubnetFilter subnetFilter) {
         this.sightingQueue = sightingQueue;
         this.moduleManager = moduleManager;
+        this.subnetFilter = subnetFilter;
     }
 }

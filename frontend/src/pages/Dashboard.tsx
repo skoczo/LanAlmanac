@@ -17,23 +17,31 @@ interface Device {
 }
 
 
+interface ThreatEvent {
+  id: string
+  description: string
+  ipAddress: string
+  macAddress: string
+  resolved: boolean
+}
+
 export const Dashboard: React.FC = () => {
   const { apiClient } = useAuth()
   const [devices, setDevices] = useState<Device[]>([])
   const [loading, setLoading] = useState(true)
 
   const [appMode, setAppMode] = useState<string>('DISCOVERY')
-  const [threats, setThreats] = useState<any[]>([])
+  const [threats, setThreats] = useState<ThreatEvent[]>([])
 
   useEffect(() => {
     Promise.all([
       apiClient<Device[]>('/api/devices'),
-      apiClient<any[]>('/api/settings').catch(() => []),
-      apiClient<any[]>('/api/threats').catch(() => [])
+      apiClient<{ key: string; value: string }[]>('/api/settings').catch(() => []),
+      apiClient<ThreatEvent[]>('/api/threats').catch(() => [])
     ])
       .then(([devRes, setRes, threatRes]) => {
         setDevices(devRes)
-        const modeSetting = setRes.find((s: any) => s.key === 'APP_MODE')
+        const modeSetting = setRes.find((s) => s.key === 'APP_MODE')
         if (modeSetting) setAppMode(modeSetting.value)
         setThreats(threatRes)
         setLoading(false)
@@ -42,7 +50,7 @@ export const Dashboard: React.FC = () => {
         console.error(err)
         setLoading(false)
       })
-  }, [])
+  }, [apiClient])
 
   const toggleAppMode = async () => {
     const newMode = appMode === 'DISCOVERY' ? 'DETECTION' : 'DISCOVERY'

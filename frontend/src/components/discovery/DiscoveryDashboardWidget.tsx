@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { Activity, AlertTriangle, Play, Power, ShieldAlert, Cpu, RefreshCw } from 'lucide-react'
 import { useAuth } from '../../lib/auth/auth-context'
 import { LiveDiscoveryFeed } from './LiveDiscoveryFeed'
@@ -20,7 +20,7 @@ export const DiscoveryDashboardWidget: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
 
-  const fetchModules = async () => {
+  const fetchModules = useCallback(async () => {
     try {
       const data = await apiClient<DiscoveryModule[]>('/api/discovery/modules')
       setModules(data)
@@ -29,13 +29,13 @@ export const DiscoveryDashboardWidget: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [apiClient])
 
   useEffect(() => {
     fetchModules()
     const interval = setInterval(fetchModules, 5000)
     return () => clearInterval(interval)
-  }, [])
+  }, [fetchModules])
 
   const handleToggle = async (id: string, currentEnabled: boolean) => {
     try {

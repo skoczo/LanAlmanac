@@ -31,7 +31,7 @@ export const Vault: React.FC = () => {
     apiClient<Device[]>('/api/devices')
       .then(setDevices)
       .catch(console.error)
-  }, [])
+  }, [apiClient, refreshStatus])
 
   const handleInit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -43,8 +43,8 @@ export const Vault: React.FC = () => {
       await refreshStatus()
       setInitError(null)
       setPassword('')
-    } catch (err: any) {
-      setInitError(err.message || 'Initialization failed')
+    } catch (err: unknown) {
+      setInitError(err instanceof Error ? err.message : 'Initialization failed')
     }
   }
 
@@ -75,9 +75,10 @@ export const Vault: React.FC = () => {
     try {
       const res = await apiClient<{secret: string}>(`/api/credentials/${id}/reveal`)
       setRevealedCreds(prev => ({ ...prev, [id]: res.secret }))
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Reveal failed', e)
-      if (e.message?.includes('sealed') || e.message?.includes('Unauthorized') || e.message?.includes('FORBIDDEN')) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (msg.includes('sealed') || msg.includes('Unauthorized') || msg.includes('FORBIDDEN')) {
         setShowUnsealModal(true)
       }
     }
@@ -108,8 +109,9 @@ export const Vault: React.FC = () => {
           )}
           <form onSubmit={handleInit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-text-secondary mb-1">Master Password</label>
+              <label htmlFor="vault-init-password" className="block text-xs font-semibold text-text-secondary mb-1">Master Password</label>
               <input
+                id="vault-init-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

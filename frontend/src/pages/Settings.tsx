@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Save, Loader2, AlertCircle, Settings as SettingsIcon, Users } from 'lucide-react'
 import { useAuth } from '../lib/auth/auth-context'
 import { UsersTab } from './UsersTab'
@@ -21,11 +21,7 @@ export const Settings = () => {
   const { apiClient, user } = useAuth()
   const isAdmin = user?.roles.includes('gnm-admin')
 
-  useEffect(() => {
-    fetchSettings()
-  }, [])
-
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     try {
       setLoading(true)
       const data = await apiClient<Setting[]>('/api/settings')
@@ -52,12 +48,16 @@ export const Settings = () => {
         initialEdits[s.key] = s.value
       })
       setEditedValues(initialEdits)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
-  }
+  }, [apiClient])
+
+  useEffect(() => {
+    fetchSettings()
+  }, [fetchSettings])
 
   const handleSave = async (settingKey: string) => {
     try {
@@ -70,8 +70,8 @@ export const Settings = () => {
       })
       
       setSettings(settings.map((s: Setting) => s.key === settingKey ? { ...s, value: newValue } : s))
-    } catch (err: any) {
-      alert(`Error saving ${settingKey}: ${err.message}`)
+    } catch (err: unknown) {
+      alert(`Error saving ${settingKey}: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setSavingKey(null)
     }

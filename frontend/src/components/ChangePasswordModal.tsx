@@ -64,8 +64,8 @@ export const ChangePasswordModal: React.FC = () => {
       // Update the session with the new token (password change clears mustChangePassword)
       login(data.token, data.username, data.roles, false)
       clearMustChangePassword()
-    } catch (err: any) {
-      setError(err.message || 'Something went wrong')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
       setIsSubmitting(false)
     }
@@ -97,7 +97,7 @@ export const ChangePasswordModal: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Current Password */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+            <label htmlFor="change-pass-current" className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
               Current Password
             </label>
             <div className="relative">
@@ -105,6 +105,7 @@ export const ChangePasswordModal: React.FC = () => {
                 <KeyRound className="w-4 h-4" />
               </div>
               <input
+                id="change-pass-current"
                 type={showCurrent ? 'text' : 'password'}
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
@@ -125,7 +126,7 @@ export const ChangePasswordModal: React.FC = () => {
 
           {/* New Password */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+            <label htmlFor="change-pass-new" className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
               New Password
             </label>
             <div className="relative">
@@ -133,6 +134,7 @@ export const ChangePasswordModal: React.FC = () => {
                 <KeyRound className="w-4 h-4" />
               </div>
               <input
+                id="change-pass-new"
                 type={showNew ? 'text' : 'password'}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
@@ -152,7 +154,7 @@ export const ChangePasswordModal: React.FC = () => {
 
           {/* Confirm Password */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+            <label htmlFor="change-pass-confirm" className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
               Confirm New Password
             </label>
             <div className="relative">
@@ -160,6 +162,7 @@ export const ChangePasswordModal: React.FC = () => {
                 <KeyRound className="w-4 h-4" />
               </div>
               <input
+                id="change-pass-confirm"
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
