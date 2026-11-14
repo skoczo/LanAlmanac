@@ -14,7 +14,10 @@
 - **Language**: The entire application (UI components, error messages, log output, status messages, API entities) MUST be strictly in **English**.
 
 ## Documentation
-- Refer to `docs/architecture.md` for detailed architectural decisions, database schemas, and module breakdowns.
+- `docs/architecture.md` is a design document, NOT a description of current code. It contains 1778 lines; do not read it in full.
+- **Always read `.agents/invariants.md` before any change.** It contains hard, non-negotiable rules.
+- **Use `.agents/context-map.md` to locate code** instead of exploring the repository. It lists which files are expensive to read and what to avoid.
+- Task plans live in `plans/`. Active hardening work: `plans/hardening-plan.md`.
 
 ## Issue & Dead Code Detection Tasks
 - `./gradlew detectBackendIssues`: Scans backend (`gnm-app`) Java source files using PMD/Javac, and executes SonarCloud analysis if `SONAR_TOKEN` is set.
@@ -22,8 +25,35 @@
 - `./gradlew detectAllIssues`: Executes both backend and frontend issue scans sequentially.
 - `./gradlew sonar`: Executes SonarCloud analysis (pass `-Dsonar.token=<your-token>`).
 
-Whenever you make changes to the backend, you must always run `./gradlew spotlessApply` and then run `/workspaces/GreatNetworkManager/run_tests.sh` (or `/home/skoczo/workspace/GreatNetworkManager/run_tests.sh`) to verify your changes and ensure code formatting before finishing.
+Whenever you make changes to the backend, you must always run `./gradlew spotlessApply` first.
+
+**Do NOT run the full `run_tests.sh` for every change.** It builds three Docker images, starts Quarkus, installs Playwright browsers and runs the whole suite — that is slow, noisy and burns tokens. Instead:
+- single change: `./gradlew :gnm-app:compileJava` plus the one test named in the task brief
+- end of a plan step: `./gradlew :gnm-app:test --tests "*ClassNameTest"`
+- only before committing a whole stage: `./run_tests.sh`
 
 When writing temporary scripts (e.g., Python/Bash) to automate project tasks or refactoring, you MUST place them inside the `.agent_scripts/` directory so they are ignored by Git.
 
 Don't use scripts to fix code. Just change code we are wasting tokens on script creation and still script is not working well.
+
+## Working Discipline
+- One agent session = one step from `plans/hardening-plan.md`. Do not mix a refactor with a security fix.
+- Read the minimum: `search_files` for the signature, then `read_file` with `offset`/`limit`. Never read a 500-line resource class in full.
+- After editing, verify with `git diff <file>` instead of re-reading the file.
+- Never invent a new dependency without an entry in the plan.
+- If a requested change conflicts with `.agents/invariants.md`, stop and report the conflict instead of working around it.
+
+## Definition of Done
+- [ ] `./gradlew :gnm-app:compileJava` passes
+- [ ] `./gradlew spotlessApply` applied
+- [ ] The specific test named in the task brief passes
+- [ ] `git diff` touches only the files listed in the brief
+- [ ] If an API contract changed, the frontend was updated in the same step
+- [ ] Checkbox ticked in `plans/hardening-plan.md`
+
+## Security Baseline
+- A new REST endpoint starts as `deny`. Adding `@PermitAll` requires a plan entry and a justification.
+- Every class in `com.gnm.resource` must have an explicit `@RolesAllowed` or `@Authenticated`. Missing annotation is a bug, not "authenticated by default".
+- Secrets must never appear in logs, exception messages, HTTP responses or the repository.
+- Cryptographic keys live in `byte[]`/`char[]` and are zeroed after use. Never `String` for a password or key.
+- Never pass request data into `ProcessBuilder` as a shell string; always pass an argument list.
