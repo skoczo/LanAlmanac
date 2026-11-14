@@ -1619,14 +1619,26 @@ export const DeviceDetail: React.FC = () => {
                 <p className="text-[10px] text-text-secondary mt-1 mb-3">Execute apt-get update & upgrade over SSH using the default saved credential.</p>
                 <button 
                   onClick={async () => {
-                    const evtSource = new EventSource(`/api/devices/${device.id}/update`);
-                    evtSource.onmessage = function(event) {
-                      console.log("Update output: ", event.data);
-                      if (event.data.includes("Update Complete") || event.data.includes("Update Failed") || event.data.includes("Error:")) {
+                    try {
+                      const { ticket } = await apiClient<{ ticket: string; expiresAt: string }>('/api/auth/ticket', {
+                        method: 'POST',
+                        body: JSON.stringify({ purpose: 'sse-update', resourceId: device.id })
+                      });
+                      const evtSource = new EventSource(`/api/devices/${device.id}/update?ticket=${encodeURIComponent(ticket)}`);
+                      evtSource.onmessage = function(event) {
+                        console.log("Update output: ", event.data);
+                        if (event.data.includes("Update Complete") || event.data.includes("Update Failed") || event.data.includes("Error:")) {
+                          evtSource.close();
+                          alert(event.data);
+                        }
+                      };
+                      evtSource.onerror = function() {
                         evtSource.close();
-                        alert(event.data);
-                      }
-                    };
+                      };
+                    } catch (err) {
+                      console.error("Failed to start system update:", err);
+                      alert("Error: Failed to obtain authorization ticket for update.");
+                    }
                   }}
                   className="px-4 py-2 bg-accent-danger hover:bg-accent-danger/90 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
                 >
