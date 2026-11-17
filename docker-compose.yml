@@ -24,6 +24,19 @@ services:
     networks:
       - ne_lab
 
+  pkg_worker:
+    build:
+      context: ./gnm-pkg-worker
+      dockerfile: Dockerfile
+    container_name: gnm_pkg_worker
+    # Intentionally no host ports exposed — internal network access only.
+    environment:
+      GNM_PKG_WORKER_ADDR: ":8081"
+      # Replace with a unique >=32-byte secret outside local dev.
+      GNM_PKG_WORKER_AUTH_SECRET: ${GNM_PKG_WORKER_AUTH_SECRET:-dev-only-local-pkg-worker-secret-32b!}
+    networks:
+      - ne_lab
+
   ubuntu_ne:
     image: ubuntu:latest
     container_name: ubuntu_ne

@@ -1,0 +1,879 @@
+openapi: 3.1.0
+info:
+  title: GreatNetworkManager Package Worker Internal API
+  version: 1.0.0
+  description: |
+    Versioned, language-agnostic internal contract between `gnm-app` (Core) and
+    the stateless `gnm-pkg-worker` container.
+
+    Security requirements:
+    - Exposed ONLY on the internal Docker network (never bound to host/public ports).
+    - Every request MUST include `X-GNM-Timestamp` (Unix seconds, +/-30s replay window)
+      and `X-GNM-Signature` (`HMAC-SHA256(secret, method + "\n" + path + "\n" + timestamp + "\n" + hex(sha256(body)))`).
+    - All authenticated SSH endpoints REQUIRE `target.expectedHostKeySha256` (TOFU enforced
+      by `gnm-app` before decrypting credentials from Vault).
+    - Worker MUST NEVER persist secrets to disk, Redis, or logs, and MUST zero secret buffers
+      immediately after SSH session authentication.
+
+servers:
+  - url: http://pkg_worker:8081
+    description: Internal Docker network worker endpoint
+
+security:
+  - HmacTimestamp: []
+    HmacSignature: []
+
+paths:
+  /v1/health:
+    get:
+      operationId: getHealth
+      summary: Worker liveness, contract version, and capabilities
+      responses:
+        '200':
+          description: Worker is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /v1/ssh/fingerprint:
+    post:
+      operationId: fetchSshFingerprint
+      summary: Fetch remote SSH server host key SHA-256 fingerprint without credentials
+      description: |
+        Performs SSH key exchange (KEX) only, without sending any authentication credentials.
+        Used by `gnm-app` to record an untrusted host key for explicit user TOFU approval.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SshFingerprintRequest'
+      responses:
+        '200':
+          description: Host key fingerprint retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SshFingerprintResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '502':
+          $ref: '#/components/responses/WorkerError'
+
+  /v1/probe:
+    post:
+      operationId: probeOs
+      summary: Collect generic POSIX OS facts for profile auto-detection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProbeRequest'
+      responses:
+        '200':
+          description: OS facts collected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProbeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '502':
+          $ref: '#/components/responses/WorkerError'
+
+  /v1/inventory:
+    post:
+      operationId: collectInventory
+      summary: Execute profile inventory command and return normalized packages with PURLs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryRequest'
+      responses:
+        '200':
+          description: Inventory collected and parsed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '502':
+          $ref: '#/components/responses/WorkerError'
+
+  /v1/updates/check:
+    post:
+      operationId: checkUpdates
+      summary: Check available updates (optional cache refresh + dry-run check + lock retry)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCheckRequest'
+      responses:
+        '200':
+          description: Update check completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateCheckResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '502':
+          $ref: '#/components/responses/WorkerError'
+
+  /v1/patch/execute:
+    post:
+      operationId: executePatch
+      summary: Execute patch phases and stream structured NDJSON progress/log/result frames
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchExecuteRequest'
+      responses:
+        '200':
+          description: |
+            Newline-delimited JSON (`application/x-ndjson`) stream of `PHASE`, `LOG`,
+            and terminal `RESULT` frames.
+          content:
+            application/x-ndjson:
+              schema:
+                $ref: '#/components/schemas/PatchStreamFrame'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /v1/executions/{executionId}/cancel:
+    post:
+      operationId: cancelExecution
+      summary: Cancel an in-flight execution by ID
+      parameters:
+        - name: executionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Cancellation signal delivered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+components:
+  securitySchemes:
+    HmacTimestamp:
+      type: apiKey
+      in: header
+      name: X-GNM-Timestamp
+      description: Unix epoch seconds string; must be within +/-30 seconds of worker clock.
+    HmacSignature:
+      type: apiKey
+      in: header
+      name: X-GNM-Signature
+      description: Lowercase hex HMAC-SHA256 over `METHOD\nPATH\nTIMESTAMP\nHEX_SHA256_BODY`.
+
+  responses:
+    BadRequestError:
+      description: Invalid request payload or forbidden package name
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    UnauthorizedError:
+      description: Missing, expired, or invalid HMAC signature
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFoundError:
+      description: Execution not found or already completed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    WorkerError:
+      description: Remote host, SSH, privilege, lock, timeout, or parser error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+
+  schemas:
+    ErrorCode:
+      type: string
+      enum:
+        - HOST_KEY_MISMATCH
+        - AUTH_FAILED
+        - CONNECTION_REFUSED
+        - CONNECTION_TIMEOUT
+        - CONNECTION_LOST
+        - SUDO_PERMISSION_REQUIRED
+        - UNSUPPORTED_ELEVATION_MODE
+        - PACKAGE_MANAGER_LOCKED
+        - COMMAND_TIMEOUT
+        - IDLE_TIMEOUT
+        - PARSER_ERROR
+        - INVALID_PACKAGE_NAME
+        - CANCELLED
+        - INVALID_REQUEST
+        - INTERNAL_ERROR
+
+    ApiError:
+      type: object
+      required:
+        - errorCode
+        - message
+      properties:
+        errorCode:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+        actualFingerprint:
+          type: ['string', 'null']
+          description: Populated when `errorCode` is `HOST_KEY_MISMATCH`.
+        exitCode:
+          type: ['integer', 'null']
+        details:
+          type: ['string', 'null']
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - contractVersion
+        - workerVersion
+        - implementation
+        - supportedTransports
+        - supportedParsers
+        - supportedElevationModes
+      properties:
+        status:
+          type: string
+          enum: [OK]
+        contractVersion:
+          type: string
+          example: '1.0'
+        workerVersion:
+          type: string
+          example: '0.1.0-dev'
+        implementation:
+          type: string
+          example: 'go'
+        supportedTransports:
+          type: array
+          items:
+            type: string
+            enum: [SSH]
+        supportedParsers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParserType'
+        supportedElevationModes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ElevationMode'
+
+    AuthType:
+      type: string
+      enum:
+        - PASSWORD
+        - SSH_KEY
+
+    AuthConfig:
+      type: object
+      required:
+        - type
+        - secret
+      properties:
+        type:
+          $ref: '#/components/schemas/AuthType'
+        secret:
+          type: string
+          format: password
+          description: Password or OpenSSH/PEM private key material. Zeroed after auth.
+        sudoSecret:
+          type: ['string', 'null']
+          format: password
+          description: Reserved for future `SUDO_PASSWORD` support (ADR-3).
+
+    SshTarget:
+      type: object
+      required:
+        - transport
+        - host
+        - port
+        - username
+        - expectedHostKeySha256
+        - auth
+      properties:
+        transport:
+          type: string
+          enum: [SSH]
+        host:
+          type: string
+          minLength: 1
+          maxLength: 255
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          default: 22
+        username:
+          type: string
+          minLength: 1
+          maxLength: 128
+        expectedHostKeySha256:
+          type: string
+          pattern: '^SHA256:[A-Za-z0-9+/=]+$'
+          description: Trusted SSH host key SHA-256 fingerprint verified before authentication.
+        auth:
+          $ref: '#/components/schemas/AuthConfig'
+        connectTimeoutSeconds:
+          type: integer
+          minimum: 1
+          maximum: 60
+          default: 10
+
+    ElevationMode:
+      type: string
+      enum:
+        - NONE
+        - SUDO_NOPASSWD
+        - SUDO_PASSWORD
+
+    PrivilegeSpec:
+      type: object
+      required:
+        - elevationMode
+      properties:
+        elevationMode:
+          $ref: '#/components/schemas/ElevationMode'
+        wrapperTemplate:
+          type: ['string', 'null']
+          example: 'sudo -n {{command}}'
+        passwordWrapperTemplate:
+          type: ['string', 'null']
+          example: "sudo -S -p '' {{command}}"
+
+    LockSpec:
+      type: object
+      properties:
+        retryableExitCodes:
+          type: array
+          items:
+            type: integer
+          default: [100]
+        lockErrorPattern:
+          type: ['string', 'null']
+          example: '(Could not get lock|Unable to acquire the dpkg frontend lock|Waiting for process with pid)'
+        maxRetries:
+          type: integer
+          minimum: 0
+          maximum: 10
+          default: 3
+        backoffSeconds:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+            maximum: 300
+          default: [15, 30, 60]
+
+    ParserType:
+      type: string
+      enum:
+        - DELIMITED
+        - KEY_VALUE_BLOCKS
+        - JSON_MAPPING
+        - REGEX_LINE
+
+    SshFingerprintRequest:
+      type: object
+      required:
+        - host
+        - port
+      properties:
+        host:
+          type: string
+          minLength: 1
+          maxLength: 255
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          default: 22
+        connectTimeoutSeconds:
+          type: integer
+          minimum: 1
+          maximum: 60
+          default: 10
+
+    SshFingerprintResponse:
+      type: object
+      required:
+        - fingerprintSha256
+        - keyAlgorithm
+      properties:
+        fingerprintSha256:
+          type: string
+          example: 'SHA256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU'
+        keyAlgorithm:
+          type: string
+          example: 'ssh-ed25519'
+
+    ProbeRequest:
+      type: object
+      required:
+        - executionId
+        - target
+      properties:
+        executionId:
+          type: string
+          format: uuid
+        target:
+          $ref: '#/components/schemas/SshTarget'
+        verifyCommands:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional map of `profileSlug -> read-only verification command`.
+
+    ProbeResponse:
+      type: object
+      required:
+        - osFacts
+      properties:
+        osFacts:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            kernel: Linux
+            arch: x86_64
+            running_kernel: 6.1.0-21-amd64
+            os.id: debian
+            os.id_like: debian
+            os.version_id: '12'
+            os.version_major: '12'
+            os.codename: bookworm
+        verifyResults:
+          type: object
+          additionalProperties:
+            type: boolean
+
+    InventorySpec:
+      type: object
+      required:
+        - command
+        - parserType
+        - parserConfig
+        - purlTemplate
+      properties:
+        command:
+          type: string
+          minLength: 1
+        requiresPrivilege:
+          type: boolean
+          default: false
+        timeoutSeconds:
+          type: integer
+          minimum: 5
+          maximum: 300
+          default: 60
+        parserType:
+          $ref: '#/components/schemas/ParserType'
+        parserConfig:
+          type: object
+          additionalProperties: true
+        purlTemplate:
+          type: string
+          minLength: 1
+          example: 'pkg:deb/{{os.id}}/{{name}}@{{version}}?arch={{arch}}'
+
+    InventoryRequest:
+      type: object
+      required:
+        - executionId
+        - target
+        - osFacts
+        - inventorySpec
+      properties:
+        executionId:
+          type: string
+          format: uuid
+        target:
+          $ref: '#/components/schemas/SshTarget'
+        environmentVars:
+          type: object
+          additionalProperties:
+            type: string
+          default:
+            LC_ALL: C
+            LANG: C
+        osFacts:
+          type: object
+          additionalProperties:
+            type: string
+        inventorySpec:
+          $ref: '#/components/schemas/InventorySpec'
+        privilegeSpec:
+          $ref: '#/components/schemas/PrivilegeSpec'
+        dryRunPreviewLimit:
+          type: ['integer', 'null']
+          minimum: 1
+          maximum: 200
+          description: When set, caps returned packages and includes parser diagnostics.
+
+    NormalizedPackage:
+      type: object
+      required:
+        - name
+        - version
+        - purl
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        arch:
+          type: ['string', 'null']
+        sourceName:
+          type: ['string', 'null']
+        sourceVersion:
+          type: ['string', 'null']
+        purl:
+          type: string
+
+    InventoryResponse:
+      type: object
+      required:
+        - packages
+        - totalParsed
+        - skippedLines
+        - durationMs
+      properties:
+        packages:
+          type: array
+          items:
+            $ref: '#/components/schemas/NormalizedPackage'
+        totalParsed:
+          type: integer
+        skippedLines:
+          type: integer
+        sampleSkippedLines:
+          type: array
+          items:
+            type: string
+        durationMs:
+          type: integer
+
+    UpdateCheckSpec:
+      type: object
+      required:
+        - checkCommand
+        - parserType
+        - parserConfig
+      properties:
+        refreshCommand:
+          type: ['string', 'null']
+        refreshRequiresPrivilege:
+          type: boolean
+          default: true
+        checkCommand:
+          type: string
+          minLength: 1
+        checkRequiresPrivilege:
+          type: boolean
+          default: false
+        noUpdatesExitCodes:
+          type: array
+          items:
+            type: integer
+          default: [0]
+        updatesAvailableExitCodes:
+          type: array
+          items:
+            type: integer
+          default: [0]
+        timeoutSeconds:
+          type: integer
+          minimum: 10
+          maximum: 600
+          default: 120
+        parserType:
+          $ref: '#/components/schemas/ParserType'
+        parserConfig:
+          type: object
+          additionalProperties: true
+
+    UpdateCheckRequest:
+      type: object
+      required:
+        - executionId
+        - target
+        - updateCheckSpec
+      properties:
+        executionId:
+          type: string
+          format: uuid
+        target:
+          $ref: '#/components/schemas/SshTarget'
+        environmentVars:
+          type: object
+          additionalProperties:
+            type: string
+          default:
+            LC_ALL: C
+            LANG: C
+        skipRefresh:
+          type: boolean
+          default: false
+        updateCheckSpec:
+          $ref: '#/components/schemas/UpdateCheckSpec'
+        privilegeSpec:
+          $ref: '#/components/schemas/PrivilegeSpec'
+        lockSpec:
+          $ref: '#/components/schemas/LockSpec'
+
+    AvailableUpdate:
+      type: object
+      required:
+        - packageName
+        - candidateVersion
+      properties:
+        packageName:
+          type: string
+        arch:
+          type: ['string', 'null']
+        currentVersion:
+          type: ['string', 'null']
+        candidateVersion:
+          type: string
+        isSecurityUpdate:
+          type: boolean
+          default: false
+
+    UpdateCheckResponse:
+      type: object
+      required:
+        - updates
+        - exitCode
+        - retriesUsed
+        - durationMs
+      properties:
+        updates:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableUpdate'
+        exitCode:
+          type: integer
+        retriesUsed:
+          type: integer
+        durationMs:
+          type: integer
+
+    PatchMode:
+      type: string
+      enum:
+        - FULL_UPGRADE
+        - SECURITY_ONLY
+        - SELECTED_PACKAGES
+
+    PatchExecSpec:
+      type: object
+      required:
+        - fullUpgradeCommand
+      properties:
+        preCheckCommand:
+          type: ['string', 'null']
+        refreshCommand:
+          type: ['string', 'null']
+        fullUpgradeCommand:
+          type: string
+          minLength: 1
+        securityUpgradeCommand:
+          type: ['string', 'null']
+        selectedUpgradeTemplate:
+          type: ['string', 'null']
+          description: Must contain `{{packages}}` placeholder, placed after `--`.
+        rebootCheckCommand:
+          type: ['string', 'null']
+        rebootRequiredExitCodes:
+          type: array
+          items:
+            type: integer
+          default: [0]
+        requiresPrivilege:
+          type: boolean
+          default: true
+        nonInteractiveEnv:
+          type: object
+          additionalProperties:
+            type: string
+        timeoutSeconds:
+          type: integer
+          minimum: 60
+          maximum: 3600
+          default: 1800
+        idleTimeoutSeconds:
+          type: integer
+          minimum: 30
+          maximum: 1800
+          default: 300
+
+    PatchExecuteRequest:
+      type: object
+      required:
+        - executionId
+        - target
+        - mode
+        - patchExecSpec
+      properties:
+        executionId:
+          type: string
+          format: uuid
+        target:
+          $ref: '#/components/schemas/SshTarget'
+        environmentVars:
+          type: object
+          additionalProperties:
+            type: string
+        mode:
+          $ref: '#/components/schemas/PatchMode'
+        packages:
+          type: array
+          items:
+            type: string
+            pattern: '^[a-zA-Z0-9][a-zA-Z0-9.+:~_-]{0,127}$'
+        patchExecSpec:
+          $ref: '#/components/schemas/PatchExecSpec'
+        privilegeSpec:
+          $ref: '#/components/schemas/PrivilegeSpec'
+        lockSpec:
+          $ref: '#/components/schemas/LockSpec'
+
+    PatchStreamFrame:
+      oneOf:
+        - $ref: '#/components/schemas/PatchPhaseFrame'
+        - $ref: '#/components/schemas/PatchLogFrame'
+        - $ref: '#/components/schemas/PatchResultFrame'
+      discriminator:
+        propertyName: type
+        mapping:
+          PHASE: '#/components/schemas/PatchPhaseFrame'
+          LOG: '#/components/schemas/PatchLogFrame'
+          RESULT: '#/components/schemas/PatchResultFrame'
+
+    PatchPhaseFrame:
+      type: object
+      required:
+        - type
+        - seq
+        - ts
+        - phase
+      properties:
+        type:
+          type: string
+          enum: [PHASE]
+        seq:
+          type: integer
+          format: int64
+        ts:
+          type: string
+          format: date-time
+        phase:
+          type: string
+          enum: [PRECHECK, REFRESH, UPGRADE, REBOOT_CHECK]
+
+    PatchLogFrame:
+      type: object
+      required:
+        - type
+        - seq
+        - ts
+        - stream
+        - line
+      properties:
+        type:
+          type: string
+          enum: [LOG]
+        seq:
+          type: integer
+          format: int64
+        ts:
+          type: string
+          format: date-time
+        stream:
+          type: string
+          enum: [STDOUT, STDERR, SYSTEM]
+        line:
+          type: string
+
+    PatchResultFrame:
+      type: object
+      required:
+        - type
+        - seq
+        - ts
+        - status
+      properties:
+        type:
+          type: string
+          enum: [RESULT]
+        seq:
+          type: integer
+          format: int64
+        ts:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [SUCCEEDED, FAILED, TIMEOUT, CONNECTION_LOST, CANCELLED]
+        exitCode:
+          type: ['integer', 'null']
+        rebootRequired:
+          type: ['boolean', 'null']
+        errorCode:
+          oneOf:
+            - $ref: '#/components/schemas/ErrorCode'
+            - type: 'null'
+        errorMessage:
+          type: ['string', 'null']
+
+    CancelResponse:
+      type: object
+      required:
+        - executionId
+        - cancelled
+      properties:
+        executionId:
+          type: string
+          format: uuid
+        cancelled:
+          type: boolean
+

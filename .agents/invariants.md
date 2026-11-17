@@ -5,7 +5,10 @@ zamiast obchodzić regułę. Maksymalny rozmiar tego pliku: 100 linii. Nie rozbu
 
 ## Architektura (nienegocjowalne)
 
-1. Modular monolith na Quarkus. Zero mikroserwisów, zero nowych procesów sieciowych.
+1. Rdzeń aplikacji (`gnm-app`) to modular monolith na Quarkus — jedyny właściciel PostgreSQL/Flyway,
+   `VaultEngine`, Auth/RBAC i zewnętrznego API. Wydzielenie bezstanowego kontenera workera
+   (np. `gnm-pkg-worker`) jest dozwolone wyłącznie z jawnym, wersjonowanym kontraktem wewnętrznym
+   (zero bezpośredniego dostępu do DB/Vaulta, zero ekspozycji publicznej, brak mnożenia mikroserwisów).
 2. Java 21. Współbieżność przez wirtualne wątki i `StructuredTaskScope`.
    Zakazane: `new Thread(...)`, `Executors.newCachedThreadPool()`, `newFixedThreadPool`, `ManagedExecutor`.
    Dozwolone: `Executors.newVirtualThreadPerTaskExecutor()`, `Thread.startVirtualThread`.

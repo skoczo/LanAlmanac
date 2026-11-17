@@ -1,7 +1,7 @@
 # GreatNetworkManager (NetAlmanac) Project Rules
 
 ## Architecture & Core Philosophy
-1. **Modular Monolith**: The system is designed as a modular monolith using Java 21 and Quarkus. Do NOT introduce microservices or separate network services.
+1. **Core Modular Monolith + Approved Stateless Workers**: The core (`gnm-app`, Java 21 / Quarkus) is a modular monolith and the sole owner of PostgreSQL/Flyway, `VaultEngine`, Auth/RBAC, and public REST/WS APIs. Explicitly approved stateless worker containers (e.g., `gnm-pkg-worker`) are allowed only behind a versioned, authenticated internal HTTP/streaming contract with zero direct DB access and no public port exposure. Do NOT introduce arbitrary microservices.
 2. **PostgreSQL & TimescaleDB**: The database handles both relational structures (devices, identities) and time-series telemetry (via TimescaleDB hypertables).
 3. **Event-Driven UI**: Real-time updates are pushed via WebSocket (`/ws/events`). Zustand stores handle these updates on the frontend.
 4. **No Ephemeral Entities**: Ephemeral IPs/MACs are merged into persistent `PhysicalDevice` entities using fingerprinting (DHCP, TCP, mDNS, JA4).
