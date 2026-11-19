@@ -4,11 +4,11 @@ services:
     image: timescale/timescaledb:latest-pg16
     container_name: lanalmanac_postgres
     environment:
-      POSTGRES_USER: lanalmanac
-      POSTGRES_PASSWORD: lanalmanacpassword
-      POSTGRES_DB: lanalmanac
+      POSTGRES_USER: ${POSTGRES_USER:-lanalmanac}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lanalmanacpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-lanalmanac}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - lanalmanac_pg_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -17,30 +17,44 @@ services:
     image: redis:7-alpine
     container_name: lanalmanac_redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - lanalmanac_redis_data:/data
     restart: unless-stopped
 
+  pkg-worker:
+    image: ${GNM_PKG_WORKER_IMAGE:-ghcr.io/skoczo/lanalmanac-pkg-worker:latest}
+    container_name: lanalmanac_pkg_worker
+    ports:
+      # Bound strictly to loopback interface — no public network exposure
+      - "127.0.0.1:8081:8081"
+    environment:
+      - GNM_PKG_WORKER_ADDR=:8081
+      - GNM_PKG_WORKER_AUTH_SECRET=${GNM_PKG_WORKER_AUTH_SECRET:-dev-only-local-pkg-worker-secret-32b!}
+    restart: unless-stopped
+
   lanalmanac-app:
-    image: ghcr.io/skoczo/lanalmanac:latest
+    image: ${GNM_APP_IMAGE:-ghcr.io/skoczo/lanalmanac:latest}
     container_name: lanalmanac_app
     # NOTE: When network_mode is 'host', port mapping below is ignored by Docker. 
-    # The application (Backend + Frontend GUI) will be available on http://localhost:8080
+    # The application (Backend + Frontend GUI) will listen on the port configured in QUARKUS_HTTP_PORT
     ports:
       - "8787:8080"
     environment:
       - QUARKUS_HTTP_PORT=8787
-      - QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://localhost:5432/lanalmanac
-      - QUARKUS_DATASOURCE_USERNAME=lanalmanac
-      - QUARKUS_DATASOURCE_PASSWORD=lanalmanacpassword
+      - QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://localhost:5432/${POSTGRES_DB:-lanalmanac}
+      - QUARKUS_DATASOURCE_USERNAME=${POSTGRES_USER:-lanalmanac}
+      - QUARKUS_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:-lanalmanacpassword}
       - QUARKUS_REDIS_HOSTS=redis://localhost:6379
       - GNM_AUTH_LOCAL_USERNAME=${ADMIN_USERNAME:-admin}
       - GNM_AUTH_LOCAL_PASSWORD=${ADMIN_PASSWORD:-admin}
       - GNM_VAULT_PASSWORD=${GNM_VAULT_PASSWORD}
+      - GNM_PKG_WORKER_BASE_URL=http://127.0.0.1:8081
+      - GNM_PKG_WORKER_AUTH_SECRET=${GNM_PKG_WORKER_AUTH_SECRET:-dev-only-local-pkg-worker-secret-32b!}
     depends_on:
       - db
       - redis
+      - pkg-worker
     network_mode: host # Required for passive network packet capturing (if running on a dedicated Linux host)
     cap_add:
       - NET_RAW

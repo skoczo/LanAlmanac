@@ -78,6 +78,7 @@ jobs:
             type=sha,prefix=dev-,enable=${{ github.ref_name != 'master' }}
 
       - name: Build and push Docker image
+        id: build_push
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -86,6 +87,27 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Add Build Summary
+        if: always() && steps.build_push.outcome == 'success'
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY##*/}"
+          echo "## 📦 Main GNM Docker Image" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "ℹ️ Image built successfully (pull request — skipped registry push)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "✅ **Successfully pushed to GitHub Container Registry**" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**Pull Commands:**" >> "$GITHUB_STEP_SUMMARY"
+            echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+            echo "${{ steps.meta.outputs.tags }}" | while IFS= read -r tag; do
+              [ -n "$tag" ] && echo "docker pull $tag"
+            done >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Digest:** \`${{ steps.build_push.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Package Details:** [View in GitHub Packages](https://github.com/${GITHUB_REPOSITORY}/pkgs/container/${REPO_NAME})" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   build-and-push-pkg-worker:
     runs-on: ubuntu-latest
@@ -146,6 +168,7 @@ jobs:
 
       - name: Build and push pkg-worker Docker image
         if: steps.check_worker.outputs.exists == 'true'
+        id: worker_build_push
         uses: docker/build-push-action@v5
         with:
           context: ./gnm-pkg-worker
@@ -157,3 +180,24 @@ jobs:
           labels: ${{ steps.worker_meta.outputs.labels }}
           cache-from: type=gha,scope=pkg-worker
           cache-to: type=gha,mode=max,scope=pkg-worker
+
+      - name: Add Worker Build Summary
+        if: always() && steps.check_worker.outputs.exists == 'true' && steps.worker_build_push.outcome == 'success'
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY##*/}"
+          echo "## ⚙️ GNM Pkg-Worker Docker Image" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "ℹ️ Image built successfully (pull request — skipped registry push)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "✅ **Successfully pushed to GitHub Container Registry**" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**Pull Commands:**" >> "$GITHUB_STEP_SUMMARY"
+            echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+            echo "${{ steps.worker_meta.outputs.tags }}" | while IFS= read -r tag; do
+              [ -n "$tag" ] && echo "docker pull $tag"
+            done >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Digest:** \`${{ steps.worker_build_push.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Package Details:** [View in GitHub Packages](https://github.com/${GITHUB_REPOSITORY}/pkgs/container/${REPO_NAME}-pkg-worker)" >> "$GITHUB_STEP_SUMMARY"
+          fi

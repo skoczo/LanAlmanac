@@ -5,56 +5,60 @@
 [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=skoczo_LanAlmanac&metric=bugs)](https://sonarcloud.io/summary/new_code?id=skoczo_LanAlmanac)
 [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=skoczo_LanAlmanac&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=skoczo_LanAlmanac)
 
-LanAlmanac is a self-hosted LAN management tool designed as a **modular monolith** with a Quarkus JAX-RS/WebSocket backend and a premium React 19 + Tailwind v4 dark-mode SPA frontend dashboard.
+LanAlmanac (formerly GreatNetworkManager) is an open-source, self-hosted LAN management and network observability platform. It is engineered as a **core modular monolith** (`gnm-app`, Quarkus JAX-RS/WebSocket + React 19 SPA) paired with an approved, stateless remote execution worker (`gnm-pkg-worker`, Go 1.23+) for agentless package, vulnerability, and patch management over SSH.
 
 ---
 
 ## 🛠️ System Requirements
 
 Before running the application, make sure you have the following installed:
-* **Docker & Docker Compose** (for PostgreSQL database, TimescaleDB, and Redis)
-* **Java SDK 21** or later (LTS version)
-* **Node.js 22** or later (along with `npm`)
+* **Docker & Docker Compose v2+** (recommended for all deployments and dependencies)
+* **Java SDK 21** or later (LTS version, required for local backend development)
+* **Node.js 22** or later and `npm` (required for local frontend development)
+* **Go 1.23** or later (optional, only if compiling `gnm-pkg-worker` locally outside Docker)
 
 ---
 
 ## 🚀 Local Development Setup (Quick Start)
 
-Follow these steps to run the backend and frontend in development hot-reload modes.
+Follow these steps to run the full stack in development mode with live hot-reload.
 
-### Step 1: Start PostgreSQL & Redis
-GNM stores relational states in TimescaleDB (Postgres compatible) and telemetry events in Redis. Start these services in the background:
+### Step 1: Start Supporting Services with Docker Compose
+LanAlmanac uses TimescaleDB (PostgreSQL-compatible) for state and time-series telemetry, Redis for event pub/sub, and `gnm_pkg_worker` for SSH operations. Start all dependencies in the background:
 ```bash
 docker compose up -d
 ```
-*This starts Postgres on port `5432` and Redis on port `6379`.*
+* **PostgreSQL (TimescaleDB)**: Port `5432` (`gnm` / `gnmpassword`)
+* **Redis**: Port `6379`
+* **Package Worker (`pkg_worker`)**: Port `8081` (internal container network)
+* **Test Node Lab**: Includes pre-configured `ubuntu_ne`, `centos_ne`, and `alpine_ne` SSH test targets on the `172.28.0.0/24` subnet.
 
 ### Step 2: Run Quarkus Backend in Dev Mode
 Start the Quarkus development server. Dev mode automatically recompiles Java classes on code changes, runs Flyway migrations, and hot-swaps resources:
 ```bash
 GNM_VAULT_PASSWORD=my_secure_passcode ./gradlew :gnm-app:quarkusDev
 ```
-* **Vault Password**: Required for Vault initialization and unsealing. Can be set as an environment variable (`GNM_VAULT_PASSWORD`), in `gnm-app/.env`, or `gnm-app/src/main/resources/application.properties` (`%dev.gnm.vault.password`). If set in the environment, the Vault will automatically unseal on startup. If left unset, you will be prompted to enter the password manually in the GUI to unseal it.
-* **JWT Signing Keys**: On the first start, GNM will automatically generate a secure 2048-bit RSA keypair in the `./keys` folder.
-* **Database migrations**: Flyway automatically creates the tables at startup.
-* **Mock Data**: A mock data service detects an empty database and automatically seeds 7 devices, history, credentials, and 24 hours of telemetry metrics for dashboard visualization.
-* **REST API Port**: Backend will listen at `http://localhost:8080`.
+* **Vault Password**: Required for Credential Vault envelope encryption (AES-256-GCM). Can be provided via `GNM_VAULT_PASSWORD`, `.env`, or manually entered in the Web GUI upon startup.
+* **JWT Signing Keys**: Automatically generated as an RSA 2048-bit keypair in `./keys` on first boot.
+* **Database Migrations**: Flyway automatically executes migrations (`V1` through `V28+`).
+* **Mock Data Seeding**: If the database is empty, a mock service seeds sample network devices, historical telemetry, credentials, and OS profiles.
+* **REST API Port**: Listens at `http://localhost:8080`.
 
 ### Step 3: Install & Start React Frontend
-In a new terminal window, navigate to the frontend folder, install the packages, and boot the Vite development server:
+In a separate terminal, navigate to the frontend directory, install dependencies, and start Vite:
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 * **Vite Port**: The React client will listen at `http://localhost:5173`.
-* **API Proxy**: Vite is preconfigured to proxy `/api` calls directly to the Quarkus backend on port `8080`.
+* **API Proxy**: Vite proxies `/api` and WebSocket endpoints to Quarkus on port `8080`.
 
 ### Step 4: Login to the Dashboard
 Open your browser and navigate to:
 👉 **[http://localhost:5173](http://localhost:5173)**
 
-Authenticate using the default local credentials:
+Authenticate using the default local administrator credentials:
 * **Username**: `admin`
 * **Password**: `admin`
 
@@ -62,39 +66,94 @@ Authenticate using the default local credentials:
 
 ## 📦 Production Deployment (Docker Compose)
 
-The project includes an automated GitHub Actions CI/CD pipeline (`.github/workflows/build-and-push.yml`) that builds the Docker image and publishes it to the GitHub Container Registry (`ghcr.io`).
+Pre-built Docker images are published to the GitHub Container Registry (`ghcr.io`):
+* `ghcr.io/skoczo/lanalmanac` (Core application: Quarkus + embedded React SPA)
+* `ghcr.io/skoczo/lanalmanac-pkg-worker` (Stateless Go SSH package worker)
 
-To run the production-ready stack (with PostgreSQL, Redis, and the LanAlmanac backend/frontend):
+### 1. Prepare Environment Configuration
+Copy the provided `.env.example` template:
+```bash
+cp .env.example .env
+```
+Edit `.env` to configure your passwords and secrets:
+* `ADMIN_USERNAME` / `ADMIN_PASSWORD`: Credentials for the default administrator account.
+* `GNM_VAULT_PASSWORD`: Master passphrase for the AES-256-GCM Credential Vault.
+* `GNM_PKG_WORKER_AUTH_SECRET`: Shared secret (min 32 characters) for HMAC-SHA256 request authentication between the core monolith and the package worker.
 
-1. Clone this repository or copy the `docker-compose.prod.yml` file to your server.
-2. Set environment variables (e.g. `ADMIN_USERNAME`, `ADMIN_PASSWORD`) in your `.env` file or export them.
-3. (Optional) Set `GNM_VAULT_PASSWORD` in your environment. **If set, the vault will auto-unseal on application startup.** If not set, you must manually unseal it via the web interface by providing the master password.
-4. Run the application (this builds the React SPA and serves it from Quarkus):
+### 2. Deploy with Docker Compose
+Start the production stack:
 ```bash
 docker compose -f docker-compose.prod.yml up -d
 ```
+The application will be available at:
+👉 **`http://<server-ip>:8787`** (or `http://localhost:8787`)
 
-### Local Build Deployment
+### 3. Testing Development Builds (Branch Images)
+When testing features from active branches (such as `agentless-package-management`), set the image tags in `.env`:
+```bash
+GNM_APP_IMAGE=ghcr.io/skoczo/lanalmanac:dev-agentless-package-management
+GNM_PKG_WORKER_IMAGE=ghcr.io/skoczo/lanalmanac-pkg-worker:dev-agentless-package-management
+```
+Then pull and restart:
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
 
-If you prefer to build the image locally yourself:
+---
+
+## 🛡️ Agentless Package, Vulnerability & Patch Management
+
+LanAlmanac features agentless remote package management for Linux/POSIX hosts over SSH without requiring agents or daemons installed on managed machines:
+* **Package Inventory**: Inspects installed packages using OS profiles (`apt`, `dnf`, `apk`, `pacman`, `zypper`, custom).
+* **Vulnerability Assessment**: Correlates installed package versions with the OSV (Open Source Vulnerabilities) database, computing CVSS scores and severities.
+* **SBOM Export**: Export device software bill of materials in standard CycloneDX 1.5 JSON format.
+* **Update Detection**: Identifies pending security and general updates with advisory metadata.
+* **Live Patch Execution**: Streams real-time patch installation output over Server-Sent Events (SSE) with strict privilege controls.
+* **Automated Cron Scheduling**: Configure per-device automated update check and inventory refresh schedules.
+
+### Target Managed Node Setup
+To manage a remote Linux host:
+1. Ensure the host has an active SSH server accessible by LanAlmanac.
+2. In the LanAlmanac Web GUI, store an SSH credential (password or private key) in the **Credential Vault**.
+3. For update and patch operations requiring root privileges, generate a minimal least-privilege `/etc/sudoers.d/lanalmanac` rule by clicking **"Copy Sudoers Snippet"** in the device's **Packages & Updates** tab or **Settings > OS Profiles**.
+
+---
+
+## 🏗️ Building Container Images Locally
+
+If you prefer building the container images directly from source:
+
+### Build Main Application Image (Backend + Frontend)
 ```bash
 docker build -t lanalmanac:latest .
 ```
-The multi-stage `Dockerfile` will:
-1. Compile the React frontend SPA into static assets.
-2. Compile and package the Quarkus backend in JVM fast-jar mode, embedding the static frontend files inside the JAR resource folder (`META-INF/resources`).
-3. Deploy the final container using the Eclipse Temurin JRE runtime.
+This multi-stage Docker build:
+1. Compiles the React SPA using Node 22.
+2. Packages the Quarkus fast-jar embedding the static frontend assets.
+3. Produces a hardened Eclipse Temurin JRE 21 runtime container.
+
+### Build Package Worker Image
+```bash
+docker build -t lanalmanac-pkg-worker:latest -f gnm-pkg-worker/Dockerfile ./gnm-pkg-worker
+```
 
 ---
 
 ## 📂 Project Structure
 
-* [gnm-app/](file:///workspaces/GreatNetworkManager/gnm-app) - Java 21 Quarkus backend project
-  * `src/main/java/com/gnm/model/` - JPA active-record Panache database entities
+* [gnm-app/](file:///workspaces/GreatNetworkManager/gnm-app) - Java 21 Quarkus modular monolith
+  * `src/main/java/com/gnm/model/` - Panache database entities (Devices, Credentials, OS Profiles, Patch Jobs, Vulnerabilities)
   * `src/main/java/com/gnm/resource/` - JAX-RS REST endpoints and WebSocket definitions
-  * `src/main/java/com/gnm/service/` - JWT key generation services and mock data seeders
-* [frontend/](file:///workspaces/GreatNetworkManager/frontend) - React 19 Vite TypeScript client
-  * `src/App.tsx` - App entry point with TanStack Router path configurations
-  * `src/lib/auth/` - Local token-based fetch clients and React session contexts
-  * `src/pages/` - UI dashboard layouts, device tables, details tabs, topology map, and vault drawers
-* [docs/](file:///workspaces/GreatNetworkManager/docs) - Architectural guidelines and specifications
+  * `src/main/java/com/gnm/pkgmgmt/` - Agentless package management orchestration, vulnerability analysis, and SSE brokers
+  * `src/main/java/com/gnm/vault/` - Envelope-encrypted Credential Vault engine (AES-256-GCM + Argon2id)
+* [gnm-pkg-worker/](file:///workspaces/GreatNetworkManager/gnm-pkg-worker) - Stateless Go 1.23+ remote execution worker
+  * `internal/transport/` - SSH client with TOFU (Trust-On-First-Use) host key verification
+  * `internal/parser/` - Generic output parsers (delimited, key-value blocks, JSON map, regex)
+  * `internal/handler/` - HMAC-authenticated HTTP handlers (`/v1/inventory`, `/v1/updates/check`, `/v1/patch/execute`)
+* [frontend/](file:///workspaces/GreatNetworkManager/frontend) - React 19 Vite TypeScript dashboard
+  * `src/pages/` - UI pages (Devices, Vulnerabilities, Topology, Settings)
+  * `src/components/devices/details/` - Device detail tabs (Packages, Updates, Vulnerabilities, Schedule)
+  * `src/components/settings/` - OS Profile and system settings
+* [contracts/](file:///workspaces/GreatNetworkManager/contracts) - OpenAPI 3.1 specification for the worker contract (`pkg-worker-v1.openapi.yaml`)
+* [docs/](file:///workspaces/GreatNetworkManager/docs) - Architectural guidelines, invariants, and specifications
