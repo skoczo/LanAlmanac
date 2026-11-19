@@ -1,277 +1,277 @@
-# Plan utwardzania GreatNetworkManager / LanAlmanac
+# GreatNetworkManager / LanAlmanac Security & Quality Hardening Plan
 
-Wykonywany małymi krokami. Każdy krok jest samodzielnie wdrażalny i weryfikowalny.
-Kolejność etapów jest celowa: najpierw zamykamy dostęp, potem budujemy siatkę jakości,
-na końcu wydajność i higiena.
+Executed in small, self-contained steps. Each step is independently deployable and verifiable.
+The order of stages is intentional: first close unauthenticated access, then build quality gates,
+and finally optimize performance and code hygiene.
 
-Legenda rozmiaru (nie czas, tylko liczba plików i ryzyko):
-- **S** — 1-2 pliki, zmiana lokalna, niskie ryzyko
-- **M** — 3-5 plików, wymaga testu
-- **L** — więcej niż 5 plików lub zmiana kontraktu API
-
----
-
-## Etap 0 — Baza wiedzy agenta
-
-- [x] **0.1** Utworzyć [`.agents/invariants.md`](../.agents/invariants.md) (twarde reguły, <100 linii) — **S**
-- [x] **0.2** Utworzyć [`.agents/context-map.md`](../.agents/context-map.md) (mapa plików z numerami linii, sekcja "nie czytaj") — **S**
-- [x] **0.3** Utworzyć szablon `plans/_brief-template.md` do briefów jednokrokowych — **S**
-- [x] **0.4** Dopisać do [`.agents/AGENTS.md`](../.agents/AGENTS.md) sekcję "Definition of Done" i odsyłacze do powyższych — **S**
-
-**Kryterium:** agent potrafi odpowiedzieć na pytanie o dowolny moduł, czytając maksymalnie 2 pliki `.agents/`.
+Size Legend (file count and risk, not duration):
+- **S** — 1–2 files, local change, low risk
+- **M** — 3–5 files, requires a test
+- **L** — more than 5 files or an API contract change
 
 ---
 
-## Etap 1 — Zamknięcie dostępu (P0, najwyższe ryzyko)
+## Stage 0 — Agent Knowledge Base
 
-Stan obecny: [`application.properties`](../gnm-app/src/main/resources/application.properties:35) wystawia bez uwierzytelnienia vault, terminal SSH, SSE z `sudo apt-get upgrade`, WebSocket zdarzeń i change-password.
+- [x] **0.1** Create [`.agents/invariants.md`](../.agents/invariants.md) (hard rules, <100 lines) — **S**
+- [x] **0.2** Create [`.agents/context-map.md`](../.agents/context-map.md) (file map with line numbers and "what not to read") — **S**
+- [x] **0.3** Create single-step brief template `plans/_brief-template.md` — **S**
+- [x] **0.4** Add "Definition of Done" and links to the above in [`.agents/AGENTS.md`](../.agents/AGENTS.md) — **S**
 
-### 1.1 [x] Bilety jednorazowe dla SSE i WebSocket — **M**
-**Cel:** mechanizm, który pozwoli zamknąć trzy endpointy bez łamania frontendu (EventSource i WebSocket nie potrafią wysłać nagłówka `Authorization`).
+**Criterion:** An agent can answer questions about any module by reading at most 2 files in `.agents/`.
 
-**Pliki:**
-- nowy `gnm-app/src/main/java/com/gnm/auth/AuthTicketService.java`
-- nowy `gnm-app/src/main/java/com/gnm/resource/AuthTicketResource.java`
-- nowy `gnm-app/src/main/java/com/gnm/dto/AuthTicket.java`
+---
 
-**Zmiana:**
-- `POST /api/auth/ticket` (uwierzytelniony, rola `gnm-admin` lub `gnm-operator`) przyjmuje `{ "purpose": "sse-update" | "ws-terminal" | "ws-events", "resourceId": "<uuid|brak>" }`
-- zwraca `{ "ticket": "<losowy 32B base64url>", "expiresAt": "<iso>" }`
-- ticket przechowywany w pamięci: `Map<String, Ticket>`, TTL 30 s, jednorazowy
-- ticket zawiera: `username`, `roles`, `purpose`, `resourceId`, `expiry`
-- `consume(ticket, purpose, resourceId)` — atomowo usuwa i waliduje (`ConcurrentHashMap.remove`), zwraca `Optional<Ticket>`
-- czyszczenie wygasłych: `@Scheduled(every = "60s")`
+## Stage 1 — Access Closure (P0, Highest Risk)
 
-**Kryterium:** test jednostkowy pokrywa: użycie poprawne, podwójne użycie (odrzucone), zły `purpose`, wygaśnięcie, obcy `resourceId`.
+Current state: [`application.properties`](../gnm-app/src/main/resources/application.properties:35) exposes the vault, SSH terminal, SSE update stream, events WebSocket, and change-password endpoints without authentication.
 
-**Weryfikacja:** `./gradlew :gnm-app:test --tests "*AuthTicketServiceTest"`
+### 1.1 [x] Single-Use Tickets for SSE and WebSocket — **M**
+**Goal:** A mechanism that closes three streaming/WS endpoints without breaking the frontend (`EventSource` and `WebSocket` cannot send custom `Authorization` headers).
+
+**Files:**
+- new `gnm-app/src/main/java/com/gnm/auth/AuthTicketService.java`
+- new `gnm-app/src/main/java/com/gnm/resource/AuthTicketResource.java`
+- new `gnm-app/src/main/java/com/gnm/dto/AuthTicket.java`
+
+**Changes:**
+- `POST /api/auth/ticket` (authenticated, role `gnm-admin` or `gnm-operator`) accepts `{ "purpose": "sse-update" | "sse-patch-job" | "ws-terminal" | "ws-events", "resourceId": "<uuid|null>" }`
+- returns `{ "ticket": "<random 32B base64url>", "expiresAt": "<iso>" }`
+- ticket stored in memory: `Map<String, Ticket>`, 30s TTL, single-use
+- ticket contains: `username`, `roles`, `purpose`, `resourceId`, `expiry`
+- `consume(ticket, purpose, resourceId)` — atomically removes and validates (`ConcurrentHashMap.remove`), returning `Optional<Ticket>`
+- expired ticket cleanup: `@Scheduled(every = "60s")`
+
+**Criterion:** Unit test covers: valid consumption, replay rejection, wrong `purpose`, expiration, mismatched `resourceId`.
+
+**Verification:** `./gradlew :gnm-app:test --tests "*AuthTicketServiceTest"`
 
 ### 1.2 [x] SSE `/api/devices/{id}/update` — **M**
-**Pliki:** [`UpdateResource.java`](../gnm-app/src/main/java/com/gnm/resource/UpdateResource.java:36), [`application.properties`](../gnm-app/src/main/resources/application.properties:35), [`DeviceDetail.tsx`](../frontend/src/pages/DeviceDetail.tsx:1622)
+**Files:** [`UpdateResource.java`](../gnm-app/src/main/java/com/gnm/resource/UpdateResource.java:36), [`application.properties`](../gnm-app/src/main/resources/application.properties:35), [`DeviceDetail.tsx`](../frontend/src/pages/DeviceDetail.tsx:1622)
 
-**Zmiana:**
-- zostaje `GET /api/devices/{id}/update?ticket=...` (przeglądarkowe `EventSource` obsługuje wyłącznie `GET`, a jednorazowy losowy bilet 32B z uwierzytelnionego `POST /api/auth/ticket` pełni rolę tokenu anty-CSRF)
-- `@RolesAllowed({"gnm-admin", "gnm-operator"})` na `UpdateResource`
-- walidacja `consume(ticket, "sse-update", id)` (wraz z mechanizmem uwierzytelniania biletu dla żądań SSE bez nagłówka `Authorization`); brak/nieprawidłowy → `401`, bez uruchamiania SSH ani odpytywania bazy
-- usunąć `/api/devices/*/update` z `permission.public.paths`
-- zamienić `ManagedExecutor` na wirtualny wątek (`Thread.startVirtualThread`) zgodnie z Inwariantem #2
-- dodać weryfikację klucza hosta SSH (`ServerKeyVerifier` / `sshHostKeyTrusted`, Inwariant #8) oraz zeroizację odszyfrowanego sekretu `byte[]` po użyciu (Inwariant #10)
-- limit czasu sesji SSE (15 min) i zamknięcie strumienia
-- frontend (`DeviceDetail.tsx`): pobrać bilet przez `POST /api/auth/ticket` (`purpose: "sse-update"`, `resourceId: device.id`) i przekazać `?ticket=...` do `EventSource` (Inwariant #14)
+**Changes:**
+- keep `GET /api/devices/{id}/update?ticket=...` (browser `EventSource` supports only `GET`, and the single-use 32B ticket issued by authenticated `POST /api/auth/ticket` acts as an anti-CSRF token)
+- `@RolesAllowed({"gnm-admin", "gnm-operator"})` on `UpdateResource`
+- validate `consume(ticket, "sse-update", id)` (including ticket authentication mechanism for SSE requests without an `Authorization` header); missing/invalid → `401` before starting SSH or querying the database
+- remove `/api/devices/*/update` from `permission.public.paths`
+- replace `ManagedExecutor` with virtual threads (`Thread.startVirtualThread`) per Invariant #2
+- enforce SSH host key verification (`ServerKeyVerifier` / `sshHostKeyTrusted`, Invariant #8) and zeroize decrypted secret `byte[]` after use (Invariant #10)
+- 15-minute SSE session timeout and stream closure
+- frontend (`DeviceDetail.tsx`): request ticket via `POST /api/auth/ticket` (`purpose: "sse-update"`, `resourceId: device.id`) and pass `?ticket=...` to `EventSource` (Invariant #14)
 
-**Kryterium:** żądanie bez biletu zwraca 401 i nie wykonuje żadnego połączenia SSH; żądanie z biletem działa jak dotychczas, ale odrzuca niezaufany klucz hosta SSH.
+**Criterion:** Request without a ticket returns 401 and performs no SSH connection; request with a valid ticket works as expected and rejects untrusted SSH host keys.
 
-**Weryfikacja:** `./gradlew :gnm-app:test --tests "*UpdateResourceTest"`
+**Verification:** `./gradlew :gnm-app:test --tests "*UpdateResourceTest"`
 
 ### 1.3 Terminal WebSocket — **M**
-**Pliki:** [`TerminalWebSocket.java`](../gnm-app/src/main/java/com/gnm/resource/TerminalWebSocket.java:37), [`Terminal.tsx`](../frontend/src/components/Terminal.tsx:74)
+**Files:** [`TerminalWebSocket.java`](../gnm-app/src/main/java/com/gnm/resource/TerminalWebSocket.java:37), [`Terminal.tsx`](../frontend/src/components/Terminal.tsx:74)
 
-**Zmiana:**
-- ścieżka `/ws/terminal/{deviceId}/{credentialId}?ticket=...`
-- `@OnOpen` pobiera `ticket` z `connection.handshakeRequest().query()` i woła `consume(ticket, "ws-terminal", deviceId)`
-- brak biletu → `connection.close()` przed jakimkolwiek dostępem do bazy i vaulta
-- usunąć `/ws/terminal/*` z `permission.public.paths`
-- frontend: pobierz bilet przez `apiClient`, dołącz do URL
+**Changes:**
+- path `/ws/terminal/{deviceId}/{credentialId}?ticket=...`
+- `@OnOpen` reads `ticket` from `connection.handshakeRequest().query()` and calls `consume(ticket, "ws-terminal", deviceId)`
+- missing/invalid ticket → `connection.close()` before any database or vault access
+- remove `/ws/terminal/*` from `permission.public.paths`
+- frontend: fetch ticket via `apiClient` and append to WS URL
 
-**Kryterium:** nieuwierzytelniony handshake jest odrzucany; nieuwierzytelniony użytkownik nie powoduje żadnego zapisu do bazy (`NetworkService` nie powstaje).
+**Criterion:** Unauthenticated handshake is rejected; unauthenticated user causes no database writes (`NetworkService` is not created).
 
-**Weryfikacja:** `./gradlew :gnm-app:test --tests "*RemoteAccessTest"` + `npx playwright test`
+**Verification:** `./gradlew :gnm-app:test --tests "*RemoteAccessTest"` + `npx playwright test`
 
 ### 1.4 WebSocket `/ws/events` — **S**
-**Pliki:** [`EventWebSocket.java`](../gnm-app/src/main/java/com/gnm/resource/EventWebSocket.java:13), [`Layout.tsx`](../frontend/src/components/Layout.tsx)
+**Files:** [`EventWebSocket.java`](../gnm-app/src/main/java/com/gnm/resource/EventWebSocket.java:13), [`Layout.tsx`](../frontend/src/components/Layout.tsx)
 
-**Zmiana:** to samo co 1.3 z `purpose = "ws-events"`; usunąć `/ws/events` z `permit`; ograniczyć broadcast do zalogowanych połączeń.
+**Changes:** Same ticket handshake as 1.3 with `purpose = "ws-events"`; remove `/ws/events` from `permit`; broadcast only to authenticated sessions.
 
-**Kryterium:** brak biletu = brak subskrypcji; zdarzenia nie wyciekają do anonimowych klientów (nazwy urządzeń, IP, alarmy).
+**Criterion:** Missing ticket = no subscription; events do not leak to anonymous clients (device names, IPs, alerts).
 
-### 1.5 Vault — koniec z `@PermitAll` — **S**
-**Pliki:** [`VaultResource.java`](../gnm-app/src/main/java/com/gnm/resource/VaultResource.java:16), [`application.properties`](../gnm-app/src/main/resources/application.properties:35)
+### 1.5 Vault — Remove `@PermitAll` — **S**
+**Files:** [`VaultResource.java`](../gnm-app/src/main/java/com/gnm/resource/VaultResource.java:16), [`application.properties`](../gnm-app/src/main/resources/application.properties:35)
 
-**Zmiana:**
-- usunąć `@PermitAll` i `/api/vault/*` z `permit`
-- `@RolesAllowed("gnm-admin")` na całej klasie
-- **usunąć fallback** `vaultPassword.orElse(null)` — hasło wyłącznie z ciała żądania; konfiguracja `gnm.vault.password` do wykreślenia
-- `initialize` i `unseal` przez `AuthTicketService`-owy licznik prób (patrz 1.6)
+**Changes:**
+- remove `@PermitAll` and `/api/vault/*` from `permit`
+- `@RolesAllowed("gnm-admin")` on the class
+- **remove fallback** `vaultPassword.orElse(null)` — passcode strictly from request body; delete `gnm.vault.password` config property
+- protect `initialize` and `unseal` via brute-force attempt throttling (see 1.6)
 
-**Kryterium:** `curl -X POST /api/vault/unseal` bez tokenu → 401. Nie da się odpieczętować vaulta hasłem z konfiguracji.
+**Criterion:** `curl -X POST /api/vault/unseal` without a token → 401. Vault cannot be unsealed using a configuration property fallback.
 
-### 1.6 Rate limiting i blokada konta — **M**
-**Pliki:** nowy `gnm-app/src/main/java/com/gnm/auth/LoginThrottle.java`, [`LocalAuthResource.java`](../gnm-app/src/main/java/com/gnm/resource/LocalAuthResource.java:50), [`VaultResource.java`](../gnm-app/src/main/java/com/gnm/resource/VaultResource.java:60)
+### 1.6 Rate Limiting & Account Lockout — **M**
+**Files:** new `gnm-app/src/main/java/com/gnm/auth/LoginThrottle.java`, [`LocalAuthResource.java`](../gnm-app/src/main/java/com/gnm/resource/LocalAuthResource.java:50), [`VaultResource.java`](../gnm-app/src/main/java/com/gnm/resource/VaultResource.java:60)
 
-**Zmiana:**
-- licznik nieudanych prób per `username` i per IP: próg 5, okno 15 min, blokada 15 min
-- na `/api/vault/unseal` próg 3, blokada 5 min (Argon2id i tak spowalnia, ale licznik chroni CPU)
-- odpowiadać tak samo dla "nie ma użytkownika" i "złe hasło" (już OK) — zachować
-- ujednolicić czas odpowiedzi dla nieistniejącego użytkownika (dummy Argon2 verify), aby nie wyciekać informacji o kontach
+**Changes:**
+- failed attempt counter per `username` and per IP: threshold 5, 15-minute window, 15-minute lockout
+- on `/api/vault/unseal`: threshold 3, 5-minute lockout (Argon2id already slows down guesses, but the counter protects CPU)
+- keep identical response messages for unknown user and wrong password
+- normalize response timing for non-existent users (dummy Argon2 verify) to prevent account enumeration
 
-**Kryterium:** 6. próba logowania zwraca 429; test mierzy, że czas odpowiedzi dla nieistniejącego użytkownika jest w tym samym rzędzie wielkości.
+**Criterion:** 6th login attempt returns 429; test verifies that response time for a non-existent user is in the same order of magnitude.
 
-### 1.7 `change-password` bez ręcznego dekodowania JWT i utwardzenie `DynamicOidcTenantResolver` — **M**
-**Pliki:** [`LocalAuthResource.java`](../gnm-app/src/main/java/com/gnm/resource/LocalAuthResource.java:88), [`DynamicOidcTenantResolver.java`](../gnm-app/src/main/java/com/gnm/auth/DynamicOidcTenantResolver.java:14)
+### 1.7 `change-password` Without Manual JWT Decoding & Hardening `DynamicOidcTenantResolver` — **M**
+**Files:** [`LocalAuthResource.java`](../gnm-app/src/main/java/com/gnm/resource/LocalAuthResource.java:88), [`DynamicOidcTenantResolver.java`](../gnm-app/src/main/java/com/gnm/auth/DynamicOidcTenantResolver.java:14)
 
-**Zmiana:**
-- usunąć `extractUsernameFromToken()` (Base64 + `ObjectMapper`, brak weryfikacji podpisu)
-- wstrzyknąć `JsonWebToken` i brać `getSubject()`/`getName()`
-- usunąć `/api/auth/change-password` z `perm` — ma być wymagane uwierzytelnienie
-- dodać `jti` i `aud` do generowanych tokenów, TTL z konfiguracji zamiast zaszytych 24 h
-- po zmianie hasła unieważnić poprzednie sesje (pole `tokenVersion` w `GnmUser`, sprawdzane w filtrze)
-- w `DynamicOidcTenantResolver`: cache konfiguracji OIDC w pamięci (inwalidowany przy zmianie ustawień) zamiast transakcji DB na każdym żądaniu HTTP; walidacja `oidc.authority.url` (wymagany `https://`, blokada adresów loopback/link-local/prywatnych przeciw SSRF)
+**Changes:**
+- remove `extractUsernameFromToken()` (manual Base64 + `ObjectMapper` without signature verification)
+- inject `JsonWebToken` and read `getSubject()`/`getName()`
+- remove `/api/auth/change-password` from public paths — require authentication
+- include `jti` and `aud` claims on generated tokens, configurable TTL instead of hardcoded 24h
+- invalidate previous sessions after password change (`tokenVersion` field on `GnmUser`, verified in filter)
+- in `DynamicOidcTenantResolver`: cache OIDC configuration in memory (invalidated on setting update) instead of running a DB transaction on every HTTP request; validate `oidc.authority.url` (require `https://`, block loopback/link-local/private addresses against SSRF)
 
-**Kryterium:** token z podmienionym payloadem (nieprawidłowy podpis) nie pozwala zmienić hasła; nieprawidłowy/wewnętrzny URL OIDC jest odrzucany.
+**Criterion:** A token with a tampered payload (invalid signature) cannot change a password; invalid/internal OIDC URLs are rejected.
 
-### 1.8 Frontend: koniec z JWT w cookie z JS — **M**
-**Pliki:** [`auth-context.tsx`](../frontend/src/lib/auth/auth-context.tsx:112), [`BackupSettingsTab.tsx`](../frontend/src/pages/BackupSettingsTab.tsx:13), [`application.properties`](../gnm-app/src/main/resources/application.properties:29)
+### 1.8 Frontend: Stop Setting JWT Cookie from JavaScript — **M**
+**Files:** [`auth-context.tsx`](../frontend/src/lib/auth/auth-context.tsx:112), [`BackupSettingsTab.tsx`](../frontend/src/pages/BackupSettingsTab.tsx:13), [`application.properties`](../gnm-app/src/main/resources/application.properties:29)
 
-**Zmiana:**
-- usunąć wszystkie `document.cookie = \`jwt=...\`` (4 miejsca) — token nie może być czytelny dla JS w cookie
-- usunąć `smallrye.jwt.token.cookie=jwt` z `application.properties` (backend akceptuje JWT wyłącznie z nagłówka `Authorization`)
-- token trzymać w pamięci + `sessionStorage` zamiast `localStorage` (mniejsza ekspozycja przy XSS), w tym zaktualizować bezpośrednie odwołania w `BackupSettingsTab.tsx`
-- dodać CSP z `frame-ancestors 'none'` w nagłówkach Quarkusa
+**Changes:**
+- remove all `document.cookie = \`jwt=...\`` assignments (4 places)
+- remove `smallrye.jwt.token.cookie=jwt` from `application.properties` (backend accepts JWT strictly from the `Authorization` header)
+- store token in memory + `sessionStorage` instead of `localStorage` (reduced XSS exposure), updating direct references in `BackupSettingsTab.tsx`
+- add CSP with `frame-ancestors 'none'` in Quarkus HTTP headers
 
-**Kryterium:** w narzędziach devtools brak cookie `jwt`; terminal i strumień aktualizacji działają.
+**Criterion:** No `jwt` cookie in browser devtools; terminal and update streams work properly.
 
-**Weryfikacja:** `cd frontend && npm run build && npx playwright test`
+**Verification:** `cd frontend && npm run build && npx playwright test`
 
 ---
 
-## Etap 2 — Role i uprawnienia — **M**
+## Stage 2 — Roles & Permissions — **M**
 
-**Pliki:** wszystkie zasoby w `gnm-app/src/main/java/com/gnm/resource/`, nowy `gnm-app/src/main/java/com/gnm/auth/Permissions.java`
+**Files:** all resources in `gnm-app/src/main/java/com/gnm/resource/`, new `gnm-app/src/main/java/com/gnm/auth/Permissions.java`
 
-**Zmiana:** jawne `@RolesAllowed` na każdej klasie zasobu (oraz na poziomie metod w zasobach mieszanych: `DeviceResource`, `ThreatResource`, `CredentialResource`, `SettingsResource`) według macierzy:
+**Changes:** Explicit `@RolesAllowed` on every resource class (and on methods for mixed-role resources: `DeviceResource`, `ThreatResource`, `CredentialResource`, `SettingsResource`) according to the matrix:
 
-| Zasób / operacja | viewer | operator | admin |
+| Resource / Operation | viewer | operator | admin |
 |:---|:---|:---|:---|
-| devices GET, telemetry GET, topology GET, threats GET | tak | tak | tak |
-| devices mutacje (update, state, labels, services CRUD, manual, discover, probe-update) | nie | tak | tak |
-| devices trust-ssh-key (`PUT /{id}/services/{serviceId}/trust-ssh-key`) | nie | tak | tak |
-| threats resolve/note | nie | tak | tak |
-| scanner POST | nie | tak | tak |
-| discovery toggle/trigger | nie | tak | tak |
-| credentials lista | nie | tak | tak |
-| credentials reveal | nie | nie | tak |
-| credentials create/update/delete | nie | tak | tak |
-| users | nie | nie | tak |
-| settings (poza `GET /api/settings/public/oidc`) | nie | nie | tak |
-| vault | nie | nie | tak |
-| backup | nie | nie | tak |
-| diagnostics | nie | nie | tak |
-| update (SSE) | nie | tak | tak |
+| devices GET, telemetry GET, topology GET, threats GET | yes | yes | yes |
+| devices mutations (update, state, labels, services CRUD, manual, discover, probe-update) | no | yes | yes |
+| devices trust-ssh-key (`PUT /{id}/services/{serviceId}/trust-ssh-key`) | no | yes | yes |
+| threats resolve/note | no | yes | yes |
+| scanner POST | no | yes | yes |
+| discovery toggle/trigger | no | yes | yes |
+| credentials list | no | yes | yes |
+| credentials reveal | no | no | yes |
+| credentials create/update/delete | no | yes | yes |
+| users | no | no | yes |
+| settings (except `GET /api/settings/public/oidc`) | no | no | yes |
+| vault | no | no | yes |
+| backup | no | no | yes |
+| diagnostics | no | no | yes |
+| update (SSE) | no | yes | yes |
 
-Dodatkowo: reguła domyślna `deny` — każdy nowy zasób bez adnotacji ma być odrzucany. Osiągnąć przez zmianę polityki: `quarkus.http.auth.permission.api.policy=authenticated` zostaje, ale dochodzi `@Authenticated` wymuszone testem ArchUnit (etap 7).
+Additionally: default `deny` rule — every new resource without an annotation must be rejected, enforced by an ArchUnit test (Stage 8).
 
-**Kryterium:** test integracyjny na każdą rolę: viewer dostaje 403 na wszystkich mutacjach (lista endpointów w teście).
-
----
-
-## Etap 3 — Mass assignment i wyciek danych z encji — **M**
-
-- [ ] **3.1** DTO wejściowe dla `NetworkService` (bez `sshHostKey` i `sshHostKeyTrusted`) — [`DeviceResource.java`](../gnm-app/src/main/java/com/gnm/resource/DeviceResource.java:141) — **S**
-- [ ] **3.2** DTO wejściowe dla `GlobalSetting` (tylko `value`, `key` z path) — [`SettingsResource.java`](../gnm-app/src/main/java/com/gnm/resource/SettingsResource.java:31) — **S**
-- [ ] **3.3** `@JsonIgnore` na `encryptedPayload`/`noncePayload` w [`Credential.java`](../gnm-app/src/main/java/com/gnm/model/Credential.java:30) — **S**
-- [ ] **3.4** Odpowiedzi REST tylko przez DTO dla `PhysicalDevice` (dziś encja z całym grafem) — **M**
-- [ ] **3.5** Test regresyjny: `PUT /services/{id}` z `sshHostKeyTrusted: true` → pole niezmienione — **S**
-
-**Kryterium:** żaden endpoint nie przyjmuje encji JPA jako ciała żądania.
+**Criterion:** Integration test for every role: `gnm-viewer` receives 403 on all mutating endpoints.
 
 ---
 
-## Etap 4 — Sekrety i kryptografia — **M**
+## Stage 3 — Mass Assignment & Entity Leakage Prevention — **M**
 
-- [ ] **4.1** Usunąć [`privateKey.pem`](../gnm-app/src/main/resources/privateKey.pem:1) z `resources` — **S**
-- [ ] **4.2** Fail-fast: aplikacja nie startuje, gdy `GNM_AUTH_LOCAL_PASSWORD` lub hasło bazy mają wartość domyślną w profilu `prod` — **S**
-- [ ] **4.3** Usunąć `gnm.auth.local.password=admin` i `gnmpassword` z [`application.properties`](../gnm-app/src/main/resources/application.properties:8) — **S**
-- [ ] **4.4** [`VaultEngine`](../gnm-app/src/main/java/com/gnm/service/VaultEngine.java:31): zeroizacja `kekBytes`, `masterKeyBytes`, `synchronized` na `initialize`/`unseal`/`lock`, plik vaulta `0600`, katalog `0700` — **M**
-- [ ] **4.5** Auto-lock po bezczynności (`gnm.vault.auto-lock-minutes`) + czyszczenie klucza w `ShutdownEvent` — **M**
-- [ ] **4.6** Tabela `vault_audit_log` (migracja V24): `username`, `action`, `credential_id`, `success`, `at`, `source_ip`; zapis przy każdym reveal/encrypt/decrypt — **M**
-- [ ] **4.7** Zrotować token Sonar obecny w `.env` — **S** (działanie poza kodem)
+- [ ] **3.1** Input DTO for `NetworkService` (excluding `sshHostKey` and `sshHostKeyTrusted`) — [`DeviceResource.java`](../gnm-app/src/main/java/com/gnm/resource/DeviceResource.java:141) — **S**
+- [ ] **3.2** Input DTO for `GlobalSetting` (only `value`; `key` from path) — [`SettingsResource.java`](../gnm-app/src/main/java/com/gnm/resource/SettingsResource.java:31) — **S**
+- [ ] **3.3** `@JsonIgnore` on `encryptedPayload`/`noncePayload` in [`Credential.java`](../gnm-app/src/main/java/com/gnm/model/Credential.java:30) — **S**
+- [ ] **3.4** REST responses strictly via DTOs for `PhysicalDevice` — **M**
+- [ ] **3.5** Regression test: `PUT /services/{id}` with `sshHostKeyTrusted: true` leaves field unchanged — **S**
 
-**Kryterium:** test sprawdza, że po `lockVault()` odwołanie do klucza jest niemożliwe, a plik vaulta ma uprawnienia 600.
+**Criterion:** No REST endpoint accepts a JPA entity as a request body.
 
 ---
 
-## Etap 5 — Backup i JNDI — **M**
+## Stage 4 — Secrets & Cryptography — **M**
 
-- [ ] **5.1** Hasło backupu z ciała żądania (`POST /api/backup/download`) zamiast query stringa — [`BackupResource.java`](../gnm-app/src/main/java/com/gnm/resource/BackupResource.java:30), [`BackupSettingsTab.tsx`](../frontend/src/pages/BackupSettingsTab.tsx:22) — **S**
-- [ ] **5.2** Usunąć `System.exit(0)` i `new Thread` z restore; użyć zdarzenia restartu i wirtualnego wątku — **M**
-- [ ] **5.3** `pg_dump`/`psql` i krypto backupu: brak cichego dummy dumpa, propagacja błędu, limit czasu, hasło przez `PGPASSFILE` a nie `PGPASSWORD` w env, zeroizacja `kekBytes` (`char[]` dla hasła) oraz usunięcie niezweryfikowanego pliku wyjściowego przy `AEADBadTagException` — [`BackupService.java`](../gnm-app/src/main/java/com/gnm/service/BackupService.java:348) — **M**
-- [ ] **5.4** Limit rozmiaru uploadu i czasu restore — **S**
-- [ ] **5.5** Wyłączyć `quarkus.naming.enable-jndi` i przepisać probe'y DNS na `InetAddress`/dnsjava — **M**
+- [ ] **4.1** Remove [`privateKey.pem`](../gnm-app/src/main/resources/privateKey.pem:1) from `resources` — **S**
+- [ ] **4.2** Fail-fast: application refuses to start if `GNM_AUTH_LOCAL_PASSWORD` or DB password uses default value in `prod` profile — **S**
+- [ ] **4.3** Remove `gnm.auth.local.password=admin` and `gnmpassword` from [`application.properties`](../gnm-app/src/main/resources/application.properties:8) — **S**
+- [ ] **4.4** [`VaultEngine`](../gnm-app/src/main/java/com/gnm/service/VaultEngine.java:31): zeroize `kekBytes`, `masterKeyBytes`, `synchronized` on `initialize`/`unseal`/`lock`, vault file permissions `0600`, directory `0700` — **M**
+- [ ] **4.5** Inactivity auto-lock (`gnm.vault.auto-lock-minutes`) + key wipe on `ShutdownEvent` — **M**
+- [ ] **4.6** `vault_audit_log` table: `username`, `action`, `credential_id`, `success`, `at`, `source_ip`; recorded on every reveal/encrypt/decrypt — **M**
+- [ ] **4.7** Rotate Sonar token present in `.env` — **S** (external action)
 
----
-
-## Etap 6 — Kontenery — **M**
-
-- [ ] **6.1** [`Dockerfile`](../Dockerfile:39): użytkownik non-root, `chmod 700` na `/app/keys`, `HEALTHCHECK`, multi-arch pinning — **S**
-- [ ] **6.2** [`docker-compose.prod.yml`](../docker-compose.prod.yml:1): usunąć publikację `5432` i `6379`, `no-new-privileges`, `read_only` + tmpfs, hasło Redis, `cap_add` ograniczone — **M**
-- [ ] **6.3** Obrazy pinowane po digest zamiast `latest` — **S**
-- [ ] **6.4** Sekrety przez plik/Docker secrets zamiast env, gdzie możliwe — **M**
+**Criterion:** Test verifies that after `lockVault()`, the master key cannot be accessed and the vault file has `0600` permissions.
 
 ---
 
-## Etap 7 — Siatka jakości: bramki — **M**
+## Stage 5 — Backup & JNDI — **M**
 
-> **Uwaga dotycząca kolejności:** Krok **7.1** warto wykonać bezpośrednio po zakończeniu Etapu 1, aby nowe testy z Etapów 2–6 od razu blokowały regresje.
-
-- [ ] **7.1** `ignoreFailures = true` → `false` w [`build.gradle.kts`](../gnm-app/build.gradle.kts:77); najpierw oznaczyć znane czerwone testy jako `@Disabled` z ticketem, potem naprawiać po kolei — **S**
-- [ ] **7.2** CI: usunąć `continue-on-error` z testów, zostawić tylko na Sonarze do czasu przejścia quality gate — **S**
-- [ ] **7.3** Sonar: dodać `sonar.java.binaries`, `sonar.sources` z backendem, `sonar.qualitygate.wait=true` — **S**
-- [ ] **7.4** Nowy workflow: gitleaks, Trivy (obraz), `npm audit --audit-level=high`, CodeQL — **M**
-- [ ] **7.5** Dependabot/Renovate dla Gradle i npm — **S**
+- [ ] **5.1** Backup password in request body (`POST /api/backup/download`) instead of query string — [`BackupResource.java`](../gnm-app/src/main/java/com/gnm/resource/BackupResource.java:30), [`BackupSettingsTab.tsx`](../frontend/src/pages/BackupSettingsTab.tsx:22) — **S**
+- [ ] **5.2** Remove `System.exit(0)` and `new Thread` from restore; use restart event and virtual thread — **M**
+- [ ] **5.3** `pg_dump`/`psql` and backup crypto: no silent dummy dump, error propagation, timeout, password via `PGPASSFILE` instead of `PGPASSWORD` env var, `kekBytes` zeroization (`char[]` for password), and deletion of unverified output file on `AEADBadTagException` — [`BackupService.java`](../gnm-app/src/main/java/com/gnm/service/BackupService.java:348) — **M**
+- [ ] **5.4** Upload size limit and restore timeout — **S**
+- [ ] **5.5** Disable `quarkus.naming.enable-jndi` and rewrite DNS probes using `InetAddress`/dnsjava — **M**
 
 ---
 
-## Etap 8 — Statyczna analiza i testy — **M**
+## Stage 6 — Containers — **M**
 
-- [ ] **8.1** PMD + Checkstyle z realnym rulesetem (dziś `AGENTS.md` deklaruje PMD, którego nie ma) — **M**
-- [ ] **8.2** Spotless: `googleJavaFormat` zamiast samego `removeUnusedImports` — **S**
-- [ ] **8.3** Frontend: `no-explicit-any` → `error`, prettier, `eslint-plugin-jsx-a11y`, vitest — **M**
-- [ ] **8.4** ArchUnit: granice modułów, każdy zasób ma adnotację bezpieczeństwa, brak `@PermitAll` poza listą dozwolonych — **M**
-- [ ] **8.5** PIT na `VaultEngine` i `PasswordService`, jqwik na `SubnetFilter` i `SimilarityEngine` — **M**
-
----
-
-## Etap 9 — Wydajność i schemat — **M**
-
-- [ ] **9.1** Rozbić `join fetch` w [`getAllDevices()`](../gnm-app/src/main/java/com/gnm/resource/DeviceResource.java:50) na osobne zapytania lub `@BatchSize` — **S**
-- [ ] **9.2** Paginacja `GET /api/devices` (`?page=&size=`, limit 200) — **M**
-- [ ] **9.3** Telemetria: wymagany zakres czasu + limit punktów, brak pełnej historii — [`TelemetryResource.java`](../gnm-app/src/main/java/com/gnm/resource/TelemetryResource.java:18) — **S**
-- [ ] **9.4** Migracja V25 z indeksami: `credential(physical_device_id)`, `network_identity(mac_address)`, `threat_event(resolved, detected_at)`, `network_service(physical_device_id)` — **S**
-- [ ] **9.5** `ThreatResource.getThreats()` — usunąć mutację bazy z GET — **S**
-- [ ] **9.6** [`FingerprintEngine.java`](../gnm-app/src/main/java/com/gnm/fingerprint/FingerprintEngine.java:81) — zamienić `ThreadPoolExecutor`, `newScheduledThreadPool` i `new Thread` na wirtualne wątki (Inwariant #2) — **M**
+- [ ] **6.1** [`Dockerfile`](../Dockerfile:39): non-root user, `chmod 700` on `/app/keys`, `HEALTHCHECK`, multi-arch pinning — **S**
+- [ ] **6.2** [`docker-compose.prod.yml`](../docker-compose.prod.yml:1): remove host port publication for `5432` and `6379`, `no-new-privileges`, `read_only` + tmpfs, Redis password, minimal `cap_add` — **M**
+- [ ] **6.3** Pin container images by digest instead of `latest` — **S**
+- [ ] **6.4** Provide secrets via files/Docker secrets instead of env vars where supported — **M**
 
 ---
 
-## Etap 10 — Frontend hardening — **M**
+## Stage 7 — Quality Gates — **M**
 
-- [ ] **10.1** Error boundary na poziomie route'a — **S**
-- [ ] **10.2** Wyłączyć OSC 52 w xterm (blokada eksfiltracji clipboardu przez zdalną powłokę) — **S**
-- [ ] **10.3** Walidacja odpowiedzi API (zod) na granicy — **M**
-- [ ] **10.4** CSP, `X-Content-Type-Options`, `Referrer-Policy` — **S**
+> **Ordering Note:** Step **7.1** should be executed right after Stage 1 so that new tests in Stages 2–6 immediately block regressions.
 
----
-
-## Etap 11 — Obserwowalność — **M**
-
-- [ ] **11.1** `quarkus-smallrye-health`: readiness (baza, Redis) i liveness — **S**
-- [ ] **11.2** Micrometer/Prometheus + metryki kolejki sightingów i czasu probe'ów — **M**
-- [ ] **11.3** Logi strukturalne JSON, korelacja `requestId`, zakaz logowania sekretów jako reguła testowana — **M**
+- [ ] **7.1** `ignoreFailures = true` → `false` in [`build.gradle.kts`](../gnm-app/build.gradle.kts:77); first mark known broken tests `@Disabled` with an issue reference, then fix them sequentially — **S**
+- [ ] **7.2** CI: remove `continue-on-error` from test steps, keeping it only on Sonar until the quality gate passes — **S**
+- [ ] **7.3** Sonar: add `sonar.java.binaries`, include backend in `sonar.sources`, set `sonar.qualitygate.wait=true` — **S**
+- [ ] **7.4** Security CI workflow: gitleaks, Trivy (container image), `npm audit --audit-level=high`, CodeQL — **M**
+- [ ] **7.5** Dependabot/Renovate for Gradle and npm — **S**
 
 ---
 
-## Etap 12 — Higiena pracy z agentem — **S**
+## Stage 8 — Static Analysis & Testing — **M**
 
-- [ ] **12.1** Usunąć martwy kod: [`MockDataLoader`](../gnm-app/src/main/java/com/gnm/service/MockDataLoader.java:10) (fałszywy log), pozostałości JNDI — **S**
-- [ ] **12.2** OpenAPI + generowany klient TS zamiast ręcznych `fetch` — **M**
-- [x] **12.3** Uzupełnić `AGENTS.md` o Definition of Done i inwarianty — **S** (wykonane w 0.4)
+- [ ] **8.1** PMD + Checkstyle with an active ruleset — **M**
+- [ ] **8.2** Spotless: enable `googleJavaFormat` in addition to `removeUnusedImports` — **S**
+- [ ] **8.3** Frontend: `no-explicit-any` → `error`, Prettier, `eslint-plugin-jsx-a11y`, Vitest — **M**
+- [ ] **8.4** ArchUnit: module boundaries, every resource has a security annotation, no `@PermitAll` outside the allowlist — **M**
+- [ ] **8.5** PIT mutation testing on `VaultEngine` and `PasswordService`, jqwik property tests on `SubnetFilter` and `SimilarityEngine` — **M**
 
 ---
 
-## Zależności między krokami
+## Stage 9 — Performance & Schema — **M**
+
+- [ ] **9.1** Split `join fetch` in [`getAllDevices()`](../gnm-app/src/main/java/com/gnm/resource/DeviceResource.java:50) into separate queries or `@BatchSize` — **S**
+- [ ] **9.2** Pagination on `GET /api/devices` (`?page=&size=`, max 200) — **M**
+- [ ] **9.3** Telemetry: require time range + point limit, forbid unbounded history — [`TelemetryResource.java`](../gnm-app/src/main/java/com/gnm/resource/TelemetryResource.java:18) — **S**
+- [ ] **9.4** Flyway migration adding indexes on `credential(physical_device_id)`, `network_identity(mac_address)`, `threat_event(resolved, detected_at)`, `network_service(physical_device_id)` — **S**
+- [ ] **9.5** `ThreatResource.getThreats()` — remove database mutation from `GET` — **S**
+- [ ] **9.6** [`FingerprintEngine.java`](../gnm-app/src/main/java/com/gnm/fingerprint/FingerprintEngine.java:81) — replace `ThreadPoolExecutor`, `newScheduledThreadPool`, and `new Thread` with virtual threads (Invariant #2) — **M**
+
+---
+
+## Stage 10 — Frontend Hardening — **M**
+
+- [ ] **10.1** Route-level React Error Boundary — **S**
+- [ ] **10.2** Disable OSC 52 in xterm (prevent clipboard exfiltration by remote shells) — **S**
+- [ ] **10.3** Runtime API response validation (Zod) at the client boundary — **M**
+- [ ] **10.4** CSP, `X-Content-Type-Options`, `Referrer-Policy` headers — **S**
+
+---
+
+## Stage 11 — Observability — **M**
+
+- [ ] **11.1** `quarkus-smallrye-health`: readiness (DB, Redis) and liveness checks — **S**
+- [ ] **11.2** Micrometer/Prometheus + sighting queue and probe duration metrics — **M**
+- [ ] **11.3** Structured JSON logs, `requestId` correlation, automated test forbidding secret logging — **M**
+
+---
+
+## Stage 12 — Agent Workflow Hygiene — **S**
+
+- [ ] **12.1** Remove dead code: [`MockDataLoader`](../gnm-app/src/main/java/com/gnm/service/MockDataLoader.java:10) (misleading log) and leftover JNDI classes — **S**
+- [ ] **12.2** OpenAPI + generated TypeScript client instead of manual `fetch` calls — **M**
+- [x] **12.3** Update `AGENTS.md` with Definition of Done and invariants — **S** (completed in 0.4)
+
+---
+
+## Step Dependencies
 
 ```mermaid
 graph LR
-    S01[0.1 invariants] --> S11[1.1 bilety]
+    S01[0.1 invariants] --> S11[1.1 tickets]
     S11 --> S12[1.2 SSE update]
     S11 --> S13[1.3 terminal WS]
     S11 --> S14[1.4 events WS]
@@ -280,10 +280,10 @@ graph LR
     S14 --> S18
     S15[1.5 vault role] --> S16[1.6 throttle]
     S17[1.7 JWT verify] --> S18
-    S18 --> S2[Etap 2 role]
-    S2 --> S3[Etap 3 DTO]
-    S3 --> S4[Etap 4 sekrety]
+    S18 --> S2[Stage 2 roles]
+    S2 --> S3[Stage 3 DTOs]
+    S3 --> S4[Stage 4 secrets]
     S71[7.1 ignoreFailures] --> S72[7.2 CI gates]
 ```
 
-Uwaga: krok **1.8** zależy od 1.1-1.4. Nie wykonywać 1.2-1.4 bez 1.1, bo frontend przestanie działać.
+Note: Step **1.8** depends on 1.1–1.4. Do not execute 1.2–1.4 without 1.1, or the frontend will break.

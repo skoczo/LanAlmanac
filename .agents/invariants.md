@@ -1,55 +1,55 @@
-# Inwarianty projektu — czytaj to zawsze, przed każdą zmianą
+# Project Invariants — Read Before Every Change
 
-Twarde reguły. Jeśli proponowana zmiana łamie którąkolwiek — zatrzymaj się i zgłoś konflikt,
-zamiast obchodzić regułę. Maksymalny rozmiar tego pliku: 100 linii. Nie rozbudowuj go.
+Hard, non-negotiable rules. If a requested change conflicts with any rule below, stop and report
+the conflict instead of working around it. Maximum file size: 100 lines. Do not bloat this file.
 
-## Architektura (nienegocjowalne)
+## Architecture (Non-Negotiable)
 
-1. Rdzeń aplikacji (`gnm-app`) to modular monolith na Quarkus — jedyny właściciel PostgreSQL/Flyway,
-   `VaultEngine`, Auth/RBAC i zewnętrznego API. Wydzielenie bezstanowego kontenera workera
-   (np. `gnm-pkg-worker`) jest dozwolone wyłącznie z jawnym, wersjonowanym kontraktem wewnętrznym
-   (zero bezpośredniego dostępu do DB/Vaulta, zero ekspozycji publicznej, brak mnożenia mikroserwisów).
-2. Java 21. Współbieżność przez wirtualne wątki i `StructuredTaskScope`.
-   Zakazane: `new Thread(...)`, `Executors.newCachedThreadPool()`, `newFixedThreadPool`, `ManagedExecutor`.
-   Dozwolone: `Executors.newVirtualThreadPerTaskExecutor()`, `Thread.startVirtualThread`.
-3. PostgreSQL + TimescaleDB. Schemat wyłącznie przez migracje Flyway — nigdy `schema-management`.
-4. Każda encja JPA zwracana przez REST musi iść przez DTO. Ciało żądania nigdy nie jest encją.
-5. Cały kod, logi, komunikaty błędów i UI po angielsku.
+1. The core application (`gnm-app`) is a Quarkus modular monolith — the sole owner of PostgreSQL/Flyway,
+   `VaultEngine`, Auth/RBAC, and public REST/WS APIs. Extracting a stateless worker container
+   (e.g., `gnm-pkg-worker`) is allowed only behind an explicit, versioned internal contract
+   (zero direct DB/Vault access, zero public port exposure, no arbitrary microservices).
+2. Java 21. Concurrency via virtual threads and `StructuredTaskScope`.
+   Forbidden: `new Thread(...)`, `Executors.newCachedThreadPool()`, `newFixedThreadPool`, `ManagedExecutor`.
+   Allowed: `Executors.newVirtualThreadPerTaskExecutor()`, `Thread.startVirtualThread`.
+3. PostgreSQL + TimescaleDB. Schema changes strictly via Flyway migrations — never `schema-management`.
+4. Every JPA entity returned over REST must go through a DTO. Request bodies must never be JPA entities.
+5. All code, logs, error messages, documentation, and UI text must be strictly in English.
 
-## Bezpieczeństwo (nienegocjowalne)
+## Security (Non-Negotiable)
 
-6. Nowy endpoint REST startuje jako `deny`. Dodanie `@PermitAll` wymaga wpisu w planie i uzasadnienia.
-7. Każdy zasób w `com.gnm.resource` ma jawną adnotację `@RolesAllowed` lub `@Authenticated`.
-   Brak adnotacji = błąd, nie "domyślnie authenticated".
-8. `sshHostKeyTrusted` ustawia wyłącznie dedykowany endpoint zaufania. Nigdy przez mass assignment.
-9. Sekrety nie trafiają do logów, wyjątków, odpowiedzi HTTP ani do repozytorium.
-   Logowanie sekretu = błąd krytyczny, nie "drobiazg do poprawy później".
-10. Klucze kryptograficzne żyją w `byte[]`/`char[]` i są zerowane. Nigdy `String` na hasło lub klucz.
-11. Nowe hasło, token lub klucz: minimum AES-256-GCM / Argon2id z parametrami nie słabszymi niż
-    `m=65536, t=3, p=1`. Nie wymyślaj własnej kryptografii.
-12. Każde wywołanie zewnętrznego procesu (`ProcessBuilder`) — argumenty jako lista, nigdy `sh -c`.
+6. Every new REST endpoint starts as `deny`. Adding `@PermitAll` requires a plan entry and justification.
+7. Every resource class in `com.gnm.resource` must have an explicit `@RolesAllowed` or `@Authenticated`.
+   Missing annotation is a bug, not "authenticated by default".
+8. `sshHostKeyTrusted` is set exclusively by the dedicated trust endpoint. Never via mass assignment.
+9. Secrets must never appear in logs, exceptions, HTTP responses, or the repository.
+   Logging a secret is a critical vulnerability, not minor tech debt.
+10. Cryptographic keys live in `byte[]`/`char[]` and are zeroed after use. Never `String` for a password or key.
+11. New passwords, tokens, or keys: minimum AES-256-GCM / Argon2id with parameters no weaker than
+    `m=65536, t=3, p=1`. Never roll custom cryptography.
+12. Every external process invocation (`ProcessBuilder`) must pass arguments as a list, never `sh -c`.
 
-## Kontrakty (nienegocjowalne)
+## Contracts (Non-Negotiable)
 
-13. `docs/architecture.md` to dokument opisowy, nie źródło prawdy o kodzie. Nie edytuj "przy okazji".
-14. Zmiana kontraktu API = zmiana frontendu w tym samym kroku. Nie zostawiaj niedziałającego UI.
-15. Nowa zależność wymaga wpisu w planie. Bez tego — nie dodawaj.
+13. `docs/architecture.md` is a design document, not the source of truth about current code. Do not edit casually.
+14. Changing an API contract requires updating the frontend in the same step. Never leave a broken UI.
+15. Adding a new dependency requires an entry in the plan. Without one, do not add it.
 
-## Higiena pracy
+## Working Discipline
 
-16. Jedna sesja = jeden krok z `plans/hardening-plan.md`. Nie łącz refaktoru z poprawką bezpieczeństwa.
-17. Czytaj minimum: `search_files` po sygnaturze, potem `read_file` z `offset`/`limit`.
-    Nie czytaj pliku w całości, jeśli potrzebujesz jednej metody.
-18. Po edycji weryfikuj przez `git diff`, nie przez ponowne czytanie pliku.
-19. Testy uruchamiaj wybiórczo: `--tests "*NazwaTest"`. Pełna suita tylko przed commitem etapu.
-20. Zanim oznaczysz krok jako gotowy: `./gradlew :gnm-app:compileJava` i `./gradlew spotlessApply`.
+16. One session = one step from the active plan (`plans/hardening-plan.md` or `plans/package-management-plan.md`).
+17. Read the minimum: `search_files` by signature, then `read_file` with `offset`/`limit`.
+    Never read an entire large file when you only need a single method.
+18. Verify edits via `git diff`, not by re-reading the whole file.
+19. Run targeted tests: `--tests "*ClassNameTest"`. Full test suite only before committing a full stage.
+20. Before marking a step done: `./gradlew :gnm-app:compileJava` and `./gradlew spotlessApply`.
 
-## Znane pułapki tego repo
+## Known Repository Pitfalls
 
-21. `build.gradle.kts` ma obecnie `ignoreFailures = true` — testy nie blokują builda.
-    Nie traktuj "build zielony" jako dowodu poprawności.
-22. `application.properties` ma historycznie otwarte ścieżki publiczne (`/api/vault/*`,
-    `/ws/terminal/*`, `/api/devices/*/update`). Nie kopiuj tego wzorca do nowych endpointów.
-23. Frontend ustawia cookie `jwt` z JavaScriptu. Nie rozszerzaj tego mechanizmu.
-24. `MockDataLoader` nie robi nic, ale loguje sukces. Nie ufaj logom startowym.
-25. Kolejka `NetworkSightingQueue` jest jedynym wejściem do fingerprintowania — nie omijaj jej.
+21. `build.gradle.kts` currently sets `ignoreFailures = true` — failing tests do not fail the Gradle build.
+    Never treat a green Gradle exit code as proof that tests passed; inspect the JUnit XML reports.
+22. `application.properties` historically has open public paths (`/api/vault/*`,
+    `/ws/terminal/*`, `/api/devices/*/update`). Never copy this pattern to new endpoints.
+23. The frontend sets a `jwt` cookie from JavaScript. Do not extend this mechanism.
+24. `MockDataLoader` is a no-op that logs success. Do not trust startup logs alone.
+25. `NetworkSightingQueue` is the sole entry point to fingerprinting — never bypass it.

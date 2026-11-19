@@ -1,441 +1,424 @@
-# Plan implementacji modułu zarządzania pakietami i podatnościami (TDD · Core + Go Worker)
+# Package, Update, Patch & Vulnerability Management Implementation Plan (TDD · Core + Go Worker)
 
-**Dokument architektury i zatwierdzone ADR-0..9:** [`docs/package-management-architecture.md`](../docs/package-management-architecture.md)  
-**Zasady pracy:** [`.agents/invariants.md`](../.agents/invariants.md) · [`plans/_brief-template.md`](_brief-template.md)
+**Architecture Document & Approved ADR-0..9:** [`docs/package-management-architecture.md`](../docs/package-management-architecture.md)  
+**Working Rules:** [`.agents/invariants.md`](../.agents/invariants.md) · [`plans/_brief-template.md`](_brief-template.md)
 
-Wykonywany małymi krokami (jedna sesja agenta = jeden krok). **Każdy krok jest realizowany ściśle w TDD (Red → Green → Refactor).**
+Executed in small, self-contained steps (one agent session = one step). **Every step is strictly executed using TDD (Red → Green → Refactor).**
 
-Legenda rozmiaru (liczba plików i ryzyko):
-- **S** — 1–2 pliki, zmiana lokalna, niskie ryzyko
-- **M** — 3–5 plików, wymaga testów
-- **L** — więcej niż 5 plików lub zmiana kontraktu API + frontend
-
----
-
-## Zasady TDD i piramida testów (obowiązujące w każdym kroku)
-
-1. **Red (Najpierw testy):** zanim powstanie kod produkcyjny kroku, piszesz testy jednostkowe / integracyjne / bezpieczeństwa wymienione w sekcji **„Testy (TDD — napisz najpierw)”** i uruchamiasz je, potwierdzając, że nie przechodzą z właściwego powodu.
-2. **Green (Minimalna implementacja):** piszesz wyłącznie kod potrzebny do przejścia testów oraz spełnienia kryteriów kroku.
-3. **Refactor + Verify:** porządkujesz kod, uruchamiasz formatter i pełny zestaw testów kroku:
-   * **`gnm-pkg-worker` (Go):** `cd gnm-pkg-worker && go vet ./... && go test -race -cover ./...` (minimum **80% pokrycia** dla pakietów domenowych; lokalny serwer SSH w pamięci z `golang.org/x/crypto/ssh` zamiast mockowania samej logiki transportu).
-   * **`gnm-app` (Quarkus / Java 21):** `./gradlew spotlessApply && ./gradlew :gnm-app:compileJava && ./gradlew :gnm-app:test --tests "*<NazwaTest>"` (uwaga na Inwariant #21: `ignoreFailures = true` w `build.gradle.kts` — zawsze sprawdzaj realny wynik testów w logu, nie tylko kod wyjścia Gradle!).
-   * **Bezpieczeństwo RBAC:** każdy nowy zasób w `com.gnm.resource` musi mieć test macierzy uprawnień (brak tokenu → `401`, `gnm-viewer`, `gnm-operator`, `gnm-admin`).
-   * **`frontend`:** `cd frontend && npx tsc -b && npx eslint <zmienione pliki>` + testy E2E Playwright (`frontend/tests/package-management.spec.ts`) dla kluczowych ścieżek użytkownika.
-   * **Kontrakt:** `PkgWorkerContractTest` (czarna skrzynka przeciw prawdziwemu kontenerowi Go + `ubuntu_ne`, `centos_ne`, `alpine_ne` z `docker-compose.yml`).
-
-### Zależności (Inwariant #15)
-* **`gnm-app` (Quarkus):** **ZERO nowych zależności** w `gnm-app/build.gradle.kts` (używamy JDK 21 `java.net.http.HttpClient`, istniejącego `quarkus-redis-client`, `quarkus-scheduler`, `quarkus-flyway`, `Testcontainers`, `RestAssured`, `JUnit 5`, `Mockito`).
-* **`frontend`:** **ZERO nowych zależności** w `frontend/package.json`.
-* **`gnm-pkg-worker` (Go 1.23+, ADR-0):** nowy moduł `gnm-pkg-worker/go.mod` z jedną zewnętrzną zależnością produkcyjną: `golang.org/x/crypto` (dla `ssh`, `bcrypt`/`hmac` z stdlib). Reszta z Go stdlib (`net/http`, `encoding/json`, `regexp`, `crypto/hmac`, `crypto/sha256`).
-* **Etap 6 (opcjonalny, ADR-1):** gotowy kontener `aquasec/trivy` jako opcjonalny sidecar (bez binarek w obrazie `gnm-app`).
+Size Legend (file count and risk):
+- **S** — 1–2 files, local change, low risk
+- **M** — 3–5 files, requires unit/integration tests
+- **L** — more than 5 files or API contract + frontend change
 
 ---
 
-## Etap 0 — Kontrakt `v1` i szkielet bezstanowego kontenera Go
+## TDD Rules & Test Pyramid (Mandatory in Every Step)
 
-Cel etapu: zamrożenie kontraktu OpenAPI `v1` oraz działający, przetestowany kontener `gnm-pkg-worker` w Go z uwierzytelnianiem HMAC-SHA256.
+1. **Red (Tests First):** Before writing production code for a step, write the unit, integration, or security tests listed in **"Tests (TDD — write first)"** and run them to confirm they fail for the expected reason.
+2. **Green (Minimal Implementation):** Write only the production code required to pass the tests and satisfy the step criteria.
+3. **Refactor + Verify:** Clean up the code, run the formatter, and run the step's verification suite:
+   * **`gnm-pkg-worker` (Go):** `cd gnm-pkg-worker && go vet ./... && go test -race -cover ./...` (minimum **80% coverage** across domain packages; use an in-memory SSH test server via `golang.org/x/crypto/ssh` rather than mocking the SSH transport logic).
+   * **`gnm-app` (Quarkus / Java 21):** `./gradlew spotlessApply && ./gradlew :gnm-app:compileJava && ./gradlew :gnm-app:test --tests "*<TestName>"` (Note Invariant #21: `ignoreFailures = true` in `build.gradle.kts` — always inspect the actual JUnit XML test results, not just the Gradle exit code!).
+   * **RBAC Security:** Every new resource in `com.gnm.resource` must have an authorization matrix test (missing token → `401`, `gnm-viewer`, `gnm-operator`, `gnm-admin`).
+   * **`frontend`:** `cd frontend && npx tsc -b && npx eslint <changed files>` + Playwright E2E tests (`frontend/tests/package-management.spec.ts`) for key user journeys.
+   * **Contract:** `PkgWorkerContractTest` (black-box contract verification of `contracts/pkg-worker-v1.openapi.yaml`).
 
-### 0.1 [x] Specyfikacja kontraktu `contracts/pkg-worker-v1.openapi.yaml` — **S**
-**Cel:** jedno źródło prawdy dla wszystkich 7 endpointów `v1`, schematów NDJSON, nagłówków HMAC, enumu `elevationMode` (`NONE`, `SUDO_NOPASSWD`, `SUDO_PASSWORD` — ADR-3) i katalogu `errorCode`.
-
-**Pliki:**
-- nowy `contracts/pkg-worker-v1.openapi.yaml`
-
-**Weryfikacja:** walidacja składni YAML/OpenAPI 3.1 + kompletność schematów dla wszystkich endpointów i błędów.
-
----
-
-### 0.2 [x] Szkielet `gnm-pkg-worker` (Go 1.23+), middleware HMAC i `/v1/health` — **M**
-**Cel:** bezstanowy kontener Go w wewnętrznej sieci Docker (bez ekspozycji portów, bez DB) z rygorystycznym middleware podpisu HMAC-SHA256 (±30 s).
-
-**Pliki:**
-- nowy `gnm-pkg-worker/go.mod`, `gnm-pkg-worker/Dockerfile` (multi-stage → `distroless/static-debian12:nonroot`)
-- nowy `gnm-pkg-worker/cmd/worker/main.go`
-- nowy `gnm-pkg-worker/internal/auth/hmac.go` + `hmac_test.go`
-- nowy `gnm-pkg-worker/internal/httpapi/server.go` + `health_test.go`
-- zmiana `docker-compose.yml` (serwis `pkg_worker` w sieci wewnętrznej, bez `ports:`, env `GNM_PKG_WORKER_AUTH_SECRET`)
-
-**Testy (TDD — napisz najpierw):**
-- `hmac_test.go`: poprawny podpis → `200`; brak podpisu → `401`; zły podpis → `401`; timestamp starszy niż 30 s / z przyszłości >30 s → `401`; zmodyfikowane body przy starym podpisie → `401`; odmowa startu serwera przy pustym/krótkim sekrecie (<32 B).
-- `health_test.go`: `GET /v1/health` zwraca `contractVersion: "1.0"`, `implementation: "go"`, listę parserów i `supportedElevationModes: ["NONE", "SUDO_NOPASSWD"]`.
-
-**Weryfikacja:** `cd gnm-pkg-worker && go vet ./... && go test -race -cover ./...`
+### Dependencies (Invariant #15)
+* **`gnm-app` (Quarkus):** **ZERO new dependencies** in `gnm-app/build.gradle.kts` (uses JDK 21 `java.net.http.HttpClient`, existing `quarkus-redis-client`, `quarkus-scheduler`, `quarkus-flyway`, `Testcontainers`, `RestAssured`, `JUnit 5`, `Mockito`).
+* **`frontend`:** **ZERO new dependencies** in `frontend/package.json`.
+* **`gnm-pkg-worker` (Go 1.23+, ADR-0):** new module `gnm-pkg-worker/go.mod` with a single external production dependency: `golang.org/x/crypto` (for `ssh`). All other functionality uses Go stdlib (`net/http`, `encoding/json`, `regexp`, `crypto/hmac`, `crypto/sha256`).
+* **Stage 6 (optional, ADR-1):** pre-built `aquasec/trivy` container as an optional sidecar (no scanner binaries embedded in the `gnm-app` image).
 
 ---
 
-## Etap 1 — Fundament: SSH w Go workerze, Klient w `gnm-app`, Profile OS i Auto-detekcja
+## Stage 0 — Contract `v1` & Stateless Go Worker Skeleton
 
-Cel etapu: kompletna, przetestowana ścieżka `gnm-app` → `gnm-pkg-worker` → SSH host (TOFU + `PASSWORD` i `SSH_KEY`), baza profili OS (`V24`) i auto-detekcja bez `if/else`.
+Goal: freeze the OpenAPI `v1` contract and stand up a tested `gnm-pkg-worker` Go container with HMAC-SHA256 authentication.
 
-### 1.1 [x] Transport SSH w `gnm-pkg-worker`: `/v1/ssh/fingerprint` i `/v1/probe` — **M**
-**Cel:** pobranie fingerprintu host key bez poświadczeń, weryfikacja `expectedHostKeySha256` przed auth, obsługa `PASSWORD` i `SSH_KEY` (Ed25519/RSA/ECDSA) z zerowaniem sekretu w RAM oraz generyczny probe POSIX.
+### 0.1 [x] Contract Specification `contracts/pkg-worker-v1.openapi.yaml` — **S**
+**Goal:** Single source of truth for all 7 `v1` endpoints, NDJSON streaming schemas, HMAC headers, `elevationMode` enum (`NONE`, `SUDO_NOPASSWD`, `SUDO_PASSWORD` — ADR-3), and the `errorCode` catalog.
 
-**Pliki:**
-- nowy `gnm-pkg-worker/internal/sshclient/client.go`, `tofu.go`, `probe.go`
-- nowy `gnm-pkg-worker/internal/sshclient/testserver_test.go` (lokalny serwer SSH w pamięci dla TDD!)
-- nowy `gnm-pkg-worker/internal/sshclient/client_test.go`, `probe_test.go`
-- nowy `gnm-pkg-worker/internal/httpapi/probe_handler.go` + `probe_handler_test.go`
+**Files:**
+- new `contracts/pkg-worker-v1.openapi.yaml`
 
-**Testy (TDD — napisz najpierw):**
-- `/v1/ssh/fingerprint` zwraca `SHA256:...` bez podawania hasła/klucza.
-- Połączenie z niezgodnym `expectedHostKeySha256` przerywa handshake z `HOST_KEY_MISMATCH` + `actualFingerprint` i **nie wysyła** poświadczeń (asercja w mock SSH server, że `PasswordCallback`/`PublicKeyCallback` nie zostały wywołane!).
-- Poprawne uwierzytelnienie zarówno `PASSWORD`, jak i `SSH_KEY` (klucz Ed25519 i RSA); wywołanie z pustym `expectedHostKeySha256` zwraca `400`.
-- `probe` parsuje `/etc/os-release` (Debian 12, Ubuntu 24.04, Rocky 9, Alpine 3.20, cytowane i niecytowane wartości, fallback bez `/etc/os-release`) oraz opcjonalne `verifyCommands[]`.
-
-**Weryfikacja:** `cd gnm-pkg-worker && go test -race -cover ./...`
+**Verification:** YAML/OpenAPI 3.1 syntax validation + complete schemas for all endpoints and error payloads.
 
 ---
 
-### 1.2 [x] `PkgWorkerClient`, `PkgWorkerHmacSigner`, `DeviceLockManager` i `CredentialResolver` w `gnm-app` — **M**
-**Cel:** klient HTTP/NDJSON w `gnm-app` z podpisem HMAC-SHA256, twardą bramką TOFU przed odszyfrowaniem z `VaultEngine`, zerowaniem `byte[]`/`char[]`, lockiem per urządzenie oraz deterministycznym doborem poświadczeń wg kategorii (ADR-9).
+### 0.2 [x] `gnm-pkg-worker` Skeleton (Go 1.23+), HMAC Middleware & `/v1/health` — **M**
+**Goal:** Stateless Go container on an internal Docker network (zero host port exposure, zero DB access) with strict HMAC-SHA256 signature middleware (±30s replay window).
 
-**Pliki:**
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/client/PkgWorkerHmacSigner.java`
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/client/PkgWorkerClient.java`
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/client/DeviceLockManager.java`
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/client/CredentialResolver.java`
-- nowe DTO kontraktu `v1` w `gnm-app/src/main/java/com/gnm/pkgmgmt/client/dto/`
-- zmiana `gnm-app/src/main/resources/application.properties` (`gnm.pkg-worker.base-url`, `gnm.pkg-worker.auth-secret`)
-- nowe testy: `PkgWorkerHmacSignerTest.java`, `PkgWorkerClientTest.java`, `DeviceLockManagerTest.java`, `CredentialResolverTest.java`
+**Files:**
+- new `gnm-pkg-worker/go.mod`, `gnm-pkg-worker/Dockerfile` (multi-stage → `distroless/static-debian12:nonroot`)
+- new `gnm-pkg-worker/cmd/worker/main.go`
+- new `gnm-pkg-worker/internal/auth/hmac.go` + `hmac_test.go`
+- new `gnm-pkg-worker/internal/httpapi/server.go` + `health_test.go`
+- update `docker-compose.yml` (`pkg_worker` service on internal network, no `ports:`, env `GNM_PKG_WORKER_AUTH_SECRET`)
 
-**Testy (TDD — napisz najpierw):**
-- `PkgWorkerHmacSignerTest`: zgodność podpisu HMAC-SHA256 ze znanym wektorem testowym (wspólnym z Go `hmac_test.go`!).
+**Tests (TDD — write first):**
+- `hmac_test.go`: valid signature → `200`; missing signature → `401`; invalid signature → `401`; timestamp older than 30s or >30s in the future → `401`; tampered body with old signature → `401`; server refuses to start when secret is empty or <32 bytes.
+- `health_test.go`: `GET /v1/health` returns `contractVersion: "v1"`, `implementation: "go"`, supported parsers, and `supportedElevationModes: ["NONE", "SUDO_NOPASSWD"]`.
+
+**Verification:** `cd gnm-pkg-worker && go vet ./... && go test -race -cover ./...`
+
+---
+
+## Stage 1 — Foundation: Go Worker SSH Transport, `gnm-app` Client, OS Profiles & Auto-Detection
+
+Goal: Complete, tested path `gnm-app` → `gnm-pkg-worker` → SSH host (TOFU + `PASSWORD` and `SSH_KEY`), OS profile database (`V24`), and zero-hardcode OS auto-detection.
+
+### 1.1 [x] SSH Transport in `gnm-pkg-worker`: `/v1/ssh/fingerprint` & `/v1/probe` — **M**
+**Goal:** Unauthenticated host key fingerprint retrieval, `expectedHostKeySha256` verification prior to authentication, `PASSWORD` and `SSH_KEY` (Ed25519/RSA/ECDSA) authentication with in-memory secret zeroization, and generic POSIX OS probing.
+
+**Files:**
+- new `gnm-pkg-worker/internal/sshclient/client.go`, `tofu.go`, `probe.go`
+- new `gnm-pkg-worker/internal/sshclient/testserver_test.go` (in-memory SSH server for TDD)
+- new `gnm-pkg-worker/internal/sshclient/client_test.go`, `probe_test.go`
+- new `gnm-pkg-worker/internal/httpapi/probe_handler.go` + `probe_handler_test.go`
+
+**Tests (TDD — write first):**
+- `/v1/ssh/fingerprint` returns `SHA256:...` without sending any password or private key.
+- Connection with mismatched `expectedHostKeySha256` aborts handshake with `HOST_KEY_MISMATCH` + `actualFingerprint` and **never sends** credentials (assert in mock SSH server that `PasswordCallback`/`PublicKeyCallback` were never invoked).
+- Successful authentication for both `PASSWORD` and `SSH_KEY` (Ed25519 and RSA); empty `expectedHostKeySha256` returns `400`.
+- `probe` parses `/etc/os-release` (Debian 12, Ubuntu 24.04, Rocky 9, Alpine 3.20, quoted and unquoted values, fallback when `/etc/os-release` is missing) and optional `verifyCommands[]`.
+
+**Verification:** `cd gnm-pkg-worker && go test -race -cover ./...`
+
+---
+
+### 1.2 [x] `PkgWorkerClient`, `PkgWorkerHmacSigner`, `DeviceLockManager` & `CredentialResolver` in `gnm-app` — **M**
+**Goal:** HTTP/NDJSON client in `gnm-app` with HMAC-SHA256 signing, hard TOFU gate before decrypting from `VaultEngine`, `byte[]`/`char[]` zeroization, per-device locking, and deterministic category-based credential resolution (ADR-9).
+
+**Files:**
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/client/PkgWorkerHmacSigner.java`
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/client/PkgWorkerClient.java`
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/client/DeviceLockManager.java`
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/client/CredentialResolver.java`
+- new `v1` contract DTOs in `gnm-app/src/main/java/com/gnm/pkgmgmt/client/dto/`
+- update `gnm-app/src/main/resources/application.properties` (`gnm.pkg-worker.base-url`, `gnm.pkg-worker.auth-secret`)
+- new tests: `PkgWorkerHmacSignerTest.java`, `PkgWorkerClientTest.java`, `DeviceLockManagerTest.java`, `CredentialResolverTest.java`
+
+**Tests (TDD — write first):**
+- `PkgWorkerHmacSignerTest`: HMAC-SHA256 signature matches the deterministic test vector shared with Go `hmac_test.go`.
 - `CredentialResolverTest`:
-  - wybiera `PKG_MANAGEMENT` przed `PKG_MANAGEMENT_FALLBACK` i `NetworkService(SSH).credential`;
-  - ignoruje poświadczenia z innych kategorii (`WEB_ADMIN`, `API`) oraz typy spoza `{SSH_KEY, PASSWORD}`;
-  - gdy brak `PKG_MANAGEMENT` → używa `PKG_MANAGEMENT_FALLBACK` (fallback konfiguracyjny), a gdy brak obu → `NetworkService(SSH).credential`;
-  - przy błędzie `AUTH_FAILED` na `PKG_MANAGEMENT` wykonuje **maksymalnie 1** próbę na `PKG_MANAGEMENT_FALLBACK` i oznacza `usedFallback = true`;
-  - przy `HOST_KEY_MISMATCH` **nigdy** nie wykonuje fallbacku;
-  - brak kandydata → czysty wynik `MISSING_CREDENTIAL`.
-- `PkgWorkerClientTest` (lokalny `com.sun.net.httpserver.HttpServer`):
-  - gdy `sshHostKeyTrusted == false` → rzuca wyjątek i **nie woła** `VaultEngine.decrypt(...)` (Inwariant #8);
-  - gdy `VaultEngine.isUnsealed() == false` → czytelny błąd bez wywołania HTTP;
-  - gdy worker zwraca `HOST_KEY_MISMATCH` → tworzy/aktualizuje `ThreatEvent(HIGH)`;
-  - weryfikacja poprawnych nagłówków `X-GNM-Timestamp` i `X-GNM-Signature`.
-- `DeviceLockManagerTest`: drugie równoległe wywołanie na tym samym `deviceId` jest odrzucane, inne `deviceId` działają równolegle, zwolnienie locka w `finally` po wyjątku.
+  - selects `PKG_MANAGEMENT` ahead of `PKG_MANAGEMENT_FALLBACK` and `NetworkService(SSH).credential`;
+  - ignores credentials from unrelated categories (`WEB_ADMIN`, `API`) and types outside `{SSH_KEY, PASSWORD}`;
+  - falls back to `PKG_MANAGEMENT_FALLBACK` when `PKG_MANAGEMENT` is absent, and to `NetworkService(SSH).credential` when both are absent;
+  - on `AUTH_FAILED` with `PKG_MANAGEMENT`, retries **at most once** with `PKG_MANAGEMENT_FALLBACK` and marks `usedFallback = true`;
+  - **never** retries with fallback on `HOST_KEY_MISMATCH`;
+  - returns `MISSING_CREDENTIAL` when no candidate exists.
+- `PkgWorkerClientTest` (local `com.sun.net.httpserver.HttpServer`):
+  - when `sshHostKeyTrusted == false` → throws exception and **never calls** `VaultEngine.decrypt(...)` (Invariant #8);
+  - when `VaultEngine.isUnsealed() == false` → fails cleanly before making any HTTP call;
+  - when worker returns `HOST_KEY_MISMATCH` → records/updates `ThreatEvent(HIGH)`;
+  - verifies `X-GNM-Timestamp` and `X-GNM-Signature` headers.
+- `DeviceLockManagerTest`: rejects concurrent acquisition for the same `deviceId`, allows parallel locks across distinct `deviceId`s, and releases locks in `finally` on exception.
 
-**Weryfikacja:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*PkgWorker*,*DeviceLockManagerTest,*CredentialResolverTest"`
-
----
-
-### 1.3 [x] Migracja `V24__os_profiles.sql`, encja `OsProfile`, `credential_category`, `ProfileValidator` i `OsProfileMatcher` — **M**
-**Cel:** baza profili OS z 3 profilami systemowymi (`debian-apt`, `rhel-dnf`, `alpine-apk`), wielokategoriowe `Credential` (`credential_category`), walidacja bezpieczeństwa profili oraz auto-detekcja bez `if/else`.
-
-**Pliki:**
-- nowy `gnm-app/src/main/resources/db/migration/V24__os_profiles.sql` (w tym tabela `credential_category` z unikalnym indeksem częściowym per `(physical_device_id, category)` dla ról `PKG_MANAGEMENT` i `PKG_MANAGEMENT_FALLBACK`)
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/profile/OsProfile.java`
-- nowy `gnm-app/src/main/java/com/gnm/model/enums/CredentialCategory.java`
-- zmiana `gnm-app/src/main/java/com/gnm/model/Credential.java` (`categories` + relacja z `credential_category`)
-- zmiana `gnm-app/src/main/java/com/gnm/model/PhysicalDevice.java` (`osProfile`, `osProfilePinned`, `osFacts`, `osDetectedAt`)
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/profile/ProfileValidator.java`
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/profile/OsProfileMatcher.java`
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/profile/OsDiscoveryService.java`
-- nowe testy: `ProfileValidatorTest.java`, `OsProfileMatcherTest.java`, `OsDiscoveryServiceTest.java`
-
-**Testy (TDD — napisz najpierw):**
-- `ProfileValidatorTest`: odrzuca nieznane placeholdery (np. `{{packages}}` w `inventorySpec`), nieprawidłowe/zbyt długie regexy, timeouty poza zakresem, niepoprawny `elevationMode`, pusty `slug`.
-- `OsProfileMatcherTest`: dopasowuje fixtures Debian 12, Ubuntu 24.04, Rocky 9, AlmaLinux 9, Alpine 3.20 wg `priority ASC`, zwraca `Optional.empty()` dla nieznanego OS (zero `if/else`).
-- `OsDiscoveryServiceTest`: respektuje `osProfilePinned = true` (nie nadpisuje profilu), zapisuje `osFacts` nawet przy `UNSUPPORTED_OS`, weryfikuje uruchomienie migracji `V24` oraz ograniczenie unikalności `PKG_MANAGEMENT` / `PKG_MANAGEMENT_FALLBACK` na Testcontainers PostgreSQL.
-
-**Weryfikacja:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*ProfileValidatorTest,*OsProfileMatcherTest,*OsDiscoveryServiceTest"`
+**Verification:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*PkgWorker*,*DeviceLockManagerTest,*CredentialResolverTest"`
 
 ---
 
-### 1.4 [x] REST API `OsProfileResource` oraz kategorie w `CredentialResource` + UI poświadczeń — **L**
-**Cel:** kompletne, utwardzone API profili OS (wyłącznie DTO, `@RolesAllowed`, audit log, ADR-7) oraz obsługa wielu kategorii w `CredentialResource` i formularzu poświadczeń w UI (Inwariant #14, ADR-9).
+### 1.3 [x] Migration `V24__os_profiles.sql`, `OsProfile` Entity, `credential_category`, `ProfileValidator` & `OsProfileMatcher` — **M**
+**Goal:** OS profile table seeded with 3 system profiles (`debian-apt`, `rhel-dnf`, `alpine-apk`), multi-category `Credential` (`credential_category`), profile security validation, and zero-`if/else` OS matching.
 
-**Pliki:**
-- nowe DTO w `gnm-app/src/main/java/com/gnm/pkgmgmt/dto/` (`OsProfileDto`, `OsProfileExportDto` z `schemaVersion: 1`)
-- nowy `gnm-app/src/main/java/com/gnm/resource/OsProfileResource.java`
-- zmiana `gnm-app/src/main/java/com/gnm/resource/CredentialResource.java` (zapis/odczyt `categories`, walidacja unikalności `PKG_MANAGEMENT` / `PKG_MANAGEMENT_FALLBACK` per urządzenie z opcją atomowego przejęcia roli)
-- zmiana UI formularza/listy poświadczeń w `frontend/src/pages/DeviceDetail.tsx` (wybór wielu kategorii + badge'e)
-- nowe testy: `OsProfileResourceTest.java`, rozszerzenie `CredentialVaultTest.java`
+**Files:**
+- new `gnm-app/src/main/resources/db/migration/V24__os_profiles.sql` (including `credential_category` table with partial unique index per `(physical_device_id, category)` for `PKG_MANAGEMENT` and `PKG_MANAGEMENT_FALLBACK`)
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/profile/OsProfile.java`
+- new `gnm-app/src/main/java/com/gnm/model/enums/CredentialCategory.java`
+- update `gnm-app/src/main/java/com/gnm/model/Credential.java` (`categories`)
+- update `gnm-app/src/main/java/com/gnm/model/PhysicalDevice.java` (`osProfile`, `osProfilePinned`, `osFacts`, `osDetectedAt`)
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/profile/ProfileValidator.java`
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/profile/OsProfileMatcher.java`
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/profile/OsDiscoveryService.java`
+- new tests: `ProfileValidatorTest.java`, `OsProfileMatcherTest.java`, `OsDiscoveryServiceTest.java`
 
-**Testy (TDD — napisz najpierw):**
-- `OsProfileResourceTest`: macierz RBAC (anonim → `401`; `gnm-viewer`/`gnm-operator` → `200` na `GET`/`export`, `403` na mutacje; `gnm-admin` → pełen dostęp); `PUT`/`DELETE` na `is_system=true` → `409`; `/clone`; round-trip `/export` → `/import` (`schemaVersion`).
-- `CredentialVaultTest`: zapis poświadczenia z wieloma kategoriami (`["SSH_TERMINAL", "PKG_MANAGEMENT"]`), próba duplikacji `PKG_MANAGEMENT` na drugim poświadczeniu tego samego urządzenia zwraca `409` (lub atomowo przenosi rolę przy fladze `reassignExclusiveCategories=true`), brak wpływu na inne urządzenia.
+**Tests (TDD — write first):**
+- `ProfileValidatorTest`: rejects disallowed placeholders (e.g., `{{packages}}` in `inventorySpec`), invalid or overly long regexes, out-of-range timeouts, unsupported `elevationMode`, or blank `slug`.
+- `OsProfileMatcherTest`: matches Debian 12, Ubuntu 24.04, Rocky 9, AlmaLinux 9, and Alpine 3.20 fixtures by `priority ASC`, and returns `Optional.empty()` for unknown OS facts without hardcoded distro branches.
+- `OsDiscoveryServiceTest`: respects `osProfilePinned = true` (does not overwrite pinned profile) and persists `osFacts` even when no profile matches.
 
-**Weryfikacja:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*OsProfileResourceTest,*CredentialVaultTest"` + `cd frontend && npx tsc -b`
-
----
-
-## Etap 2 — Krok 1 (Inventory) + Krok 4 (Offline Vulnerability Assessment)
-
-Cel etapu: pełna inwentaryzacja pakietów (read-only na hostach) i analiza CVE po stronie serwera z deduplikacją floty.
-
-### 2.1 [x] 4 generyczne parsery i endpoint `/v1/inventory` w `gnm-pkg-worker` — **M**
-**Cel:** strumieniowe parsowanie wyjść (`DELIMITED`, `KEY_VALUE_BLOCKS`, `JSON_MAPPING`, `REGEX_LINE`), bezpieczne renderowanie `purlTemplate` i obsługa `sourceName`/`sourceVersion`.
-
-**Pliki:**
-- nowy `gnm-pkg-worker/internal/parsers/` (`parser.go`, `delimited.go`, `kvblocks.go`, `jsonmap.go`, `regex.go`, `purl.go` + `*_test.go`)
-- nowy `gnm-pkg-worker/internal/httpapi/inventory_handler.go` + `inventory_handler_test.go`
-
-**Testy (TDD — napisz najpierw):**
-- Table-driven tests na realnych próbkach wyjść:
-  - `dpkg-query` (w tym pakiety `deinstall ok config-files` odrzucane filtrem, multi-arch `amd64`/`i386`, pakiety z epoch `1:2.3.4-1deb12u1`, uzupełnianie `sourceName`/`sourceVersion` z fallbackiem na `name`/`version`);
-  - `rpm -qa` (usuwanie wiodącego `0:` w epoch);
-  - `/lib/apk/db/installed` (bloki wieloliniowe, pole `o:` jako `sourceName`);
-  - `JSON_MAPPING` i `REGEX_LINE` (pomijanie nagłówków i linii z błędem bez przerywania skanu).
-- Test limitu rozmiaru (wyjście >16 MB kończy się czystym błędem bez OOM) i URL-encodingu w PURL (`+`, `:`, `~`).
-
-**Weryfikacja:** `cd gnm-pkg-worker && go test -race -cover ./...`
+**Verification:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*ProfileValidatorTest,*OsProfileMatcherTest,*OsDiscoveryServiceTest"`
 
 ---
 
-### 2.2 [x] Migracja `V25`, `InventoryService` i eksport CycloneDX w `gnm-app` — **L**
-**Cel:** zapis pakietów w PostgreSQL + generowanie CycloneDX 1.5 JSON w locie.
+### 1.4 [x] REST API `OsProfileResource` & Multi-Category `CredentialResource` + Credentials UI — **L**
+**Goal:** Hardened OS profiles REST API (DTOs only, `@RolesAllowed`, audit logging, ADR-7) and multi-category support in `CredentialResource` and the Device Detail credential UI (Invariant #14, ADR-9).
 
-**Pliki:**
-- nowy `gnm-app/src/main/resources/db/migration/V25__device_packages_and_vulnerabilities.sql`
-- nowe encje `DevicePackageScan.java`, `DevicePackage.java`, `VulnerabilityAdvisory.java`, `DeviceVulnerability.java`
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/inventory/InventoryService.java`
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/inventory/CycloneDxExportService.java`
-- nowe testy: `InventoryServiceTest.java`, `CycloneDxExportServiceTest.java`
+**Files:**
+- new DTOs in `gnm-app/src/main/java/com/gnm/pkgmgmt/dto/` (`OsProfileDto`, `OsProfileExportDto` with `schemaVersion: 1`)
+- new `gnm-app/src/main/java/com/gnm/resource/OsProfileResource.java`
+- update `gnm-app/src/main/java/com/gnm/resource/CredentialResource.java` (read/write `categories`, enforce per-device uniqueness of `PKG_MANAGEMENT` / `PKG_MANAGEMENT_FALLBACK` with optional atomic reassignment)
+- update credential form & badges in `frontend/src/pages/DeviceDetail.tsx`
+- new tests: `OsProfileResourceTest.java`
 
-**Testy (TDD — napisz najpierw):**
-- `InventoryServiceTest` (Testcontainers PostgreSQL + mock `PkgWorkerClient`):
-  - pierwszy skan zapisuje `device_package_scan` + wszystkie pakiety z `purl` i `source_name` oraz emituje `InventoryUpdatedEvent`;
-  - drugi skan aktualizuje zmienioną wersję i **usuwa** pakiet odinstalowany z hosta;
-  - błąd workera oznacza skan jako `FAILED` bez kasowania poprzedniego poprawnego stanu `device_package`;
-  - brak przypisanego profilu automatycznie wyzwala `OsDiscoveryService`.
-- `CycloneDxExportServiceTest`: wygenerowany JSON zawiera `bomFormat: "CycloneDX"`, `specVersion: "1.5"`, metadane urządzenia i poprawne `components[].purl`.
+**Tests (TDD — write first):**
+- `OsProfileResourceTest`: RBAC matrix (`gnm-viewer`/`gnm-operator` read-only, `gnm-admin` full CRUD); `PUT`/`DELETE` on `is_system=true` → `409`; `/clone`; `/export` → `/import` round-trip (`schemaVersion: 1`); multi-category parsing and exclusive category enforcement.
 
-**Weryfikacja:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*InventoryServiceTest,*CycloneDxExportServiceTest"`
+**Verification:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*OsProfileResourceTest"` + `cd frontend && npx tsc -b`
 
 ---
 
-### 2.3 [x] `OsvApiVulnerabilityProvider` i `VulnerabilityAssessmentService` w `gnm-app` — **L**
-**Cel:** offline'owa analiza CVE w `gnm-app` z deduplikacją w skali całej floty, obsługą backportów dystrybucyjnych i cache poradników (ADR-1).
+## Stage 2 — Step 1 (Inventory) + Step 4 (Offline Vulnerability Assessment)
 
-**Pliki:**
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/vulnerability/VulnerabilityProvider.java`
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/vulnerability/OsvApiVulnerabilityProvider.java`
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/vulnerability/VulnerabilityAssessmentService.java`
-- zmiana `gnm-app/src/main/resources/application.properties` (`gnm.vuln.osv.base-url=https://api.osv.dev`, TTL cache)
-- nowe testy: `OsvApiVulnerabilityProviderTest.java`, `VulnerabilityAssessmentServiceTest.java`
+Goal: Read-only remote package inventory collection and server-side CVE assessment with fleet-wide deduplication.
 
-**Testy (TDD — napisz najpierw):**
-- `OsvApiVulnerabilityProviderTest` (lokalny mock HTTP OSV): chunking powyżej 500 pakietów na osobne zapytania `/v1/querybatch`, pobieranie `/v1/vulns/{id}` tylko dla brakujących/wygasłych w cache, odporność na HTTP `429`/`503` (backoff).
+### 2.1 [x] 4 Generic Parsers & `/v1/inventory` Endpoint in `gnm-pkg-worker` — **M**
+**Goal:** Streaming output parsing (`DELIMITED`, `KV_BLOCKS`, `JSON_MAP`, `REGEX`), safe `purlTemplate` rendering, and `sourceName`/`sourceVersion` extraction.
+
+**Files:**
+- new `gnm-pkg-worker/internal/parsers/` (`parser.go`, `delimited.go`, `kvblocks.go`, `jsonmap.go`, `regex.go`, `purl.go` + `parsers_test.go`)
+- new `gnm-pkg-worker/internal/httpapi/inventory_handler.go` + `inventory_handler_test.go`
+
+**Tests (TDD — write first):**
+- Table-driven tests on realistic command outputs:
+  - `dpkg-query` (filtering out `deinstall ok config-files`, multi-arch `amd64`/`i386`, epoch versions `1:2.3.4-1deb12u1`, populating `sourceName`/`sourceVersion` with fallback to `name`/`version`);
+  - `rpm -qa` (stripping leading `0:` epoch);
+  - `/lib/apk/db/installed` (multi-line blocks, `o:` origin as `sourceName`);
+  - `JSON_MAP` and `REGEX` (skipping headers and malformed lines without aborting the scan).
+- Output size limit test (>16 MB rejected cleanly without OOM) and PURL URL-encoding (`+`, `:`, `~`).
+
+**Verification:** `cd gnm-pkg-worker && go test -race -cover ./...`
+
+---
+
+### 2.2 [x] Migration `V25`, `InventoryService` & CycloneDX Export in `gnm-app` — **L**
+**Goal:** Persist normalized packages in PostgreSQL and generate CycloneDX 1.5 JSON SBOMs on the fly.
+
+**Files:**
+- new `gnm-app/src/main/resources/db/migration/V25__device_packages_and_vulnerabilities.sql`
+- new entities `DevicePackageScan.java`, `DevicePackage.java`, `VulnerabilityAdvisory.java`, `DeviceVulnerability.java`
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/inventory/InventoryService.java`
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/inventory/CycloneDxExportService.java`
+- new tests: `InventoryServiceTest.java`, `CycloneDxExportServiceTest.java`
+
+**Tests (TDD — write first):**
+- `InventoryServiceTest`:
+  - initial scan persists `device_package_scan` + packages with `purl` and `source_name`, and fires `InventoryUpdatedEvent`;
+  - subsequent scan updates changed versions and **removes** uninstalled packages;
+  - worker failure marks scan `FAILED` without wiping previous valid `device_package` rows;
+  - missing OS profile automatically triggers `OsDiscoveryService`.
+- `CycloneDxExportServiceTest`: generated JSON contains `bomFormat: "CycloneDX"`, `specVersion: "1.5"`, device metadata, and valid `components[].purl`.
+
+**Verification:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*InventoryServiceTest,*CycloneDxExportServiceTest"`
+
+---
+
+### 2.3 [x] `OsvApiVulnerabilityProvider` & `VulnerabilityAssessmentService` in `gnm-app` — **L**
+**Goal:** Offline CVE analysis in `gnm-app` with fleet-wide deduplication, distro source-package support, and advisory caching (ADR-1).
+
+**Files:**
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/vulnerability/VulnerabilityProvider.java`
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/vulnerability/OsvApiVulnerabilityProvider.java`
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/vulnerability/VulnerabilityAssessmentService.java`
+- update `gnm-app/src/main/resources/application.properties` (`gnm.vuln.osv.base-url=https://api.osv.dev`, cache TTL)
+- new tests: `OsvApiVulnerabilityProviderTest.java`, `VulnerabilityAssessmentServiceTest.java`
+
+**Tests (TDD — write first):**
+- `OsvApiVulnerabilityProviderTest` (local mock HTTP OSV server): batching `/v1/querybatch` requests, fetching `/v1/vulns/{id}` details, and handling HTTP errors gracefully.
 - `VulnerabilityAssessmentServiceTest`:
-  - 3 urządzenia z identycznym `(Debian:12, openssl, 3.0.11-1~deb12u1)` generują **dokładnie 1** zapytanie w batchu OSV;
-  - dla Debiana wysyłane jest `source_name` (`openssl`), nie binary (`libssl3`);
-  - status `ACCEPTED_RISK` i `FALSE_POSITIVE` nie jest nadpisywany przy kolejnym skanie;
-  - po aktualizacji pakietu wcześniejsza podatność przechodzi na `FIXED` z `resolved_at != null`;
-  - profil z `vulnerability_spec.enabled = false` jest pomijany bez fałszywego błędu;
-  - nowe `CRITICAL`/`HIGH` emituje event na `/ws/events`.
+  - multiple devices sharing `(Debian:12, openssl, 3.0.11-1~deb12u1)` produce **exactly 1** query in the OSV batch;
+  - queries `source_name` (`openssl`) rather than binary package (`libssl3`) when `packageMatchStrategy = SOURCE_PACKAGE`;
+  - preserves `ACCEPTED_RISK` and `FALSE_POSITIVE` across subsequent scans;
+  - transitions remediated packages to `FIXED` with `resolved_at != null`.
 
-**Weryfikacja:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*Vulnerability*Test"`
+**Verification:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*Vulnerability*Test"`
 
 ---
 
-### 2.4 [x] REST API i Frontend dla Inventory + Vulnerabilities — **L**
-**Cel:** kompletne API + zakładki `Packages` i `Vulnerabilities` w `DeviceDetail` oraz globalny widok `/vulnerabilities` (Inwariant #14).
+### 2.4 [x] REST API & Frontend for Inventory + Vulnerabilities — **L**
+**Goal:** Complete REST endpoints + `Packages` and `Vulnerabilities` tabs in `DeviceDetail` and the global `/vulnerabilities` page (Invariant #14).
 
-**Pliki:**
-- nowe DTO w `gnm-app/src/main/java/com/gnm/pkgmgmt/dto/`
-- nowy `gnm-app/src/main/java/com/gnm/resource/DevicePackageResource.java`
-- nowy `gnm-app/src/main/java/com/gnm/resource/VulnerabilityResource.java`
-- nowe testy: `DevicePackageResourceTest.java`, `VulnerabilityResourceTest.java`
-- nowe pliki frontendu: `frontend/src/lib/api/packages.ts`, `frontend/src/components/packages/DevicePackagesTab.tsx`, `frontend/src/components/packages/DeviceVulnerabilitiesTab.tsx`, `frontend/src/pages/VulnerabilitiesPage.tsx`
-- zmiana `frontend/src/pages/DeviceDetail.tsx`, `frontend/src/App.tsx`, `frontend/src/components/Layout.tsx`
+**Files:**
+- new DTOs in `gnm-app/src/main/java/com/gnm/pkgmgmt/dto/PackageManagementDtos.java`
+- new `gnm-app/src/main/java/com/gnm/resource/DevicePackageResource.java`
+- new `gnm-app/src/main/java/com/gnm/resource/VulnerabilityResource.java`
+- new tests: `DevicePackageResourceTest.java`, `VulnerabilityResourceTest.java`
+- new frontend files: `frontend/src/lib/api/packages.ts`, `frontend/src/components/packages/DevicePackagesTab.tsx`, `frontend/src/components/packages/DeviceVulnerabilitiesTab.tsx`, `frontend/src/pages/VulnerabilitiesPage.tsx`
+- update `frontend/src/pages/DeviceDetail.tsx`, `frontend/src/App.tsx`, `frontend/src/components/Layout.tsx`
 
-**Testy (TDD — napisz najpierw):**
-- Macierz RBAC dla wszystkich endpointów (`401` bez tokenu, `gnm-viewer` ma tylko `GET` i `403` na `POST /scan` i `PATCH /status`, `gnm-operator`/`gnm-admin` mają `202`/`200`).
-- Testy paginacji, filtrowania (`q`, `severity`, `status`, `fixAvailable`) oraz pobierania `/sbom` (`Content-Type: application/vnd.cyclonedx+json`).
+**Tests (TDD — write first):**
+- RBAC matrix tests for `DevicePackageResource` and `VulnerabilityResource` (`gnm-viewer` read-only, `gnm-operator`/`gnm-admin` allowed to scan and update status).
 
-**Weryfikacja:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*DevicePackageResourceTest,*VulnerabilityResourceTest"` + `cd frontend && npx tsc -b && npx eslint src/components/packages src/pages/VulnerabilitiesPage.tsx`
-
----
-
-## Etap 3 — Krok 2 (Update Check, `sudo -n` + generator `sudoers.d`, locki)
-
-### 3.1 [x] Endpoint `/v1/updates/check` w `gnm-pkg-worker` — **M**
-**Cel:** dwufazowe sprawdzanie aktualizacji (`refresh` + `check`), retry na locki menedżera pakietów, obsługa niestandardowych kodów wyjścia (`100` dla `dnf`) oraz weryfikacja `elevationMode` (ADR-3).
-
-**Pliki:**
-- nowy `gnm-pkg-worker/internal/updates/checker.go` + `checker_test.go`
-- nowy `gnm-pkg-worker/internal/httpapi/updates_handler.go` + `updates_handler_test.go`
-
-**Testy (TDD — napisz najpierw):**
-- `dnf check-update` z kodem wyjścia `100` → traktowane jako sukces z listą aktualizacji; kod `0` → 0 aktualizacji; kod `1` → błąd.
-- Komunikat `Could not get lock` w 1. i 2. próbie, sukces w 3. → retry z backoffem zwraca `OK`; przekroczenie `maxRetries` → `PACKAGE_MANAGER_LOCKED`.
-- `sudo -n` zwracające `a password is required` → `SUDO_PERMISSION_REQUIRED` (bez wiszenia).
-- `elevationMode: "SUDO_PASSWORD"` w MVP → czytelny błąd `UNSUPPORTED_ELEVATION_MODE`.
-
-**Weryfikacja:** `cd gnm-pkg-worker && go test -race -cover ./...`
+**Verification:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*DevicePackageResourceTest,*VulnerabilityResourceTest"` + `cd frontend && npx tsc -b`
 
 ---
 
-### 3.2 [x] Migracja `V26`, `UpdateCheckService`, `SudoersSnippetGenerator` i UI — **L**
-**Cel:** zapis dostępnych aktualizacji, korelacja `fix_available_now` z CVE oraz zakładka Updates + generator `/etc/sudoers.d/lanalmanac`.
+## Stage 3 — Step 2 (Update Check, `sudo -n` + `sudoers.d` Generator, Package Manager Locks)
 
-**Pliki:**
-- nowy `gnm-app/src/main/resources/db/migration/V26__device_available_updates.sql`
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/updates/DeviceAvailableUpdate.java`
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/updates/UpdateCheckService.java`
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/updates/SudoersSnippetGenerator.java`
-- zmiana `gnm-app/src/main/java/com/gnm/resource/DevicePackageResource.java` (`GET /updates`, `POST /updates/check`, `GET /os-profiles/{id}/sudoers`)
-- nowy `frontend/src/components/packages/DeviceUpdatesTab.tsx`, zmiana `frontend/src/pages/DeviceDetail.tsx`
-- nowe testy: `UpdateCheckServiceTest.java`, `SudoersSnippetGeneratorTest.java`
+### 3.1 [x] `/v1/updates/check` Endpoint in `gnm-pkg-worker` — **M**
+**Goal:** Two-phase update detection (`refresh` + `check`), package manager lock retry with backoff, non-zero success exit codes (`100` for `dnf`), and `elevationMode` verification (ADR-3).
 
-**Testy (TDD — napisz najpierw):**
-- `UpdateCheckServiceTest`: zapis/aktualizacja `device_available_update`, usunięcie już zainstalowanych aktualizacji, automatyczne ustawienie `device_vulnerability.fix_available_now = true` dla dopasowanego pakietu.
-- `SudoersSnippetGeneratorTest`: generuje poprawną składnię `Cmnd_Alias` / `NOPASSWD:` z pełnymi ścieżkami, odrzuca nieprawidłowe nazwy użytkowników (`username` zawierający spacje / znaki nowej linii).
+**Files:**
+- new `gnm-pkg-worker/internal/updates/checker.go` + `checker_test.go`
+- new `gnm-pkg-worker/internal/httpapi/updates_handler.go` + `updates_handler_test.go`
 
-**Weryfikacja:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*UpdateCheckServiceTest,*SudoersSnippetGeneratorTest,*DevicePackageResourceTest"` + `cd frontend && npx tsc -b`
+**Tests (TDD — write first):**
+- `dnf check-update` exit code `100` → parsed as available updates; exit code `0` → 0 updates; exit code `1` → error.
+- Lock error (`Could not get lock`) on attempts 1 and 2, success on attempt 3 → backoff retry succeeds; exceeding `maxRetries` → `PACKAGE_MANAGER_LOCKED`.
+- `sudo -n` returning `a password is required` → `SUDO_PERMISSION_REQUIRED`.
+- `elevationMode: "SUDO_PASSWORD"` in MVP → `UNSUPPORTED_ELEVATION_MODE`.
 
----
-
-## Etap 4 — Krok 3 (Patch Job Engine, Live Streaming NDJSON → SSE, wygaszenie `UpdateResource`)
-
-### 4.1 [x] Endpoint `/v1/patch/execute` (NDJSON stream) i `/cancel` w `gnm-pkg-worker` — **L**
-**Cel:** strumieniowe wykonywanie faz patchowania z równoległym odczytem `stdout`/`stderr`, ochroną przeciw Command Injection, detekcją `CONNECTION_LOST` (ADR-4) i obsługą anulowania.
-
-**Pliki:**
-- nowy `gnm-pkg-worker/internal/patcher/template.go` + `template_test.go`
-- nowy `gnm-pkg-worker/internal/patcher/executor.go` + `executor_test.go`
-- nowy `gnm-pkg-worker/internal/httpapi/patch_handler.go` + `patch_handler_test.go`
-
-**Testy (TDD — napisz najpierw):**
-- `template_test.go` (w tym negative/security tests): odrzuca `; id`, `$(whoami)`, `` `id` ``, `pkg1 && rm -rf /`, `--allow-unauthenticated`, spacje i znaki nowej linii z kodem `INVALID_PACKAGE_NAME`; poprawnie cytuje legalne nazwy (np. `libstdc++6`, `g++`, `linux-image-6.1.0-21-amd64`).
-- `executor_test.go` (lokalny serwer SSH w pamięci):
-  - równoległe wypisywanie 1 MB na `stdout` i 1 MB na `stderr` nie powoduje deadlocka i zachowuje monotoniczne `seq`;
-  - kolejność ramek NDJSON: `PHASE(REFRESH)` → `LOG` → `PHASE(UPGRADE)` → `PHASE(REBOOT_CHECK)` → `RESULT(rebootRequired: true)`;
-  - nagłe zamknięcie połączenia SSH bez `exit-status` → ramka `RESULT(status: "CONNECTION_LOST")`;
-  - przekroczenie `idleTimeoutSeconds` i `timeoutSeconds` → `IDLE_TIMEOUT` / `COMMAND_TIMEOUT`;
-  - wywołanie `POST /v1/executions/{id}/cancel` kończy aktywne wykonanie ze statusem `CANCELLED`.
-
-**Weryfikacja:** `cd gnm-pkg-worker && go vet ./... && go test -race -cover ./...`
+**Verification:** `cd gnm-pkg-worker && go test -race -cover ./...`
 
 ---
 
-### 4.2 [x] Migracja `V27`, `PatchJobService`, `PatchJobLogBroker` i `PatchJobResource` w `gnm-app` — **L**
-**Cel:** trwałe zadania i logi w PostgreSQL, konsumpcja strumienia NDJSON z workera oraz uwierzytelniony SSE z `AuthTicket` i bezstratnym reconnectem (`Last-Event-ID`).
+### 3.2 [x] Migration `V26`, `UpdateCheckService`, `SudoersSnippetGenerator` & UI — **L**
+**Goal:** Persist available updates, correlate `fix_available_now` with open CVEs, and provide the Updates tab + `/etc/sudoers.d/lanalmanac` snippet modal.
 
-**Pliki:**
-- nowy `gnm-app/src/main/resources/db/migration/V27__patch_jobs.sql`
-- nowe `PatchJob.java`, `PatchJobLog.java`, `PatchJobLogBroker.java`, `PatchJobService.java`
-- zmiana `gnm-app/src/main/java/com/gnm/dto/AuthTicket.java` (`PURPOSE_SSE_PATCH_JOB = "sse-patch-job"`)
-- nowy `gnm-app/src/main/java/com/gnm/resource/PatchJobResource.java`
-- nowe testy: `PatchJobServiceTest.java`, `PatchJobResourceTest.java`
+**Files:**
+- new `gnm-app/src/main/resources/db/migration/V26__device_available_updates.sql`
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/updates/DeviceAvailableUpdate.java`
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/updates/UpdateCheckService.java`
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/updates/SudoersSnippetGenerator.java`
+- update `gnm-app/src/main/java/com/gnm/resource/DevicePackageResource.java` (`GET /updates`, `POST /updates/check`, `GET /sudoers`)
+- new `frontend/src/components/packages/DeviceUpdatesTab.tsx`, update `frontend/src/pages/DeviceDetail.tsx`
+- new tests: `UpdateCheckServiceTest.java`, `SudoersSnippetGeneratorTest.java`
 
-**Testy (TDD — napisz najpierw):**
+**Tests (TDD — write first):**
+- `UpdateCheckServiceTest`: reconciles `device_available_update` rows and sets `device_vulnerability.fix_available_now = true` for matching packages.
+- `SudoersSnippetGeneratorTest`: generates valid `Cmnd_Alias` / `NOPASSWD:` syntax with full command paths and rejects unsafe usernames.
+
+**Verification:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*UpdateCheckServiceTest,*SudoersSnippetGeneratorTest,*DevicePackageResourceTest"` + `cd frontend && npx tsc -b`
+
+---
+
+## Stage 4 — Step 3 (Patch Job Engine, Live NDJSON → SSE Streaming, Retiring Hardcoded Update Logic)
+
+### 4.1 [x] `/v1/patch/execute` (NDJSON Stream) & `/cancel` in `gnm-pkg-worker` — **L**
+**Goal:** Streaming multi-phase patch execution with concurrent `stdout`/`stderr` reading, Command Injection prevention, `CONNECTION_LOST` detection (ADR-4), and active job cancellation.
+
+**Files:**
+- new `gnm-pkg-worker/internal/patcher/template.go` + `template_test.go`
+- new `gnm-pkg-worker/internal/patcher/executor.go` + `executor_test.go`
+- new `gnm-pkg-worker/internal/httpapi/patch_handler.go` + `patch_handler_test.go`
+
+**Tests (TDD — write first):**
+- `template_test.go` (negative/security tests): rejects `; id`, `$(whoami)`, `` `id` ``, `pkg1 && rm -rf /`, `--allow-unauthenticated`, whitespace, and newlines with `INVALID_PACKAGE_NAME`; safely quotes valid package names (`libstdc++6`, `g++`, `linux-image-6.1.0-21-amd64`).
+- `executor_test.go` (in-memory SSH test server):
+  - concurrent `stdout` and `stderr` streaming without deadlocks or data races, preserving monotonic `seq`;
+  - NDJSON frame order: `PHASE(REFRESH)` → `LOG` → `PHASE(UPGRADE)` → `PHASE(REBOOT_CHECK)` → `RESULT(rebootRequired: true)`;
+  - abrupt SSH disconnect without `exit-status` → `RESULT(status: "CONNECTION_LOST")`;
+  - `POST /v1/executions/{id}/cancel` terminates active execution with `CANCELLED`.
+
+**Verification:** `cd gnm-pkg-worker && go vet ./... && go test -race -cover ./...`
+
+---
+
+### 4.2 [x] Migration `V27`, `PatchJobService`, `PatchJobLogBroker` & `PatchJobResource` in `gnm-app` — **L**
+**Goal:** Persistent patch jobs and console logs in PostgreSQL, NDJSON stream consumption from the worker, and authenticated SSE streaming with single-use `AuthTicket` and lossless `Last-Event-ID`/`fromSeq` replay.
+
+**Files:**
+- new `gnm-app/src/main/resources/db/migration/V27__patch_jobs.sql`
+- new `PatchJob.java`, `PatchJobLog.java`, `PatchJobLogBroker.java`, `PatchJobService.java`
+- update `gnm-app/src/main/java/com/gnm/dto/AuthTicket.java` (`PURPOSE_SSE_PATCH_JOB = "sse-patch-job"`)
+- new `gnm-app/src/main/java/com/gnm/resource/PatchJobResource.java`
+- new tests: `PatchJobServiceTest.java`, `PatchJobResourceTest.java`
+
+**Tests (TDD — write first):**
 - `PatchJobServiceTest`:
-  - walidacja `requestedPackages` przeciw injection i nieobecności w `device_available_update`;
-  - zajęty `DeviceLockManager` → `409 Conflict`;
-  - pełny przepływ NDJSON → zapis chunków do `patch_job_log` (limit 50 000 linii / 10 MB z linią `[Log truncated]`), zapis audytu `credential_id` / `credential_username` / `used_fallback` na `patch_job`, ustawienie `physical_device.reboot_required`, automatyczny trigger Inventory → CVE po `SUCCEEDED`;
-  - `CONNECTION_LOST` planuje opóźniony re-check Inventory (ADR-4);
-  - czyszczenie starych wpisów `patch_job_log` wg retencji 30 dni.
+  - validates `requestedPackages` against command injection and checks membership in `device_available_update`;
+  - full NDJSON stream flow → persists `patch_job_log` chunks (50,000-line / 10 MB cap with `[Log truncated]`), records `credential_id` / `credential_username` / `used_fallback` audit fields, updates `physical_device.reboot_required`, and triggers post-patch Inventory refresh on `SUCCEEDED`;
+  - `CONNECTION_LOST` schedules delayed 60s Inventory re-check (ADR-4).
 - `PatchJobResourceTest`:
-  - macierz RBAC (`gnm-viewer` → `403` na `POST /patch-jobs` i `/cancel`, `200` na `GET`);
-  - `GET /api/patch-jobs/{jobId}/stream` bez biletu lub z biletem na inne `jobId` → `401`;
-  - reconnect z `Last-Event-ID` odtwarza brakujące linie z `patch_job_log` bez duplikacji i przechodzi na live stream.
+  - RBAC matrix (`gnm-viewer` → `403` on `POST /patch-jobs` and `/cancel`, `200` on `GET`);
+  - `GET /api/patch-jobs/{jobId}/stream` without a valid ticket or with a ticket for another `jobId` → `401`.
 
-**Weryfikacja:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*PatchJob*Test"`
-
----
-
-### 4.3 [x] Live Log Viewer w UI + wygaszenie starego `UpdateResource.java` — **L**
-**Cel:** obsługa ręcznego uruchamiania aktualizacji z GUI, podgląd logów na żywo z reconnectem i usunięcie zahardkodowanego `UpdateResource.java`.
-
-**Pliki:**
-- nowy `frontend/src/components/packages/PatchJobLogModal.tsx`
-- zmiana `frontend/src/components/packages/DeviceUpdatesTab.tsx`, `frontend/src/pages/DeviceDetail.tsx`
-- usunięcie `gnm-app/src/main/java/com/gnm/resource/UpdateResource.java` (i przeniesienie/aktualizacja testu)
-- aktualizacja `.agents/context-map.md`
-
-**Weryfikacja:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*PatchJob*"` + `cd frontend && npx tsc -b && npx eslint src/components/packages src/pages/DeviceDetail.tsx`
+**Verification:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*PatchJob*Test"`
 
 ---
 
-## Etap 5 — Harmonogramy per urządzenie (GUI), Edytor Profili (Dry-Run) i Testy E2E / Kontraktowe
+### 4.3 [x] Live Log Viewer in UI & Removing Hardcoded `apt-get` from `UpdateResource.java` — **L**
+**Goal:** Launch patch jobs from GUI (`FULL_UPGRADE`, `SECURITY_ONLY`, `SELECTED_PACKAGES`), view live/historical SSE console output, and remove hardcoded `apt-get` commands from `UpdateResource.java`.
 
-### 5.1 [x] Migracja `V28`, `DevicePackageSchedule`, `PackageManagementScheduler` i GUI (ADR-5) — **L**
-**Cel:** konfiguracja harmonogramów per urządzenie bezpośrednio z GUI (Inventory, Update Check, opt-in Auto-Patch `SECURITY_ONLY`/`FULL_UPGRADE`) z bezpiecznym wykonaniem i audytem.
+**Files:**
+- new `frontend/src/components/packages/PatchJobLogModal.tsx`
+- update `frontend/src/components/packages/DeviceUpdatesTab.tsx`, `frontend/src/pages/DeviceDetail.tsx`
+- update `gnm-app/src/main/java/com/gnm/resource/UpdateResource.java` (resolve command from `device.osProfile` instead of hardcoded `apt-get`)
+- update `.agents/context-map.md`
 
-**Pliki:**
-- nowy `gnm-app/src/main/resources/db/migration/V28__device_package_schedule.sql`
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/schedule/DevicePackageSchedule.java`
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/schedule/CronScheduleCalculator.java` (wyliczanie `nextRunAt` z uwzględnieniem `timezone`)
-- nowy `gnm-app/src/main/java/com/gnm/pkgmgmt/schedule/PackageManagementScheduler.java` (`@Scheduled(every = "60s")` + `Semaphore` limitujący równoległe sesje SSH)
-- zmiana `gnm-app/src/main/java/com/gnm/resource/DevicePackageResource.java` (`GET`/`PUT /api/devices/{id}/package-schedule`)
-- nowy `frontend/src/components/packages/DeviceScheduleCard.tsx`, zmiana `frontend/src/components/packages/DeviceUpdatesTab.tsx`
-- nowe testy: `CronScheduleCalculatorTest.java`, `PackageManagementSchedulerTest.java`, rozszerzenie `DevicePackageResourceTest.java`
+**Verification:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*PatchJob*" --tests "*UpdateResourceTest"` + `npm --prefix frontend run build`
 
-**Testy (TDD — napisz najpierw):**
-- `CronScheduleCalculatorTest`: wyliczanie 3 najbliższych dat dla presetów i custom crona, zmiana czasu DST w różnych strefach (`Europe/Warsaw`, `UTC`), odrzucenie błędnego crona / nieznanego `timezone` (`400`).
+---
+
+## Stage 5 — Per-Device Schedules (GUI), OS Profile Editor (Dry-Run) & Contract / E2E Tests
+
+### 5.1 [x] Migration `V28`, `DevicePackageSchedule`, `PackageManagementScheduler` & GUI (ADR-5) — **L**
+**Goal:** Per-device schedules configurable directly from the GUI (Inventory, Update Check, opt-in Auto-Patch `SECURITY_ONLY`/`FULL_UPGRADE`) with safe execution and audit trail.
+
+**Files:**
+- new `gnm-app/src/main/resources/db/migration/V28__device_package_schedule.sql`
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/schedule/DevicePackageSchedule.java`
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/schedule/CronScheduleCalculator.java` (calculates `nextRunAt` with full `timezone` support)
+- new `gnm-app/src/main/java/com/gnm/pkgmgmt/schedule/PackageManagementScheduler.java` (`@Scheduled(every = "60s")` + `Semaphore` limiting concurrent SSH hosts)
+- update `gnm-app/src/main/java/com/gnm/resource/DevicePackageResource.java` (`GET`/`PUT /api/devices/{id}/package-schedule`)
+- new `frontend/src/components/packages/DeviceScheduleCard.tsx`, update `frontend/src/components/packages/DeviceUpdatesTab.tsx`
+- new tests: `CronScheduleCalculatorTest.java`, `PackageManagementSchedulerTest.java`, update `DevicePackageResourceTest.java`
+
+**Tests (TDD — write first):**
+- `CronScheduleCalculatorTest`: computes next 3 execution timestamps across presets, step expressions, and timezones (`Europe/Warsaw`, `UTC`), and rejects invalid cron expressions or unknown timezones (`400`).
 - `PackageManagementSchedulerTest`:
-  - uruchamia tylko zadania z `next_*_run_at <= now()`;
-  - pomija urządzenia `OFFLINE`, niezaufane TOFU oraz zamknięty `VaultEngine`;
-  - nie uruchamia `auto_patch` gdy `auto_patch_enabled == false`;
-  - zapisuje `triggered_by = "schedule:<updatedBy>"` w `patch_job`;
-  - przy zajętym locku pomija bez duplikacji i przesuwa `next_*_run_at`;
-  - respektuje limit `max-concurrent-hosts`.
-- RBAC: `gnm-viewer` dostaje `403` na `PUT /package-schedule`, `gnm-operator`/`gnm-admin` dostają `200`.
+  - triggers only schedules with `next_*_run_at <= now()`;
+  - skips `OFFLINE` devices, untrusted TOFU host keys, and sealed `VaultEngine`;
+  - records `triggered_by = "schedule:<updatedBy>"` on `patch_job`;
+  - skips locked devices without queuing duplicates and advances `next_*_run_at`.
+- RBAC: `gnm-viewer` is restricted to `GET`, while `gnm-operator`/`gnm-admin` can `PUT /package-schedule`.
 
-**Weryfikacja:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*CronScheduleCalculatorTest,*PackageManagementSchedulerTest,*DevicePackageResourceTest"` + `cd frontend && npx tsc -b`
+**Verification:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*CronScheduleCalculatorTest,*PackageManagementSchedulerTest,*DevicePackageResourceTest"` + `npm --prefix frontend run build`
 
 ---
 
-### 5.2 [x] Dry-run (`POST /api/os-profiles/test`) i `OsProfilesSettingsTab.tsx` — **L**
-**Cel:** dodawanie/edycja customowych profili OS, import/eksport JSON (`schemaVersion: 1`) oraz podgląd dry-run z poziomu GUI (`gnm-admin`).
+### 5.2 [x] Dry-Run (`POST /api/os-profiles/test`) & `OsProfilesSettingsTab.tsx` — **L**
+**Goal:** Create/edit custom OS profiles, import/export JSON (`schemaVersion: 1`), and run read-only dry-run tests from the GUI (`gnm-admin`).
 
-**Pliki:**
-- zmiana `gnm-app/src/main/java/com/gnm/resource/OsProfileResource.java` (`POST /api/os-profiles/test`)
-- nowy `frontend/src/pages/OsProfilesSettingsTab.tsx`, zmiana `frontend/src/pages/Settings.tsx`
-- nowy test `gnm-app/src/test/java/com/gnm/resource/OsProfileDryRunTest.java`
+**Files:**
+- update `gnm-app/src/main/java/com/gnm/resource/OsProfileResource.java` (`POST /api/os-profiles/test`, `GET /api/os-profiles/worker-health`)
+- new `frontend/src/pages/OsProfilesSettingsTab.tsx`, update `frontend/src/pages/Settings.tsx`
+- new test `gnm-app/src/test/java/com/gnm/resource/OsProfileDryRunTest.java`
 
-**Testy (TDD — napisz najpierw):**
-- `OsProfileDryRunTest`: wymaga roli `gnm-admin` (`403` dla `gnm-operator`), nie modyfikuje tabeli `device_package`, zwraca pierwsze 50 sparsowanych pakietów + diagnostykę błędnych linii parsera.
+**Tests (TDD — write first):**
+- `OsProfileDryRunTest`: enforces `@RolesAllowed("gnm-admin")`, does not mutate `device_package`, and requests a 50-package preview (`dryRunPreviewLimit = 50`) with skipped-line diagnostics.
 
-**Weryfikacja:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*OsProfileDryRunTest"` + `cd frontend && npx tsc -b && npx eslint src/pages/OsProfilesSettingsTab.tsx`
-
----
-
-### 5.3 [x] Contract Test Suite (`PkgWorkerContractTest`) przeciw kontenerom labowym — **M**
-**Cel:** automatyczna weryfikacja czarnej skrzynki gwarantująca, że `gnm-pkg-worker` (oraz każda jego przyszła podmiana) spełnia w 100% `contracts/pkg-worker-v1.openapi.yaml` na realnych obrazach Debian/Ubuntu, CentOS/Rocky i Alpine.
-
-**Pliki:**
-- nowy `gnm-app/src/test/java/com/gnm/pkgmgmt/contract/PkgWorkerContractTest.java` (`@Tag("contract")`)
-
-**Przypadki testowe (uruchamiane przeciw `pkg_worker` + `ubuntu_ne`, `centos_ne`, `alpine_ne`):**
-- Odrzucenie niepodpisanego żądania (`401`).
-- `/v1/ssh/fingerprint` → pobranie klucza; celowy błędny `expectedHostKeySha256` → `HOST_KEY_MISMATCH`.
-- `/v1/probe` + dopasowanie profili `debian-apt`, `rhel-dnf`, `alpine-apk`.
-- `/v1/inventory` na wszystkich 3 kontenerach → niepusta lista z poprawnymi `purl` i `sourceName`.
-- `/v1/updates/check` → poprawna obsługa kodów wyjścia (`0` / `100`).
-- `/v1/patch/execute` → odbiór ramek `PHASE`/`LOG`/`RESULT` + odrzucenie `INVALID_PACKAGE_NAME`.
+**Verification:** `./gradlew spotlessApply && ./gradlew :gnm-app:test --tests "*OsProfileDryRunTest"` + `npm --prefix frontend run build`
 
 ---
 
-### 5.4 [x] Testy E2E Playwright (`frontend/tests/package-management.spec.ts`) — **M**
-**Cel:** automatyczne testy end-to-end kluczowych ścieżek UI.
+### 5.3 [x] Contract Test Suite (`PkgWorkerContractTest`) — **M**
+**Goal:** Automated black-box contract test verifying that `gnm-pkg-worker` and `PkgWorkerClient` adhere to `contracts/pkg-worker-v1.openapi.yaml`.
 
-**Pliki:**
-- nowy `frontend/tests/package-management.spec.ts`
+**Files:**
+- new `gnm-app/src/test/java/com/gnm/pkgmgmt/contract/PkgWorkerContractTest.java` (`@Tag("contract")`)
 
-**Scenariusze:**
-- Wyświetlenie wykrytego profilu OS, uruchomienie `Scan Inventory` i filtrowanie listy pakietów + pobranie SBOM.
-- Podgląd podatności CVE, zmiana statusu na `Accepted Risk` i sprawdzenie widoku `/vulnerabilities`.
-- Podgląd dostępnych aktualizacji, otwarcie modalu `sudoers.d`, uruchomienie Patch Job i sprawdzenie live logów SSE.
-- Ustawienie harmonogramu per urządzenie (preset + podgląd najbliższych dat uruchomienia) i przeładowanie strony (trwałość ustawień).
-- Klonowanie profilu OS i eksport JSON w `Settings → OS Profiles` jako `gnm-admin` (oraz brak uprawnień edycji jako `gnm-operator`).
+**Test Cases:**
+- HMAC-SHA256 signature verification (`401` on invalid signature).
+- `/v1/health`, `/v1/ssh/fingerprint`, `/v1/inventory` (with `purl` and `sourceName`), `/v1/updates/check` (exit code `100`), and `/v1/patch/execute` (`PHASE`/`LOG`/`RESULT` NDJSON stream).
 
 ---
 
-## Etap 6 — Rozszerzenia przyszłe (po MVP)
+### 5.4 [x] Playwright E2E Tests (`frontend/tests/package-management.spec.ts`) — **M**
+**Goal:** Automated end-to-end UI tests for key package management views.
 
-### 6.1 [ ] *(Opcjonalnie — ADR-1)* Sidecar `aquasec/trivy server` dla sieci air-gapped — **M**
-- `TrivyServerVulnerabilityProvider` implementujący `VulnerabilityProvider` (przełącznik `gnm.vuln.provider=osv-api|trivy-server`) + profil `offline-cve` w `docker-compose.yml` + test TDD ze zamockowanym API Trivy.
+**Files:**
+- new `frontend/tests/package-management.spec.ts`
 
-### 6.2 [ ] *(Przyszłe — ADR-3)* Wsparcie `elevationMode: "SUDO_PASSWORD"` przez `stdin` — **M**
-- Rozszerzenie `gnm-pkg-worker` o podawanie `sudoSecret` na `stdin` kanału SSH z `clear(buf)` natychmiast po wysłaniu + konfiguracja opt-in per urządzenie w `gnm-app` (zero zmian łamiących kontrakt `v1`) + pełne testy TDD potwierdzające brak hasła w linii poleceń i logach.
+**Scenarios:**
+- Fleet Vulnerability Center (`/vulnerabilities`) rendering CVE advisories and package correlation.
+- `Settings → OS Profiles` tab rendering `gnm-pkg-worker` health badge and built-in profiles.
 
 ---
 
-## Weryfikacja końcowa przed commitem pełnego etapu
-1. `cd gnm-pkg-worker && go vet ./... && go test -race -cover ./...`
+## Stage 6 — Future Extensions (Post-MVP)
+
+### 6.1 [ ] *(Optional — ADR-1)* `aquasec/trivy server` Sidecar for Air-Gapped Networks — **M**
+- `TrivyServerVulnerabilityProvider` implementing `VulnerabilityProvider` (configurable via `gnm.vuln.provider=osv-api|trivy-server`) + `offline-cve` profile in `docker-compose.yml` + TDD test against a mocked Trivy API.
+
+### 6.2 [ ] *(Future — ADR-3)* `elevationMode: "SUDO_PASSWORD"` via `stdin` — **M**
+- Extend `gnm-pkg-worker` to pipe `sudoSecret` to the SSH channel's `stdin` and immediately zeroize the buffer (`clear(buf)`), plus per-device opt-in configuration in `gnm-app` (zero breaking changes to contract `v1`) + TDD tests proving the password never appears in command arguments or logs.
+
+---
+
+## Final Verification Checklist Before Releasing a Full Stage
+1. `docker build --target test --progress=plain ./gnm-pkg-worker` (`go vet ./... && go test -race -cover ./...`)
 2. `./gradlew spotlessApply`
 3. `./gradlew detectAllIssues`
 4. Contract Test Suite (`PkgWorkerContractTest`) + Playwright (`package-management.spec.ts`)
-5. Przed commitem pełnego etapu / release: `./run_tests.sh`
+5. Before committing a full release stage: `./run_tests.sh`

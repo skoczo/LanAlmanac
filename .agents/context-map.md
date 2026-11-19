@@ -1,140 +1,141 @@
-# Mapa kontekstu — czytaj to zamiast eksplorować repo
+# Context Map — Read This Instead of Exploring the Repository
 
-Cel: odpowiedzieć na pytanie "gdzie to jest" bez `read_file` na dużych plikach.
-Aktualizuj ten plik, gdy przeniesiesz lub dodasz istotny plik.
+Goal: Answer "where is X located" without calling `read_file` on large files.
+Update this file whenever you move or add an important file.
 
-## Czego NIE czytać (marnotrawstwo tokenów)
+## What NOT to Read (Token Waste)
 
-| Plik | Rozmiar | Co robić zamiast tego |
+| File | Size | What to Do Instead |
 |:---|:---|:---|
-| `docs/architecture.md` | 1778 linii | Sekcje 1-4 to opis wizji, nie stan kodu. Pytaj o konkretną klasę. |
-| `docs/progress.md` | ~67 linii | Tylko status faz. Nie wnosi wiedzy o kodzie. |
-| `frontend/package-lock.json` | ogromny | `grep` konkretnej paczki, jeśli naprawdę trzeba. |
-| `frontend/src/pages/DeviceDetail.tsx` | ~1700 linii | `search_files` po nazwie handlera lub tekstu UI. |
-| `gnm-app/src/main/java/com/gnm/service/BackupService.java` | 521 linii | Metody: 22-73 export/import, 348-386 pg_dump/psql, 431-483 krypto. |
-| `test_execution_*.log`, `gnm.log`, `*.log` | duże | Nigdy nie czytaj. `grep` po błędzie. |
+| `docs/architecture.md` | 1778 lines | Sections 1-4 describe the original vision, not current code. Search for specific classes. |
+| `docs/progress.md` | ~67 lines | Only high-level phase status. No code details. |
+| `frontend/package-lock.json` | huge | `grep` a specific package only if genuinely needed. |
+| `frontend/src/pages/DeviceDetail.tsx` | ~1700 lines | `search_files` by handler name or UI label. |
+| `gnm-app/src/main/java/com/gnm/service/BackupService.java` | 521 lines | Methods: 22-73 export/import, 348-386 pg_dump/psql, 431-483 crypto. |
+| `test_execution_*.log`, `gnm.log`, `*.log` | large | Never read in full. `grep` for the specific error. |
 
-## Wejście do systemu — kolejność czytania przy nowym zadaniu
+## System Entry Order for New Tasks
 
-1. `.agents/invariants.md` (zawsze)
-2. Ten plik — sekcja dla obszaru, którego dotyczy zadanie
-3. Konkretna klasa, przez `search_files` po nazwie metody
+1. `.agents/invariants.md` (always first)
+2. This file — section for the relevant domain
+3. The specific class, via `search_files` by method name
 
 ## Backend — `gnm-app/src/main/java/com/gnm/`
 
-### Bezpieczeństwo i auth
-| Plik | Co zawiera | Uwaga |
+### Security & Auth
+| File | Contents | Notes |
 |:---|:---|:---|
-| `auth/PasswordService.java` | Argon2id hash + verify, format `$argon2id$v=19$m=...` | OK jakościowo. Wzór do naśladowania. |
-| `auth/UserBootstrap.java` | Seed admina ze zmiennych env, `mustChangePassword=true` | Domyślne `admin/admin` — do usunięcia w Etapie 4. |
-| `auth/DynamicOidcTenantResolver.java` | Czyta `oidc.*` z `GlobalSetting` na każdym żądaniu | **Ryzyko eskalacji** — patrz plan 1.7/Etap 2. |
-| `auth/AuthTicketService.java` | Jednorazowe bilety TTL 30s (`issue`, `consume`, `purgeExpired`) | Używane do handshake SSE/WS. |
-| `resource/AuthTicketResource.java` | `POST /api/auth/ticket` (`@RolesAllowed`) | Wydaje bilety dla `sse-update`, `ws-terminal`, `ws-events`. |
-| `resource/LocalAuthResource.java` | login (50), change-password (88), `extractUsernameFromToken` (141) | 141: ręczne Base64 JWT bez weryfikacji podpisu — Etap 1.7. |
+| `auth/PasswordService.java` | Argon2id hash + verify, `$argon2id$v=19$m=...` format | Good quality reference pattern. |
+| `auth/UserBootstrap.java` | Admin seed from env vars, `mustChangePassword=true` | Default `admin/admin` — to be removed in Stage 4. |
+| `auth/DynamicOidcTenantResolver.java` | Reads `oidc.*` from `GlobalSetting` on each request | **Escalation risk** — see hardening plan 1.7 / Stage 2. |
+| `auth/AuthTicketService.java` | Single-use 30s TTL tickets (`issue`, `consume`, `purgeExpired`) | Used for SSE/WS handshakes. |
+| `resource/AuthTicketResource.java` | `POST /api/auth/ticket` (`@RolesAllowed`) | Issues tickets for `sse-update`, `sse-patch-job`, `ws-terminal`, `ws-events`. |
+| `resource/LocalAuthResource.java` | login (50), change-password (88), `extractUsernameFromToken` (141) | 141: manual Base64 JWT decode without signature check — Stage 1.7. |
 
 ### Vault
-| Plik | Co zawiera | Uwaga |
+| File | Contents | Notes |
 |:---|:---|:---|
-| `service/VaultEngine.java` | Argon2 KEK + AES-GCM, plik `keys/.vault_master`, unseal (110), encrypt (168), decrypt (186) | Brak zeroizacji, brak `synchronized`, brak auto-locka — Etap 4. |
-| `resource/VaultResource.java` | `@PermitAll` (16), status (29), init (41), unseal (58), lock (79) | Fallback hasła z konfiguracji — Etap 1.5. |
-| `resource/CredentialResource.java` | lista (34), create (51), reveal (90), delete (115), update (126) | Brak sprawdzenia właściciela — Etap 2/3. |
+| `service/VaultEngine.java` | Argon2 KEK + AES-GCM, `keys/.vault_master`, unseal (110), encrypt (168), decrypt (186) | Missing zeroization/auto-lock — Stage 4. |
+| `resource/VaultResource.java` | `@PermitAll` (16), status (29), init (41), unseal (58), lock (79) | Config password fallback — Stage 1.5. |
+| `resource/CredentialResource.java` | list, create, reveal, delete, update + multi-category `CredentialCategory` | Enforces per-device uniqueness of `PKG_MANAGEMENT` & `PKG_MANAGEMENT_FALLBACK`. |
 
-### Zasoby REST — mapa uprawnień
-| Plik | Adnotacja dziś | Rolę docelową wyznacza Etap 2 |
+### REST Resources — Permission Map
+| File | Current Annotation | Target Role in Stage 2 |
 |:---|:---|:---|
-| `resource/DeviceResource.java` | `@RolesAllowed("gnm-admin")` (34) | duży plik, metody: 46 getAll, 64 getById, 98 probe-update, 113-176 services CRUD, 196 update, 224 state, 247 trust-ssh, 268 labels, 284 discover, 336 manual, 379-400 historia |
+| `resource/DeviceResource.java` | `@RolesAllowed("gnm-admin")` (34) | Large file: 46 getAll, 64 getById, 98 probe-update, 113-176 services CRUD, 196 update, 224 state, 247 trust-ssh, 268 labels, 284 discover, 336 manual, 379-400 history |
 | `resource/TopologyResource.java` | `@RolesAllowed("gnm-admin")` (23) | |
 | `resource/DiagnosticsResource.java` | `@RolesAllowed("gnm-admin")` (26) | |
-| `resource/BackupResource.java` | `@RolesAllowed("gnm-admin")` (20) | hasło w query (30) — Etap 5.1 |
-| `resource/ThreatResource.java` | brak | GET mutuje bazę (29-57) — Etap 9.5 |
-| `resource/SettingsResource.java` | brak | PUT bez DTO (31) — Etap 3.2 |
-| `resource/UserResource.java` | brak | tworzenie admina bez roli (82) — Etap 2 |
-| `resource/CredentialResource.java` | brak | Etap 2/3 |
-| `resource/ScannerResource.java` | brak | Etap 2 |
-| `resource/DiscoveryResource.java` | brak | Etap 2 |
-| `resource/TelemetryResource.java` | brak | brak limitu (18) — Etap 9.3 |
-| `resource/UpdateResource.java` | brak, ścieżka publiczna | SSE, `sudo apt-get upgrade` (91) — Etap 1.2 |
-| `resource/VersionResource.java` | brak | bezpieczny, publiczny |
+| `resource/BackupResource.java` | `@RolesAllowed("gnm-admin")` (20) | Password in query param (30) — Stage 5.1 |
+| `resource/ThreatResource.java` | none | GET mutates DB (29-57) — Stage 9.5 |
+| `resource/SettingsResource.java` | none | PUT without DTO (31) — Stage 3.2 |
+| `resource/UserResource.java` | none | Admin creation without role check (82) — Stage 2 |
+| `resource/CredentialResource.java` | none | Stage 2/3 |
+| `resource/ScannerResource.java` | none | Stage 2 |
+| `resource/DiscoveryResource.java` | none | Stage 2 |
+| `resource/TelemetryResource.java` | none | Unbounded query (18) — Stage 9.3 |
+| `resource/UpdateResource.java` | `@RolesAllowed({"gnm-admin", "gnm-operator"})` | SSE with `AuthTicket`, resolves upgrade command from `device.osProfile` |
+| `resource/VersionResource.java` | none | Public version metadata |
 
-### WebSockety
-| Plik | Linia | Uwaga |
+### WebSockets
+| File | Line | Notes |
 |:---|:---|:---|
-| `resource/TerminalWebSocket.java` | 37 ścieżka, 64 onOpen, 150 connectSsh, 157 weryfikator host key, 331 onMessage | Ścieżka publiczna — Etap 1.3. TOFU działa poprawnie. |
-| `resource/EventWebSocket.java` | 13 ścieżka, 34-52 broadcast device, 53-67 threat, 87 activity | Broadcast do wszystkich — Etap 1.4 |
+| `resource/TerminalWebSocket.java` | 37 path, 64 onOpen, 150 connectSsh, 157 host key verifier, 331 onMessage | Public path — Stage 1.3. TOFU works properly. |
+| `resource/EventWebSocket.java` | 13 path, 34-52 broadcast device, 53-67 threat, 87 activity | Broadcasts to all — Stage 1.4 |
 
-### Discovery i fingerprint
-| Plik | Co zawiera |
+### Discovery & Fingerprinting
+| File | Contents |
 |:---|:---|
-| `discovery/DiscoveryScheduler.java` | `@Scheduled` + start pasywnego nasłuchu (34) |
-| `discovery/PassivePacketListener.java` | pcap BPF, kolejka sightingów |
-| `discovery/IcmpSweeper.java` | sweep, `ProcessBuilder ping`/`arping` (164, 203) — argumenty bezpieczne |
-| `discovery/ArpScanner.java` | fallback z tablicy ARP systemu |
-| `discovery/NetworkSightingQueue.java` | jedyne wejście do fingerprintowania |
-| `fingerprint/FingerprintEngine.java` | konsument kolejki, `newScheduledThreadPool` (88), `new Thread` (89) |
-| `fingerprint/SimilarityEngine.java` | cosine similarity, próg 0.75 |
-| `fingerprint/probes/Jndi*.java` | JNDI DNS — **do przepisania**, Etap 5.5 |
-| `service/SubnetFilter.java` | walidacja CIDR, czysta logika — dobry kandydat na testy jqwik |
+| `discovery/DiscoveryScheduler.java` | `@Scheduled` + starts passive listener (34) |
+| `discovery/PassivePacketListener.java` | pcap BPF, sighting queue |
+| `discovery/IcmpSweeper.java` | sweep, `ProcessBuilder ping`/`arping` (164, 203) — safe argument lists |
+| `discovery/ArpScanner.java` | fallback from OS ARP table |
+| `discovery/NetworkSightingQueue.java` | sole entry point into fingerprinting |
+| `fingerprint/FingerprintEngine.java` | queue consumer |
+| `fingerprint/SimilarityEngine.java` | cosine similarity, threshold 0.75 |
+| `fingerprint/probes/Jndi*.java` | JNDI DNS — **to be rewritten**, Stage 5.5 |
+| `service/SubnetFilter.java` | CIDR validation, pure logic — good candidate for jqwik tests |
 
 ### Config & Infrastructure
-| Plik | Uwaga |
+| File | Notes |
 |:---|:---|
-| `src/main/resources/application.properties` | linia 35: lista ścieżek publicznych — Etap 1; 8-9, 51: domyślne poświadczenia — Etap 4 |
+| `src/main/resources/application.properties` | line 35: public path list — Stage 1; lines 8-9, 51: default credentials — Stage 4 |
 | `src/main/resources/db/migration/` | V1-V28 (V24..V28: OS profiles, packages/vulnerabilities, available updates, patch jobs, schedules) |
-| `build.gradle.kts` | linia 77 `ignoreFailures = true` — Etap 7.1 |
-| `../build.gradle.kts` (root) | Sonar `sonar.sources=frontend/src` tylko — Etap 7.3 |
-| `../.github/workflows/build-and-push.yml` | `continue-on-error` w 47 i 54 — Etap 7.2 |
+| `build.gradle.kts` | line 77 `ignoreFailures = true` — Stage 7.1 |
+| `../build.gradle.kts` (root) | Sonar `sonar.sources=frontend/src` only — Stage 7.3 |
+| `../.github/workflows/build-and-push.yml` | Builds `lanalmanac` and `lanalmanac-pkg-worker` images (including dev tags on `agentless-package-management`) |
 
 ### Agentless Package, Update, Patch & Vulnerability Management (`com.gnm.pkgmgmt.*` + `gnm-pkg-worker/`)
-| Plik | Co zawiera |
+| File | Contents |
 |:---|:---|
-| `contracts/pkg-worker-v1.openapi.yaml` | Kontrakt `v1` pomiędzy `gnm-app` a bezstanowym kontenerem Go `gnm-pkg-worker` |
-| `gnm-pkg-worker/` | Bezstanowy worker Go 1.23+ (`internal/auth`, `internal/sshclient`, `internal/parsers`, `internal/updates`, `internal/patcher`, `internal/httpapi`) |
-| `pkgmgmt/worker/PkgWorkerClient.java` | Klient HTTP/NDJSON z podpisem HMAC-SHA256 (`PkgWorkerHmacSigner`), TOFU, `CredentialResolver`, `DeviceLockManager` |
-| `pkgmgmt/profile/*` | `OsProfileSpecs`, `ProfileValidator`, `OsProfileMatcher`, `OsDiscoveryService` |
+| `contracts/pkg-worker-v1.openapi.yaml` | Versioned `v1` OpenAPI contract between `gnm-app` and stateless Go container `gnm-pkg-worker` |
+| `gnm-pkg-worker/` | Stateless Go 1.23+ worker (`internal/auth`, `internal/sshclient`, `internal/parsers`, `internal/updates`, `internal/patcher`, `internal/httpapi`) |
+| `pkgmgmt/client/PkgWorkerClient.java` | HTTP/NDJSON client with HMAC-SHA256 signing (`PkgWorkerHmacSigner`), TOFU gate, `CredentialResolver`, `DeviceLockManager` |
+| `pkgmgmt/profile/*` | `OsProfile`, `OsProfileSpecs`, `ProfileValidator`, `OsProfileMatcher`, `OsDiscoveryService` |
 | `pkgmgmt/inventory/*` | `InventoryService`, `CycloneDxExportService`, `InventoryUpdatedEvent` |
-| `pkgmgmt/vuln/*` | `VulnerabilityProvider`, `OsvApiVulnerabilityProvider`, `VulnerabilityAssessmentService` |
+| `pkgmgmt/vulnerability/*` | `VulnerabilityProvider`, `OsvApiVulnerabilityProvider`, `VulnerabilityAssessmentService` |
 | `pkgmgmt/updates/*` | `UpdateCheckService`, `SudoersSnippetGenerator` |
-| `pkgmgmt/patch/*` | `PatchJobService`, `PatchJobLogBroker` (SSE replay + delayed 60s re-check on `CONNECTION_LOST`) |
+| `pkgmgmt/patching/*` | `PatchJobService`, `PatchJobLogBroker` (SSE replay + delayed 60s re-check on `CONNECTION_LOST`) |
 | `pkgmgmt/schedule/*` | `CronScheduleCalculator`, `PackageManagementScheduler` |
-| `resource/OsProfileResource.java`, `DevicePackageResource.java`, `VulnerabilityResource.java`, `PatchJobResource.java` | Endpointy REST/SSE z DTO i `@RolesAllowed` |
+| `resource/OsProfileResource.java`, `DevicePackageResource.java`, `VulnerabilityResource.java`, `PatchJobResource.java` | REST/SSE endpoints using DTOs and explicit `@RolesAllowed` |
 | `frontend/src/components/packages/*`, `pages/VulnerabilitiesPage.tsx`, `pages/OsProfilesSettingsTab.tsx` | UI: Packages, Vulnerabilities, Updates, Live Patch Log Modal, Per-Device Schedule, OS Profiles Settings |
 
 ## Frontend — `frontend/src/`
 
-| Plik | Co zawiera | Uwaga |
+| File | Contents | Notes |
 |:---|:---|:---|
-| `lib/auth/auth-context.tsx` | OIDC init (73), cookie `jwt` (112, 131, 151, 176, 206), `apiClient` (212) | Token w `localStorage` — Etap 1.8/10 |
-| `lib/vault/vault-context.tsx` | status vaulta, modal unseal | cienki, bezpieczny |
-| `components/Terminal.tsx` | xterm, WS URL (74), resize, onData | brak biletu — Etap 1.3 |
-| `components/Layout.tsx` | sidebar, toast z `/ws/events` | Etap 1.4 |
-| `App.tsx` | routing TanStack, guard (23) | `isAuthenticated` z tokenu — pamiętaj przy zmianach |
-| `pages/Login.tsx` | formularz + SSO | |
-| `pages/DeviceDetail.tsx` | duży plik, `EventSource /update` (1622) | Etap 1.2 |
-| `pages/UsersTab.tsx`, `pages/Settings.tsx` | sprawdzają `gnm-admin` po stronie UI | UI nie jest kontrolą dostępu |
-| `eslint.config.js` | `no-explicit-any` = warn (27) | Etap 8.3 |
+| `lib/auth/auth-context.tsx` | OIDC init (73), `jwt` cookie (112, 131, 151, 176, 206), `apiClient` (212) | Token in `localStorage` — Stage 1.8/10 |
+| `lib/vault/vault-context.tsx` | Vault status, unseal modal | thin, safe |
+| `components/Terminal.tsx` | xterm, WS URL (74), resize, onData | missing ticket — Stage 1.3 |
+| `components/Layout.tsx` | sidebar, toast from `/ws/events` | Stage 1.4 |
+| `App.tsx` | TanStack routing, auth guard (23) | `isAuthenticated` from token |
+| `pages/Login.tsx` | login form + SSO | |
+| `pages/DeviceDetail.tsx` | large file, device tabs (`packages`, `updates`, `vulnerabilities`, `settings`) | |
+| `pages/UsersTab.tsx`, `pages/Settings.tsx` | check `gnm-admin` on UI side | UI is not access control |
+| `eslint.config.js` | `no-explicit-any` = warn (27) | Stage 8.3 |
 
-## Testy — gdzie dopisać nowy test
+## Tests — Where to Add New Tests
 
-| Obszar | Plik testu |
+| Area | Test File |
 |:---|:---|
-| Autoryzacja per rola | nowy `resource/AuthorizationMatrixTest.java` |
+| Role authorization matrix | `resource/AuthorizationMatrixTest.java`, `resource/*ResourceTest.java` |
 | Vault | `CredentialVaultTest.java`, `service/VaultEngineTest.java` |
 | SSH/WS | `RemoteAccessTest.java`, `SecurityAndThreatTest.java` |
-| Fingerprint | `fingerprint/*Test.java` |
+| Fingerprinting | `fingerprint/*Test.java` |
 | Backup | `BackupCompatibilityTest.java`, `service/BackupServiceTest.java` |
+| Package Management | `pkgmgmt/**/*Test.java`, `resource/OsProfile*Test.java`, `resource/DevicePackageResourceTest.java`, `resource/PatchJobResourceTest.java`, `resource/VulnerabilityResourceTest.java` |
 | E2E UI | `frontend/tests/*.spec.ts` |
 
-Wzorzec testów integracyjnych: `AbstractE2ETest.java` (Testcontainers, gotowa infrastruktura).
+Integration test base class: `AbstractE2ETest.java` (Testcontainers infrastructure).
 
-## Komendy — minimalny zestaw
+## Commands — Minimal Set
 
-> Uwaga (host z domyślnym JDK 25 poza devcontainerem): poprzedzaj `./gradlew` zmienną `JAVA_HOME=/home/skoczo/.gradle/jdks/eclipse_adoptium-21-amd64-linux.2`.
+> Note (host with default JDK 25 outside devcontainer): prefix `./gradlew` with `JAVA_HOME=/home/skoczo/.gradle/jdks/eclipse_adoptium-21-amd64-linux.2`.
 
 ```bash
-./gradlew :gnm-app:compileJava                      # szybka weryfikacja
-./gradlew spotlessApply                             # przed każdym commitem
-./gradlew :gnm-app:test --tests "*VaultEngineTest"  # wybiórczo
-cd frontend && npx tsc -b                           # typy
+./gradlew :gnm-app:compileJava                      # quick compilation check
+./gradlew spotlessApply                             # before every commit
+./gradlew :gnm-app:test --tests "*VaultEngineTest"  # targeted test execution
+cd frontend && npx tsc -b                           # TypeScript check
 cd frontend && npx eslint src/pages/DeviceDetail.tsx
-git diff --stat                                     # zamiast czytania plików
+git diff --stat                                     # instead of re-reading files
 ```

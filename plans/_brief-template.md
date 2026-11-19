@@ -1,79 +1,79 @@
-# Brief zadania — szablon
+# Task Brief — Template
 
-Skopiuj, uzupełnij i wklej agentowi. Jeden brief = jeden krok z [hardening-plan.md](hardening-plan.md).
-Nie dołączaj całych plików do briefu — agent ma je przeczytać wybiórczo według mapy kontekstu.
+Copy, fill out, and paste to the agent. One brief = one step from [hardening-plan.md](hardening-plan.md) or [package-management-plan.md](package-management-plan.md).
+Do not paste full source files into the brief — the agent should read them selectively using the context map.
 
 ---
 
-## Krok: `<ID>` — `<nazwa kroku>`
+## Step: `<ID>` — `<Step Name>`
 
-**Kontekst (wczytaj najpierw):**
+**Context (read first):**
 - `.agents/invariants.md`
-- `.agents/context-map.md` — sekcja `<nazwa obszaru>`
+- `.agents/context-map.md` — section `<Area Name>`
 
-**Cel w jednym zdaniu:**
-`<co ma być prawdą po zakończeniu kroku>`
+**Goal in One Sentence:**
+`<what must be true after completing this step>`
 
-**Pliki do zmiany (tylko te):**
-- `ścieżka/do/pliku.java` — `<co konkretnie>`
-- `ścieżka/do/pliku.tsx` — `<co konkretnie>`
+**Files to Modify (only these):**
+- `path/to/File.java` — `<what specifically>`
+- `path/to/Component.tsx` — `<what specifically>`
 
-**Pliki, których NIE dotykać:**
-- `<lista — zwykle sąsiednie zasoby, frontend niepowiązany>`
+**Files NOT to Touch:**
+- `<list — usually neighboring resources or unrelated frontend files>`
 
-**Wymagania:**
-1. `<konkret, nie ogólnik>`
-2. `<konkret>`
-3. `<konkret>`
+**Requirements:**
+1. `<specific requirement, not vague>`
+2. `<specific requirement>`
+3. `<specific requirement>`
 
-**Czego nie robić:**
-- nie zmieniać kontraktu API poza wymienionym wyżej
-- nie dodawać zależności
-- nie refaktorować "przy okazji"
-- nie aktualizować `docs/architecture.md`
+**What NOT to Do:**
+- Do not change API contracts outside those listed above
+- Do not add dependencies
+- Do not refactor unrelated code "while you are there"
+- Do not update `docs/architecture.md`
 
-**Kryterium akceptacji (sprawdzalne):**
-- [ ] `<test lub zachowanie, które da się zweryfikować komendą>`
-- [ ] `<drugie kryterium>`
+**Acceptance Criteria (verifiable):**
+- [ ] `<test or behavior verifiable by a command>`
+- [ ] `<second criterion>`
 
-**Weryfikacja — uruchom tylko to:**
+**Verification — Run Only This:**
 ```bash
 ./gradlew :gnm-app:compileJava
 ./gradlew spotlessApply
-./gradlew :gnm-app:test --tests "*<NazwaTest>"
+./gradlew :gnm-app:test --tests "*<TestName>"
 ```
 
-**Raport końcowy agenta (maksymalnie 10 linii):**
-- co zmieniono (pliki + jedna linia opisu każdy)
-- wynik weryfikacji
-- co odłożono i dlaczego
+**Agent Final Report (maximum 10 lines):**
+- what changed (files + one-line description each)
+- verification result
+- what was deferred and why
 
 ---
 
-## Przykład wypełnionego briefu
+## Example Filled Brief
 
-## Krok: 1.5 — Vault bez `@PermitAll`
+## Step: 1.5 — Vault Without `@PermitAll`
 
-**Kontekst:** `.agents/invariants.md`, `.agents/context-map.md` → sekcja Vault
+**Context:** `.agents/invariants.md`, `.agents/context-map.md` → Vault section
 
-**Cel:** Odpieczętowanie vaulta wymaga zalogowanego administratora.
+**Goal:** Unsealing the vault requires an authenticated administrator.
 
-**Pliki do zmiany:**
-- `gnm-app/src/main/java/com/gnm/resource/VaultResource.java` — zamień `@PermitAll` na `@RolesAllowed("gnm-admin")`, usuń fallback `vaultPassword`
-- `gnm-app/src/main/resources/application.properties` — usuń `/api/vault/*` z `permission.public.paths`
+**Files to Modify:**
+- `gnm-app/src/main/java/com/gnm/resource/VaultResource.java` — replace `@PermitAll` with `@RolesAllowed("gnm-admin")`, remove `vaultPassword` fallback
+- `gnm-app/src/main/resources/application.properties` — remove `/api/vault/*` from `permission.public.paths`
 
-**Pliki, których NIE dotykać:** `VaultEngine.java`, `vault-context.tsx`
+**Files NOT to Touch:** `VaultEngine.java`, `vault-context.tsx`
 
-**Wymagania:**
-1. Hasło wyłącznie z ciała żądania; brak wartości z konfiguracji.
-2. `initialize` i `unseal` zwracają 401 bez tokenu.
-3. Nie zmieniaj formatu odpowiedzi JSON.
+**Requirements:**
+1. Passcode strictly from request body; no configuration fallback.
+2. `initialize` and `unseal` return 401 without a token.
+3. Do not change the JSON response format.
 
-**Kryterium akceptacji:**
-- [ ] `POST /api/vault/unseal` bez tokenu → 401
-- [ ] test `VaultResourceTest` przechodzi
+**Acceptance Criteria:**
+- [ ] `POST /api/vault/unseal` without token → 401
+- [ ] `VaultResourceTest` passes
 
-**Weryfikacja:**
+**Verification:**
 ```bash
 ./gradlew :gnm-app:compileJava
 ./gradlew spotlessApply

@@ -1,40 +1,40 @@
-# Architektura modułu zarządzania pakietami i podatnościami (Core + Stateless Go Worker)
+# Package, Update, Patch & Vulnerability Management Architecture (Core + Stateless Go Worker)
 
-**Status:** Zatwierdzone decyzje architektoniczne (ADR-0..9)  
-**Powiązany plan implementacji (TDD):** [`plans/package-management-plan.md`](../plans/package-management-plan.md)  
-**Materiał wejściowy:** [`docs/ne-updates.md`](ne-updates.md)  
-**Zgodność z inwariantami:** [`.agents/invariants.md`](../.agents/invariants.md)
+**Status:** Approved Architectural Decisions (ADR-0..9)  
+**Implementation Plan (TDD):** [`plans/package-management-plan.md`](../plans/package-management-plan.md)  
+**Input Specification:** [`docs/ne-updates.md`](ne-updates.md)  
+**Project Invariants:** [`.agents/invariants.md`](../.agents/invariants.md)
 
 ---
 
-## 1. Cel, zakres i podział na kontenery
+## 1. Purpose, Scope & Container Split
 
-Celem modułu jest dodanie do **GreatNetworkManager / LanAlmanac** bezagentowego (agentless) systemu dla hostów **POSIX/SSH (Linux, BSD, urządzenia sieciowe/IoT — bez wsparcia dla Windows)**:
-1. inwentaryzacji zainstalowanych pakietów (**Inventory**),
-2. bezinwazyjnego sprawdzania dostępnych aktualizacji (**Update Check**),
-3. kontrolowanego wdrażania aktualizacji ze strumieniowaniem logów na żywo (**Patch Execution** — ręcznie z GUI oraz według harmonogramu per urządzenie),
-4. pasywnej analizy podatności po stronie serwera (**Vulnerability Assessment**).
+This module adds an agentless package, update, patch, and vulnerability management system to **GreatNetworkManager / LanAlmanac** for **POSIX/SSH hosts (Linux, BSD, network/IoT appliances — no Windows support)**:
+1. Installed package inventory (**Inventory**),
+2. Non-invasive available update detection (**Update Check**),
+3. Controlled patch execution with live console log streaming (**Patch Execution** — triggered manually from the GUI or via per-device schedules),
+4. Passive server-side CVE correlation (**Vulnerability Assessment**).
 
-**Nadrzędne zasady architektoniczne:**
-1. **Zero hardcodowanej logiki OS w kodzie** (zarówno w `gnm-app`, jak i w `gnm-pkg-worker`) — wsparcie dla nowej dystrybucji Linuksa, BSD czy urządzenia IoT polega wyłącznie na dodaniu/edycji profilu `os_profile` z poziomu UI lub importu JSON (`schemaVersion: 1`).
-2. **Wymienialny, bezstanowy kontener wykonawczy `gnm-pkg-worker` (Go 1.23+)** za stabilnym, wersjonowanym kontraktem `contracts/pkg-worker-v1.openapi.yaml` — można go w przyszłości wymienić bez dotykania bazy danych, `VaultEngine`, Auth/RBAC, REST API czy frontendu.
-3. **TDD-first:** każdy komponent (Go worker, Quarkus core, API RBAC, kontrakt, UI E2E) powstaje w cyklu **Red → Green → Refactor**.
+**Core Architectural Principles:**
+1. **Zero hardcoded OS logic in application code** (in both `gnm-app` and `gnm-pkg-worker`) — supporting a new Linux distribution, BSD variant, or network appliance requires only adding or cloning a declarative `os_profile` in the UI or importing a versioned JSON profile (`schemaVersion: 1`).
+2. **Replaceable, stateless execution worker `gnm-pkg-worker` (Go 1.23+)** behind a versioned internal contract `contracts/pkg-worker-v1.openapi.yaml` — the worker can be replaced or scaled independently without touching PostgreSQL, `VaultEngine`, Auth/RBAC, REST APIs, or the React frontend.
+3. **TDD-first:** every component (Go worker, Quarkus core, RBAC resources, contract tests, and UI E2E tests) is developed using **Red → Green → Refactor**.
 
-### Granica odpowiedzialności
+### Responsibility Boundary
 
-| Obszar | `gnm-app` (Core — Quarkus / Java 21) | `gnm-pkg-worker` (Bezstanowy Kontener — Go 1.23+) |
+| Area | `gnm-app` (Core — Quarkus / Java 21) | `gnm-pkg-worker` (Stateless Container — Go 1.23+) |
 | :--- | :--- | :--- |
-| **PostgreSQL / Flyway** | **Wyłączny właściciel** wszystkich tabel i migracji (`V24`–`V28`) | **Brak dostępu do DB** |
-| **`VaultEngine` i sekrety** | **Wyłączny właściciel** klucza master i zaszyfrowanych poświadczeń | Otrzymuje sekret wyłącznie w RAM na czas 1 żądania dla hosta z zaufanym TOFU; natychmiast zeruje bufor; zero zapisu na dysk/logi/Redis |
-| **TOFU (`sshHostKeyTrusted`)** | Przechowuje stan zaufania, zarządza `trust-ssh`, tworzy `ThreatEvent` | Porównuje fingerprint hosta z `expectedHostKeySha256` **przed** auth; przy niezgodności przerywa z `HOST_KEY_MISMATCH` |
-| **Auth / RBAC / UI / SSE / WS** | `@RolesAllowed`, `AuthTicketService`, SSE dla przeglądarki, `/ws/events`, React UI | Brak portów na hoście; wyłącznie sieć wewnętrzna Docker + podpis HMAC-SHA256 |
-| **Orkiestracja, locki, harmonogram per device** | `DeviceLockManager`, `OsProfile` CRUD, `ProfileValidator`, `PatchJob` historia, `DevicePackageSchedule` + `PackageManagementScheduler` | Bezstanowy wykonawca pojedynczej operacji (+ mapa aktywnych `executionId` w RAM do `/cancel`) |
-| **Transport SSH + Parsery + Egzekucja** | Klient HTTP/NDJSON `PkgWorkerClient` | `golang.org/x/crypto/ssh` (`PASSWORD` + `SSH_KEY`), probe POSIX, 4 generyczne parsery, równoległy odczyt `stdout`/`stderr`, streaming NDJSON |
-| **Krok 4 — Podatności (CVE)** | `VulnerabilityAssessmentService` + `OsvApiVulnerabilityProvider` (MVP), za interfejsem `VulnerabilityProvider` | Niezaangażowany (opcjonalnie w Etapie 5 osobny sidecar `aquasec/trivy server`) |
+| **PostgreSQL / Flyway** | **Sole owner** of all tables and migrations (`V24`–`V28`) | **Zero DB access** |
+| **`VaultEngine` & Secrets** | **Sole owner** of the master key and encrypted credentials | Receives decrypted secret in RAM only for a single request to a TOFU-trusted host; immediately zeroizes buffer; zero persistence to disk/logs/Redis |
+| **TOFU (`sshHostKeyTrusted`)** | Stores trust state, manages `trust-ssh`, records `ThreatEvent` | Verifies host fingerprint against `expectedHostKeySha256` **before** authentication; aborts on mismatch with `HOST_KEY_MISMATCH` |
+| **Auth / RBAC / UI / SSE / WS** | `@RolesAllowed`, `AuthTicketService`, browser SSE streams, `/ws/events`, React UI | Zero host ports; internal Docker network only + HMAC-SHA256 request signing |
+| **Orchestration, Locks & Schedules** | `DeviceLockManager`, `OsProfile` CRUD, `ProfileValidator`, `PatchJob` audit log, `DevicePackageSchedule` + `PackageManagementScheduler` | Stateless single-operation executor (+ in-memory active `executionId` map for `/cancel`) |
+| **SSH Transport, Parsers & Execution** | HTTP/NDJSON client `PkgWorkerClient` | `golang.org/x/crypto/ssh` (`PASSWORD` + `SSH_KEY`), POSIX probe, 4 generic parsers, concurrent `stdout`/`stderr` reader, NDJSON streaming |
+| **Step 4 — Vulnerabilities (CVE)** | `VulnerabilityAssessmentService` + `OsvApiVulnerabilityProvider` (MVP) behind `VulnerabilityProvider` | Not involved (optional future `aquasec/trivy server` sidecar in Stage 6) |
 
 ---
 
-## 2. Architektura wysokopoziomowa
+## 2. High-Level Architecture
 
 ```mermaid
 flowchart TB
@@ -45,21 +45,21 @@ flowchart TB
         SSE["PatchJobResource\n(SSE + AuthTicket + Last-Event-ID)"]
         WS["EventWebSocket (/ws/events)"]
         SCHED["PackageManagementScheduler\n(Per-Device Schedules + Virtual Threads)"]
-        COORD["PackageManagementCoordinator\n(DeviceLockManager)"]
+        COORD["DeviceLockManager"]
         VAULT["VaultEngine\n(AES-256-GCM, RAM only)"]
         CLIENT["PkgWorkerClient\n(Signed Internal HTTP / NDJSON)"]
         VULN["VulnerabilityAssessmentService\n(Fleet Deduplication + OSV.dev Strategy)"]
     end
 
-    subgraph InternalNet["Wewnętrzna sieć Docker (brak portów na hosta)"]
-        WORKER["gnm-pkg-worker (Go 1.23+, distroless)\nKontrakt: contracts/pkg-worker-v1.openapi.yaml\n- SSH Client (PASSWORD + SSH_KEY + TOFU verify)\n- 4 generyczne parsery (DELIMITED / KV / JSON / REGEX)\n- SafeTemplateRenderer + Parallel stdout/stderr NDJSON"]
-        TRIVY["[Opcjonalny Sidecar — Etap 5]\naquasec/trivy server"]
+    subgraph InternalNet["Internal Docker Network (no host ports)"]
+        WORKER["gnm-pkg-worker (Go 1.23+, distroless)\nContract: contracts/pkg-worker-v1.openapi.yaml\n- SSH Client (PASSWORD + SSH_KEY + TOFU verify)\n- 4 Generic Parsers (DELIMITED / KV_BLOCKS / JSON_MAP / REGEX)\n- SafeTemplateRenderer + Concurrent stdout/stderr NDJSON"]
+        TRIVY["[Optional Sidecar — Stage 6]\naquasec/trivy server"]
     end
 
     DB[("PostgreSQL + TimescaleDB")]
-    REDIS[("Redis\n(Locks + Cache — ZERO sekretów!)")]
+    REDIS[("Redis\n(Locks + Cache — ZERO secrets!)")]
     OSV["OSV.dev Batch API"]
-    HOST["Zdalny host POSIX (SSH)"]
+    HOST["Remote POSIX Host (SSH)"]
 
     UI <--> REST
     UI <-- SSE --> SSE
@@ -76,46 +76,45 @@ flowchart TB
     COORD --> WS
     SSE <--> DB
 
-    CLIENT <== "Internal HTTP + HMAC-SHA256 (±30s)\n(Kontrakt v1)" ==> WORKER
+    CLIENT <== "Internal HTTP + HMAC-SHA256 (±30s)\n(Contract v1)" ==> WORKER
     WORKER <--> HOST
 
     VULN <--> DB
     VULN --> OSV
-    VULN -. "opcjonalnie" .-> TRIVY
+    VULN -. "optional" .-> TRIVY
 ```
 
 ---
 
-## 3. Stabilny kontrakt wewnętrzny: `contracts/pkg-worker-v1.openapi.yaml`
+## 3. Versioned Internal Contract: `contracts/pkg-worker-v1.openapi.yaml`
 
-Kontrakt jest wspólnym źródłem prawdy dla `gnm-app` i `gnm-pkg-worker`. Każda zmiana implementacji workera jest weryfikowana zestawem **Contract Tests** przeciw kontenerom `ubuntu_ne`, `centos_ne`, `alpine_ne` z [`docker-compose.yml`](../docker-compose.yml).
+The contract is the single source of truth between `gnm-app` and `gnm-pkg-worker`. Every worker implementation change is verified by the **Contract Test Suite** (`PkgWorkerContractTest`).
 
-### 3.1 Bezpieczeństwo kanału Core ↔ Worker
-1. **Izolacja sieciowa:** `gnm-pkg-worker` podpięty wyłącznie do wewnętrznej sieci Docker, **bez sekcji `ports:`**.
-2. **Podpis HMAC-SHA256 + anty-replay:** każde żądanie zawiera:
-   * `X-GNM-Timestamp`: Unix epoch (sekundy), okno ±30 s,
-   * `X-GNM-Signature`: `HMAC-SHA256(sharedSecret, method + "\n" + path + "\n" + timestamp + "\n" + sha256(body))` (weryfikacja stałoczasowa; `GNM_PKG_WORKER_AUTH_SECRET` min. 32 losowe bajty, brak domyślnego fallbacku w produkcji).
-   * Architektura dopuszcza późniejsze włączenie mTLS przez zmienne środowiskowe bez zmiany kontraktu `v1`.
-3. **Polityka TOFU i zerowania sekretów:**
-   * `gnm-app` **nigdy** nie wysyła poświadczeń dla hosta z `sshHostKeyTrusted != true`.
-   * Pierwsze pobranie odcisku klucza odbywa się przez `POST /v1/ssh/fingerprint` **bez poświadczeń** (wyłącznie handshake KEX).
-   * Wszystkie pozostałe endpointy wymagają `target.expectedHostKeySha256`. Worker weryfikuje fingerprint przed próbą logowania (`HOST_KEY_MISMATCH` zwraca `actualFingerprint`).
-   * W Go workerze bufor `[]byte` z sekretem (`auth.secret` oraz przyszły `elevationSecret`) jest nadpisywany zerami (`clear(buf)`) natychmiast po uwierzytelnieniu sesji SSH; worker nigdy nie loguje ciał żądań.
+### 3.1 Core ↔ Worker Channel Security
+1. **Network Isolation:** `gnm-pkg-worker` is attached only to the internal Docker network, with **no `ports:` mapping**.
+2. **HMAC-SHA256 Signature + Anti-Replay:** Every request includes:
+   * `X-GNM-Timestamp`: Unix epoch seconds (±30s replay window),
+   * `X-GNM-Signature`: `HMAC-SHA256(sharedSecret, method + "\n" + path + "\n" + timestamp + "\n" + sha256(body))` (constant-time verification; `GNM_PKG_WORKER_AUTH_SECRET` must be at least 32 bytes).
+3. **TOFU Policy & Secret Zeroization:**
+   * `gnm-app` **never** decrypts or transmits credentials for a host whose `sshHostKeyTrusted != true`.
+   * Initial host key discovery uses `POST /v1/ssh/fingerprint` **without credentials** (KEX handshake only).
+   * All other endpoints require `target.expectedHostKeySha256`. The worker verifies the host key before attempting authentication (`HOST_KEY_MISMATCH` returns `actualFingerprint`).
+   * Inside the Go worker, secret byte buffers (`auth.secret` and future `sudoSecret`) are overwritten with zeros (`clear(buf)`) immediately after SSH authentication; request bodies are never logged.
 
-### 3.2 Endpointy kontraktu `v1`
+### 3.2 Contract `v1` Endpoints
 
-| Endpoint | Metoda | Odpowiedź | Przeznaczenie |
+| Endpoint | Method | Content-Type | Purpose |
 | :--- | :--- | :--- | :--- |
-| `/v1/health` | `GET` | `application/json` | Status, `contractVersion: "1.0"`, `workerVersion`, `implementation: "go"`, `supportedParsers`, `supportedElevationModes` |
-| `/v1/ssh/fingerprint` | `POST` | `application/json` | Pobranie `SHA256:...` klucza hosta SSH **bez poświadczeń** |
-| `/v1/probe` | `POST` | `application/json` | Uniwersalny probe POSIX (`uname -s -m -r`, `/etc/os-release`, fallback Alpine/OpenWrt/BSD, opcjonalne `verifyCommands[]`) → `osFacts` |
-| `/v1/inventory` | `POST` | `application/json` | Wykonanie `inventorySpec` + strumieniowe parsowanie → `packages[]` (`name`, `version`, `arch`, `sourceName`, `sourceVersion`, `purl`) |
-| `/v1/updates/check` | `POST` | `application/json` | Wykonanie `updateCheckSpec` (`refresh` + `check` + `lockSpec` retry + `successExitCodes`) → `updates[]` + `status` |
-| `/v1/patch/execute` | `POST` | `application/x-ndjson` *(stream)* | Fazy `PRECHECK` → `REFRESH` → `UPGRADE` → `REBOOT_CHECK` z równoległym strumieniowaniem `stdout`/`stderr` jako ramki NDJSON |
-| `/v1/executions/{executionId}/cancel` | `POST` | `application/json` | Anulowanie aktywnego wykonania po `context.CancelFunc` w pamięci workera |
+| `/v1/health` | `GET` | `application/json` | Health status, `contractVersion: "v1"`, `workerVersion`, `implementation: "go"`, `supportedParsers`, `supportedElevationModes` |
+| `/v1/ssh/fingerprint` | `POST` | `application/json` | Fetch remote SSH host key `SHA256:...` **without credentials** |
+| `/v1/probe` | `POST` | `application/json` | Generic POSIX probe (`uname -s -m -r`, `/etc/os-release`, Alpine/OpenWrt/BSD fallbacks, optional `verifyCommands[]`) → `osFacts` |
+| `/v1/inventory` | `POST` | `application/json` | Execute `inventorySpec` + streaming parser → `packages[]` (`name`, `version`, `arch`, `sourceName`, `sourceVersion`, `purl`) |
+| `/v1/updates/check` | `POST` | `application/json` | Execute `updateCheckSpec` (`refresh` + `check` + `lockSpec` retry + `updatesAvailableExitCodes`) → `updates[]` |
+| `/v1/patch/execute` | `POST` | `application/x-ndjson` *(stream)* | Execute `PRECHECK` → `REFRESH` → `UPGRADE` → `REBOOT_CHECK` with concurrent `stdout`/`stderr` streaming as NDJSON frames |
+| `/v1/executions/{executionId}/cancel` | `POST` | `application/json` | Cancel an active execution via in-memory `context.CancelFunc` |
 
-### 3.3 Przygotowanie kontraktu na przyszłe `sudo` z hasłem (ADR-3)
-W kontrakcie `v1` pole `privilegeSpec` od pierwszego dnia wspiera jawny enum `elevationMode`:
+### 3.3 Forward-Compatibility for Password-Based `sudo` (ADR-3)
+In contract `v1`, `privilegeSpec` supports an explicit `elevationMode` enum from day one:
 ```json
 {
   "privilegeSpec": {
@@ -128,10 +127,10 @@ W kontrakcie `v1` pole `privilegeSpec` od pierwszego dnia wspiera jawny enum `el
   }
 }
 ```
-* **W MVP:** obsługiwane wartości to `NONE` (np. konto `root` lub operacje read-only) oraz `SUDO_NOPASSWD` (`sudo -n` + generator gotowego `/etc/sudoers.d/lanalmanac` w UI).
-* **Forward-compatibility dla `SUDO_PASSWORD`:** w schemacie `target.auth` rezerwujemy opcjonalne pole `sudoSecret` (z osobną wartością `elevationMode: "SUDO_PASSWORD"` i `passwordWrapperTemplate: "sudo -S -p '' {{command}}"`). Gdy w przyszłości dodamy jego obsługę (Etap 5.5), worker poda `sudoSecret` wyłącznie na `stdin` kanału SSH z natychmiastowym `clear(buf)` (nigdy w argumentach poleceń ani w `echo $PASS | sudo -S`) — **bez łamania kontraktu `v1`**. W MVP próba użycia `SUDO_PASSWORD` zwraca czytelny kod błędu `UNSUPPORTED_ELEVATION_MODE`.
+* **In MVP:** supported modes are `NONE` (root or read-only commands) and `SUDO_NOPASSWD` (`sudo -n` + `/etc/sudoers.d/lanalmanac` snippet generator in the UI).
+* **Forward-Compatibility for `SUDO_PASSWORD`:** `target.auth` reserves an optional `sudoSecret` field alongside `elevationMode: "SUDO_PASSWORD"` and `passwordWrapperTemplate: "sudo -S -p '' {{command}}"`. In MVP, requesting `SUDO_PASSWORD` returns `UNSUPPORTED_ELEVATION_MODE`.
 
-### 3.4 Format strumienia `application/x-ndjson` z `/v1/patch/execute`
+### 3.4 `application/x-ndjson` Stream Format from `/v1/patch/execute`
 ```json
 {"type":"PHASE","seq":1,"ts":"2026-11-17T21:10:00Z","phase":"REFRESH"}
 {"type":"LOG","seq":2,"ts":"2026-11-17T21:10:01Z","stream":"STDOUT","line":"Hit:1 http://deb.debian.org/debian bookworm InRelease"}
@@ -140,142 +139,115 @@ W kontrakcie `v1` pole `privilegeSpec` od pierwszego dnia wspiera jawny enum `el
 {"type":"RESULT","seq":5,"ts":"2026-11-17T21:11:13Z","status":"SUCCEEDED","exitCode":0,"rebootRequired":true,"errorCode":null,"errorMessage":null}
 ```
 
-**Katalog kodów błędów (`errorCode`):**
+**Error Code Catalog (`errorCode`):**
 `HOST_KEY_MISMATCH`, `AUTH_FAILED`, `CONNECTION_REFUSED`, `CONNECTION_TIMEOUT`, `CONNECTION_LOST`, `SUDO_PERMISSION_REQUIRED`, `UNSUPPORTED_ELEVATION_MODE`, `PACKAGE_MANAGER_LOCKED`, `COMMAND_TIMEOUT`, `IDLE_TIMEOUT`, `PARSER_ERROR`, `INVALID_PACKAGE_NAME`, `CANCELLED`.
 
 ---
 
-## 4. Przepływ 4 kroków Pipeline'u + Harmonogramy per urządzenie
+## 4. Four-Step Pipeline Flow & Per-Device Schedules
 
-### 4.0 OS Discovery (bez `if/else`)
-1. Jeśli `physical_device.os_profile_pinned == true`, użyj przypiętego profilu.
-2. Weryfikacja TOFU (`sshHostKeyTrusted == true`); w przeciwnym razie `POST /v1/ssh/fingerprint` (bez poświadczeń) → zapis `sshHostKey` (`sshHostKeyTrusted = false`) → komunikat wymagający zatwierdzenia w UI.
-3. `POST /v1/probe` → `osFacts` (`kernel`, `arch`, `running_kernel`, `os.id`, `os.id_like`, `os.version_id`, `os.version_major`, `os.version_major_minor`).
-4. `OsProfileMatcher` w `gnm-app` dopasowuje pierwszy aktywny profil (`ORDER BY priority ASC`) wg deklaratywnych reguł JSONB (`EQUALS`, `NOT_EQUALS`, `IN`, `CONTAINS_TOKEN`, `PREFIX`, `REGEX`) i opcjonalnego `verifyCommand`.
+### 4.0 OS Discovery (Zero Hardcoded Distro Branches)
+1. If `physical_device.os_profile_pinned == true`, use the pinned profile.
+2. Verify TOFU (`sshHostKeyTrusted == true`).
+3. `POST /v1/probe` → `osFacts` (`kernel`, `arch`, `running_kernel`, `id`, `id_like`, `version_id`, `version_major`, `version_major_minor`).
+4. `OsProfileMatcher` in `gnm-app` selects the highest-priority enabled profile (`ORDER BY priority ASC`) matching the declarative JSONB conditions (`EQUALS`, `NOT_EQUALS`, `IN`, `CONTAINS_TOKEN`, `PREFIX`, `REGEX`) and optional `verifyCommand`.
 
-### 4.1 Krok 1: Inventory
-* `gnm-app` zakłada `DeviceLockManager`, wysyła `POST /v1/inventory` z `inventorySpec` i `osFacts`.
-* `gnm-pkg-worker` wykonuje komendę z `LC_ALL=C`, parsuje `stdout` strumieniowo (`bufio.Scanner`, limit 16 MB) jednym z 4 generycznych parserów (`DELIMITED`, `KEY_VALUE_BLOCKS`, `JSON_MAPPING`, `REGEX_LINE`) i zwraca znormalizowane pakiety z `purl`, `sourceName`, `sourceVersion`.
-* Profil `debian-apt` zbiera `${Status}\t${Package}\t${Version}\t${Architecture}\t${source:Package}\t${source:Version}` z filtrem `install ok installed`.
-* `gnm-app` wykonuje atomowy upsert `device_package`, usuwa odinstalowane pakiety, emituje `InventoryUpdatedEvent` (wyzwala Krok 4) oraz udostępnia eksport **CycloneDX 1.5 JSON** w locie (`GET /api/devices/{id}/sbom`).
+### 4.1 Step 1: Inventory
+* `gnm-app` acquires `DeviceLockManager` and calls `POST /v1/inventory` with `inventorySpec` and `osFacts`.
+* `gnm-pkg-worker` runs the inventory command with `LC_ALL=C`, parses `stdout` (16 MB cap) using one of the 4 generic parsers (`DELIMITED`, `KV_BLOCKS`, `JSON_MAP`, `REGEX`), and returns normalized packages with `purl`, `sourceName`, and `sourceVersion`.
+* `gnm-app` reconciles `device_package` rows, deletes uninstalled packages, fires `InventoryUpdatedEvent` (triggering Step 4), and serves on-demand **CycloneDX 1.5 JSON** exports (`GET /api/devices/{id}/sbom`).
 
-### 4.2 Krok 2: Update Check
-* `gnm-app` zakłada lock i wysyła `POST /v1/updates/check` z `updateCheckSpec`, `privilegeSpec`, `lockSpec`.
-* Worker wykonuje opcjonalny `refreshCommand` (z retry z backoffem przy `lockSpec.lockErrorPattern` — nigdy nie usuwa plików locka) oraz bezinwazyjny `checkCommand` (z obsługą `noUpdatesExitCodes` i `updatesAvailableExitCodes`, np. `100` dla `dnf`).
-* `gnm-app` zapisuje `device_available_update` i koreluje `device_vulnerability.fix_available_now`.
+### 4.2 Step 2: Update Check
+* `gnm-app` acquires the device lock and calls `POST /v1/updates/check` with `updateCheckSpec`, `privilegeSpec`, and `lockSpec`.
+* The worker executes the optional `refreshCommand` (retrying with backoff on `lockSpec.lockErrorPattern` — never deleting lock files) and the non-invasive `checkCommand` (supporting `noUpdatesExitCodes` and `updatesAvailableExitCodes`, e.g., `100` for `dnf`).
+* `gnm-app` persists `device_available_update` rows and correlates `device_vulnerability.fix_available_now`.
 
-### 4.3 Krok 3: Patch Execution (GUI + Schedule per device)
-* Uruchamiane ręcznie przyciskiem w GUI (`POST /api/devices/{id}/patch-jobs`) **lub** automatycznie przez `PackageManagementScheduler` z harmonogramu skonfigurowanego per urządzenie.
-* **Podwójna ochrona przed Command Injection (`{{packages}}`):**
-  1. `gnm-app` waliduje każdą nazwę regexem `^[a-zA-Z0-9][a-zA-Z0-9.+:~_-]{0,127}$` i sprawdza obecność w `device_available_update`.
-  2. `gnm-pkg-worker` waliduje ponownie tym samym regexem i stosuje POSIX single-quoting po `--`.
-* `gnm-app` zakłada lock, tworzy `patch_job` (`triggered_by = "<username>"` lub `"schedule:<configuredBy>"`), uruchamia wirtualny wątek strumieniujący `POST /v1/patch/execute` i zwraca `202 Accepted`.
-* Worker równolegle czyta `stdout` i `stderr` (dwie goroutines + mutex/channel → zero deadlocka!), emituje ramki NDJSON.
-* `gnm-app` zapisuje logi batchowo do `patch_job_log` (limit 50 000 linii / 10 MB, retencja 30 dni) i rozsyła je przez `PatchJobLogBroker` do klientów SSE przeglądarki (`GET /api/patch-jobs/{jobId}/stream?ticket=...` z `Last-Event-ID`).
-* Przy zerwaniu połączenia SSH bez kodu wyjścia → status `CONNECTION_LOST` i zaplanowany re-check Inventory po 60 s (ADR-4). Po `SUCCEEDED` → aktualizacja `reboot_required`, broadcast na `/ws/events` oraz automatyczne wyzwolenie Kroku 1 (Inventory) → Kroku 4 (CVE).
+### 4.3 Step 3: Patch Execution (GUI + Per-Device Schedule)
+* Triggered manually from the GUI (`POST /api/devices/{id}/patch-jobs`) **or** automatically by `PackageManagementScheduler`.
+* **Dual Command Injection Defense (`{{packages}}`):**
+  1. `gnm-app` validates each package name against `^[a-zA-Z0-9][a-zA-Z0-9.+:~_-]{0,127}$` and verifies membership in `device_available_update`.
+  2. `gnm-pkg-worker` re-validates every package name with the same regex and applies POSIX single-quoting.
+* `gnm-app` creates a `patch_job` (`triggered_by = "<username>"` or `"schedule:<updatedBy>"`) and streams `POST /v1/patch/execute` on a Java 21 virtual thread.
+* `gnm-app` persists log lines to `patch_job_log` (50,000-line / 10 MB cap, 30-day retention) and broadcasts live SSE frames via `PatchJobLogBroker` (`GET /api/patch-jobs/{jobId}/stream?ticket=...` with `Last-Event-ID`/`fromSeq` replay).
+* If the SSH connection drops without an exit status → status becomes `CONNECTION_LOST` and a delayed Inventory re-check runs after 60s (ADR-4). On `SUCCEEDED` → updates `reboot_required` and triggers Step 1 (Inventory) → Step 4 (CVE).
 
-### 4.4 Krok 4: Vulnerability Assessment (Offline w `gnm-app`)
-* `OsvApiVulnerabilityProvider` (MVP, ADR-1): deduplikuje `(ecosystem, queryName, queryVersion)` w całej flocie (z użyciem `source_name` dla Debiana/Ubuntu), odpytuje wsadowo `POST https://api.osv.dev/v1/querybatch` (paczki po 500), cache'uje szczegóły w `vulnerability_advisory`, zachowuje statusy `ACCEPTED_RISK`/`FALSE_POSITIVE`, koreluje `fix_available_now` i wysyła alerty `CRITICAL`/`HIGH` na `/ws/events`.
-* Interfejs `VulnerabilityProvider` umożliwia dodanie `TrivyServerVulnerabilityProvider` w Etapie 5 bez zmian w reszcie systemu.
+### 4.4 Step 4: Vulnerability Assessment (Offline in `gnm-app`)
+* `OsvApiVulnerabilityProvider` (MVP, ADR-1): deduplicates `(ecosystem, queryName, queryVersion)` across the fleet (using `source_name` for Debian/Ubuntu), queries `POST https://api.osv.dev/v1/querybatch` in batches of 500, caches advisory details in `vulnerability_advisory`, preserves `ACCEPTED_RISK`/`FALSE_POSITIVE` suppressions, and correlates `fix_available_now`.
 
-### 4.5 Harmonogramy per urządzenie (`device_package_schedule` — ADR-5)
-Każde urządzenie może mieć niezależnie skonfigurowany z GUI harmonogram dla każdego typu zadania:
-* **Inventory Schedule** (`inventory_enabled`, `inventory_cron`, domyślnie wyłączony lub dziedziczy domyślny preset, np. `0 3 * * *`)
-* **Update Check Schedule** (`update_check_enabled`, `update_check_cron`)
-* **Auto-Patch Schedule** (`auto_patch_enabled` — **zawsze domyślnie `false`**, opt-in per urządzenie!, `auto_patch_cron`, `auto_patch_mode`: `SECURITY_ONLY` | `FULL_UPGRADE`)
-* Wspólne pole `timezone` (domyślnie `UTC`, walidowane przez `ZoneId.of`), pola `next_*_run_at`, `last_*_run_at` oraz audytowe `updated_by`, `updated_at`.
-* **Zasady bezpieczeństwa harmonogramu:**
-  * Ticker `@Scheduled(every = "60s")` w `PackageManagementScheduler` pobiera wyłącznie urządzenia, których `next_*_run_at <= now()`, status != `OFFLINE`, `sshHostKeyTrusted == true` oraz `VaultEngine.isUnsealed() == true`.
-  * Limit równoległych połączeń SSH (`gnm.pkg.scheduler.max-concurrent-hosts`, domyślnie `5`) wymuszony semaforem na wirtualnych wątkach (`Semaphore`).
-  * Gdy lock urządzenia jest zajęty (np. trwa ręczny patch), zaplanowany job jest pomijany z zapisem `SKIPPED_LOCKED` (bez kolejkowania duplikatów) i przeliczany na kolejne okno `next_*_run_at`.
-  * W GUI obok zaawansowanego pola cron dostępne są proste presety (np. *Daily at HH:MM*, *Weekly on Sunday at 03:00*, *Custom cron*) z podglądem 3 najbliższych dat uruchomienia wyliczonych po stronie backendu.
+### 4.5 Per-Device Schedules (`device_package_schedule` — ADR-5)
+Each device can have an independently configured schedule from the GUI:
+* **Inventory Schedule** (`inventory_enabled`, `inventory_cron`, default `0 3 * * *`)
+* **Update Check Schedule** (`update_check_enabled`, `update_check_cron`, default `0 4 * * *`)
+* **Auto-Patch Schedule** (`auto_patch_enabled` — **always `false` by default**, opt-in per device, `auto_patch_cron`, `auto_patch_mode`: `SECURITY_ONLY` | `FULL_UPGRADE`)
+* Shared `timezone` field (validated via `ZoneId.of`), `next_*_run_at`, `last_*_run_at`, and audit fields `updated_by`, `updated_at`.
 
-### 4.6 Wybór poświadczenia SSH — wielokategoriowe `Credential` i `CredentialResolver` (ADR-9)
-Zamiast zgadywania pierwszego poświadczenia na urządzeniu (`device.credentials.findFirst()`), encja `Credential` otrzymuje zbiór kategorii/ról (`credential_category`, analogicznie do `physical_device_labels`):
-* Jedno poświadczenie może mieć **wiele kategorii** jednocześnie (np. `["SSH_TERMINAL", "PKG_MANAGEMENT"]` — zero duplikowania kluczy w Vault).
-* Przykładowy słownik kategorii (`CredentialCategory`): `PKG_MANAGEMENT`, `PKG_MANAGEMENT_FALLBACK`, `SSH_TERMINAL`, `WEB_ADMIN`, `MONITORING`, `API`, `GENERAL`.
-* **Determinizm (brak losowania):** role wykonawcze `PKG_MANAGEMENT` i `PKG_MANAGEMENT_FALLBACK` są **unikalne w obrębie jednego urządzenia** (maks. 1 poświadczenie `PKG_MANAGEMENT` i maks. 1 `PKG_MANAGEMENT_FALLBACK` per `physical_device_id`, wymuszone przez walidację + bazę danych; przypisanie roli do nowego klucza w UI pozwala ją atomowo przenieść podczas rotacji). Kategorie informacyjne (`SSH_TERMINAL`, `WEB_ADMIN`, `MONITORING` itp.) mogą występować na wielu poświadczeniach.
-* **Kolejność rozwiązywania w `CredentialResolver` (wyłącznie typy `SSH_KEY` i `PASSWORD`):**
-  1. Poświadczenie z kategorią `PKG_MANAGEMENT`.
-  2. Poświadczenie z kategorią `PKG_MANAGEMENT_FALLBACK`:
-     * jako **fallback konfiguracyjny**, gdy na urządzeniu nie ma żadnego poświadczenia `PKG_MANAGEMENT`, **lub**
-     * jako **jednorazowy fallback uwierzytelniania** (maks. 1 dodatkowa próba → łącznie max 2 próby logowania, bezpieczne względem `fail2ban`), wyłącznie gdy `PKG_MANAGEMENT` zakończyło się błędem `AUTH_FAILED` (z zapisem ostrzeżenia w logach i audycie).
-     * **Twarda zasada bezpieczeństwa:** **nigdy** nie wykonuje się fallbacku przy `HOST_KEY_MISMATCH` (możliwy MITM!).
-  3. Ostatni fallback konfiguracyjny: `NetworkService(SSH).credential` (dla prostych hostów z jednym kluczem SSH przypiętym do usługi SSH, bez konieczności ręcznego tagowania).
-  4. Brak kandydata → status `MISSING_CREDENTIAL` (scheduler pomija hosta, UI pokazuje komunikat wskazujący dodanie kategorii `PKG_MANAGEMENT` lub podpięcie credentiala do usługi SSH).
-* **Audyt i przejrzystość:** UI na zakładce urządzenia wyświetla aktywnie rozwiązane poświadczenie i źródło wyboru (np. `lanalmanac [PKG_MANAGEMENT]` lub `ubuntu [SSH service fallback]`), generator `sudoers.d` podstawia jego `username`, a każdy `patch_job` zapisuje `credential_id`, `credential_username` oraz flagę `used_fallback`.
+### 4.6 Multi-Category Credentials & `CredentialResolver` (ADR-9)
+Instead of guessing the first credential on a device, `Credential` supports a set of categories (`credential_category`):
+* A single credential can hold **multiple categories** simultaneously (e.g., `["SSH_TERMINAL", "PKG_MANAGEMENT"]`).
+* Supported categories (`CredentialCategory`): `PKG_MANAGEMENT`, `PKG_MANAGEMENT_FALLBACK`, `SSH_TERMINAL`, `WEB_ADMIN`, `MONITORING`, `API`, `GENERAL`.
+* **Deterministic Resolution:** `PKG_MANAGEMENT` and `PKG_MANAGEMENT_FALLBACK` are **exclusive per device** (at most one primary and one fallback per `physical_device_id`).
+* **Resolution Cascade in `CredentialResolver` (`SSH_KEY` and `PASSWORD` only):**
+  1. Credential with `PKG_MANAGEMENT`.
+  2. Credential with `PKG_MANAGEMENT_FALLBACK` (used when `PKG_MANAGEMENT` is absent, or retried **at most once** when `PKG_MANAGEMENT` fails with `AUTH_FAILED`; **never** retried on `HOST_KEY_MISMATCH`).
+  3. Configuration fallback: `NetworkService(SSH).credential`.
+  4. Otherwise → `MISSING_CREDENTIAL`.
 
 ---
 
-## 5. Schemat bazy danych (wyłącznie w `gnm-app` — Flyway `V24`–`V28`)
+## 5. Database Schema (`gnm-app` Only — Flyway `V24`–`V28`)
 
-1. **`V24__os_profiles.sql`** — `os_profile` + kolumny `os_profile_id`, `os_profile_pinned`, `os_facts`, `os_detected_at` na `physical_device` + tabela `credential_category (credential_id, physical_device_id, category)` z unikalnością ról wykonawczych (`PKG_MANAGEMENT`, `PKG_MANAGEMENT_FALLBACK`) per urządzenie + seed 3 profili systemowych (`debian-apt`, `rhel-dnf`, `alpine-apk`).
+1. **`V24__os_profiles.sql`** — `os_profile` + `os_profile_id`, `os_profile_pinned`, `os_facts`, `os_detected_at` on `physical_device` + `credential_category` with partial unique index for `PKG_MANAGEMENT` and `PKG_MANAGEMENT_FALLBACK` + 3 built-in system profiles (`debian-apt`, `rhel-dnf`, `alpine-apk`).
 2. **`V25__device_packages_and_vulnerabilities.sql`** — `device_package_scan`, `device_package`, `vulnerability_advisory`, `device_vulnerability`.
-3. **`V26__device_available_updates.sql`** — `device_available_update` + kolumny `updates_last_checked_at`, `reboot_required` na `physical_device`.
-4. **`V27__patch_jobs.sql`** — `patch_job` (w tym `credential_id`, `credential_username`, `used_fallback`), `patch_job_log`.
-5. **`V28__device_package_schedule.sql`** — `device_package_schedule` (`physical_device_id PK/FK`, flagi `*_enabled`, wyrażenia `*_cron`, `auto_patch_mode`, `timezone`, kolumny `next_*_run_at` z indeksem częściowym `WHERE ..._enabled = TRUE`, `last_*_run_at`, `updated_by`, `updated_at`).
+3. **`V26__device_available_updates.sql`** — `device_available_update` + `updates_last_checked_at`, `reboot_required` on `physical_device`.
+4. **`V27__patch_jobs.sql`** — `patch_job` (including `credential_id`, `credential_username`, `used_fallback`), `patch_job_log`.
+5. **`V28__device_package_schedule.sql`** — `device_package_schedule`.
 
 ---
 
-## 6. Kontrakty REST API (zewnętrzne, `gnm-app`) i Macierz Uprawnień
+## 6. External REST API (`gnm-app`) & Authorization Matrix
 
-Wszystkie zasoby używają wyłącznie DTO (Inwariant #4) i jawnych `@RolesAllowed` (Inwariant #6, #7):
+All resources use DTOs (Invariant #4) and explicit `@RolesAllowed` annotations (Invariant #6, #7):
 
-| Endpoint | Metoda | Role (`@RolesAllowed`) | Opis |
+| Endpoint | Method | Roles (`@RolesAllowed`) | Description |
 | :--- | :--- | :--- | :--- |
-| `/api/os-profiles` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Lista profili OS + status/wersja `gnm-pkg-worker` |
-| `/api/os-profiles/{id}` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Szczegóły profilu + generator `/etc/sudoers.d/lanalmanac` |
-| `/api/os-profiles` / `/{id}` | `POST` / `PUT` / `DELETE` | `gnm-admin` | CRUD customowych profili (`is_system=true` → `409 Conflict`) |
-| `/api/os-profiles/{id}/clone` | `POST` | `gnm-admin` | Klonowanie profilu systemowego |
-| `/api/os-profiles/import` | `POST` | `gnm-admin` | Import profilu JSON (`schemaVersion: 1`) z walidacją |
-| `/api/os-profiles/{id}/export` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Eksport profilu JSON (`schemaVersion: 1`) |
-| `/api/os-profiles/test` | `POST` | `gnm-admin` | Dry-run (wyłącznie read-only: probe + inventory parse preview) |
-| `/api/devices/{id}/os-profile` | `PUT` | `gnm-admin`, `gnm-operator` | Przypięcie/odpięcie profilu OS na urządzeniu |
-| `/api/devices/{id}/os-profile/detect` | `POST` | `gnm-admin`, `gnm-operator` | Wymuszenie auto-detekcji OS |
-| `/api/devices/{id}/packages` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Paginowana lista pakietów |
-| `/api/devices/{id}/packages/scan` | `POST` | `gnm-admin`, `gnm-operator` | Ręczne uruchomienie Kroku 1 (Inventory) → `202` |
-| `/api/devices/{id}/sbom` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Eksport CycloneDX 1.5 JSON |
-| `/api/devices/{id}/updates` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Lista dostępnych aktualizacji |
-| `/api/devices/{id}/updates/check` | `POST` | `gnm-admin`, `gnm-operator` | Ręczne uruchomienie Kroku 2 (Update Check) → `202` |
-| `/api/devices/{id}/patch-jobs` | `POST` | `gnm-admin`, `gnm-operator` | Ręczne uruchomienie Kroku 3 (Patch Execution) → `202` + `jobId` |
-| `/api/devices/{id}/patch-jobs` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Historia zadań patchowania |
-| `/api/patch-jobs/{jobId}` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Status zadania + paginowane logi |
-| `/api/patch-jobs/{jobId}/stream?ticket=...` | `GET` (SSE) | `gnm-admin`, `gnm-operator` *(via `AuthTicket`)* | Stream logów na żywo + replay od `Last-Event-ID` |
-| `/api/patch-jobs/{jobId}/cancel` | `POST` | `gnm-admin`, `gnm-operator` | Anulowanie aktywnego zadania |
-| `/api/devices/{id}/package-schedule` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Pobranie harmonogramu urządzenia + podgląd `nextRunAt` |
-| `/api/devices/{id}/package-schedule` | `PUT` | `gnm-admin`, `gnm-operator` | Zapis/aktualizacja harmonogramu per urządzenie (walidacja cron + timezone) |
-| `/api/devices/{id}/vulnerabilities` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Podatności urządzenia |
-| `/api/devices/{id}/vulnerabilities/scan` | `POST` | `gnm-admin`, `gnm-operator` | Ręczne odświeżenie Kroku 4 dla urządzenia |
-| `/api/vulnerabilities` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Globalny dashboard CVE sieci |
-| `/api/vulnerabilities/{vulnId}/status` | `PATCH` | `gnm-admin`, `gnm-operator` | Zmiana statusu (`OPEN` / `ACCEPTED_RISK` / `FALSE_POSITIVE`) |
+| `/api/os-profiles` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | List OS profiles |
+| `/api/os-profiles/worker-health` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Query `gnm-pkg-worker` health & contract version |
+| `/api/os-profiles` / `/{id}` | `POST` / `PUT` / `DELETE` | `gnm-admin` | CRUD custom profiles (`is_system=true` → `409 Conflict`) |
+| `/api/os-profiles/{id}/clone` | `POST` | `gnm-admin` | Clone a built-in or custom OS profile |
+| `/api/os-profiles/import` | `POST` | `gnm-admin` | Import profile JSON (`schemaVersion: 1`) |
+| `/api/os-profiles/{id}/export` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Export profile JSON (`schemaVersion: 1`) |
+| `/api/os-profiles/test` | `POST` | `gnm-admin` | Read-only dry-run test (probe + 50-package inventory preview) |
+| `/api/devices/{id}/os-profile` | `GET` / `PUT` | `GET`: all; `PUT`: `gnm-admin`, `gnm-operator` | View or pin/unpin device OS profile |
+| `/api/devices/{id}/os-profile/detect` | `POST` | `gnm-admin`, `gnm-operator` | Trigger OS auto-detection |
+| `/api/devices/{id}/packages` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | List installed packages |
+| `/api/devices/{id}/packages/scan` | `POST` | `gnm-admin`, `gnm-operator` | Trigger Step 1 (Inventory Scan) |
+| `/api/devices/{id}/sbom` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Export CycloneDX 1.5 JSON SBOM |
+| `/api/devices/{id}/updates` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | List available package updates |
+| `/api/devices/{id}/updates/check` | `POST` | `gnm-admin`, `gnm-operator` | Trigger Step 2 (Update Check) |
+| `/api/devices/{id}/sudoers` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Generate least-privilege `/etc/sudoers.d/lanalmanac` snippet |
+| `/api/devices/{id}/patch-jobs` | `GET` / `POST` | `GET`: all; `POST`: `gnm-admin`, `gnm-operator` | List patch history or start a new Patch Job |
+| `/api/patch-jobs/{jobId}` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Get patch job status and persisted logs |
+| `/api/patch-jobs/{jobId}/stream?ticket=...` | `GET` (SSE) | `gnm-admin`, `gnm-operator` *(via `AuthTicket`)* | Stream live logs + replay from `Last-Event-ID`/`fromSeq` |
+| `/api/patch-jobs/{jobId}/cancel` | `POST` | `gnm-admin`, `gnm-operator` | Cancel an active patch execution |
+| `/api/devices/{id}/package-schedule` | `GET` / `PUT` | `GET`: all; `PUT`: `gnm-admin`, `gnm-operator` | Get or update per-device automation schedule |
+| `/api/devices/{id}/vulnerabilities` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | List device vulnerabilities |
+| `/api/devices/{id}/vulnerabilities/scan` | `POST` | `gnm-admin`, `gnm-operator` | Trigger Step 4 (Vulnerability Assessment) |
+| `/api/vulnerabilities` | `GET` | `gnm-admin`, `gnm-operator`, `gnm-viewer` | Fleet-wide vulnerability dashboard |
+| `/api/vulnerabilities/{vulnId}/status` | `PATCH` | `gnm-admin`, `gnm-operator` | Update status (`OPEN` / `ACCEPTED_RISK` / `FALSE_POSITIVE`) |
 
 ---
 
-## 7. Integracja z Frontendem (React + Tailwind 4 + Shadcn/ui + Zustand)
+## 7. Architecture Decision Record (ADR) Summary
 
-Wszystkie etykiety i komunikaty UI wyłącznie po angielsku (Inwariant #5). Wydzielone komponenty (nie powiększamy `DeviceDetail.tsx`):
-* `frontend/src/components/packages/DevicePackagesTab.tsx` — profil OS (pin/detect), podgląd rozwiązanego poświadczenia (`Effective credential` + źródło/fallback), lista pakietów, przycisk `Scan Inventory`, `Download SBOM`.
-* Rozszerzenie formularza i listy poświadczeń (`DeviceDetail.tsx` / Vault credentials) o wielokrotny wybór kategorii (`PKG_MANAGEMENT`, `PKG_MANAGEMENT_FALLBACK`, `SSH_TERMINAL`, `WEB_ADMIN`, `MONITORING`, `API`, `GENERAL`) z wyświetlaniem badge'y.
-* `frontend/src/components/packages/DeviceUpdatesTab.tsx` — aktualizacje + powiązane CVE, przyciski `Check Updates`, `Upgrade All`, `Upgrade Selected`, baner `Reboot Required`, modal `sudoers.d`, historia `PatchJob`.
-* `frontend/src/components/packages/PatchJobLogModal.tsx` — live log viewer SSE z reconnectem po `Last-Event-ID`.
-* `frontend/src/components/packages/DeviceScheduleCard.tsx` — konfiguracja harmonogramów per urządzenie (Inventory / Update Check / Auto-Patch z wyraźnym ostrzeżeniem i wyborem trybu `Security Only` vs `Full Upgrade`, presety + custom cron, timezone, podgląd najbliższych 3 uruchomień).
-* `frontend/src/components/packages/DeviceVulnerabilitiesTab.tsx` — lista CVE, severity badges, `Accept Risk` / `False Positive`.
-* `frontend/src/pages/VulnerabilitiesPage.tsx` — globalny przegląd podatności sieci (`/vulnerabilities`).
-* `frontend/src/pages/OsProfilesSettingsTab.tsx` — CRUD customowych profili (`gnm-admin`), import/eksport JSON (`schemaVersion: 1`), `Test Profile (Dry-Run)`, status zdrowia `gnm-pkg-worker`.
-
----
-
-## 8. Rejestr podjętych decyzji architektonicznych (ADR)
-
-| ADR | Temat | Decyzja | Uwagi / Konsekwencje |
+| ADR | Topic | Decision | Notes / Consequences |
 | :--- | :--- | :--- | :--- |
-| **ADR-0** | Język `gnm-pkg-worker` | **ZATWIERDZONE: Go (1.23+)** | Statyczna binarka w obrazie `distroless`, `golang.org/x/crypto/ssh`, natywne goroutines i streaming NDJSON, brak narzutu JVM. |
-| **ADR-1** | Silnik CVE (Krok 4) | **ZATWIERDZONE: Opcja A (OSV.dev API w MVP)** | Zero nowych zależności w MVP; czysty interfejs `VulnerabilityProvider` gotowy pod opcjonalny sidecar `aquasec/trivy server` w Etapie 5. |
-| **ADR-2** | Wsparcie Windows | **ZATWIERDZONE: Brak wsparcia Windows** | Wyłącznie hosty POSIX przez SSH (Linux, BSD, IoT). Zero kodu WinRM i brak profili Windows/PowerShell. |
-| **ADR-3** | Uprawnienia `sudo` | **ZATWIERDZONE: MVP `sudo -n` (`NOPASSWD`), przygotowane pod przyszłe `sudo -S`** | Kontrakt `v1` od razu ma enum `elevationMode` (`NONE`, `SUDO_NOPASSWD`, `SUDO_PASSWORD`) i opcjonalny `sudoSecret`; w MVP `SUDO_PASSWORD` zwraca `UNSUPPORTED_ELEVATION_MODE`, a implementacja przez `stdin` trafi do Etapu 5.5 bez łamania kontraktu. |
-| **ADR-4** | Utrata sesji SSH przy patchu | **ZATWIERDZONE: Opcja A** | Wykrycie nagłego EOF bez kodu wyjścia jako `CONNECTION_LOST` + automatyczny re-check Inventory po 60 s. |
-| **ADR-5** | Uruchamianie i harmonogramy | **ZATWIERDZONE: Ręcznie z GUI + Schedule per urządzenie z GUI** | Dedykowana tabela `device_package_schedule` (V28), osobne harmonogramy dla Inventory, Update Check i opt-in Auto-Patch (`SECURITY_ONLY`/`FULL_UPGRADE`), konfiguracja i podgląd kolejnych uruchomień w GUI. |
-| **ADR-6** | Relacja do `hardening-plan.md` | **Domyślnie: Nowy kod utwardzony od dnia 1; hardening Etap 1–2 przed produkcją** | Wszystkie nowe zasoby powstają od razu z `@RolesAllowed`, DTO i `AuthTicket`. |
-| **ADR-7** | Import/eksport profili OS | **ZATWIERDZONE: Opcja A (`schemaVersion: 1`)** | Wersjonowany JSON do importu/eksportu profili w UI i dzielenia się nimi w społeczności. |
-| **ADR-8** | Kanał Core ↔ Worker | **ZATWIERDZONE: Opcja A (Internal Docker net + HMAC-SHA256 ±30s)** | Zero ekspozycji portów workera; opcjonalne mTLS możliwe do włączenia później bez zmiany kontraktu. |
-| **ADR-9** | Wybór poświadczenia SSH | **ZATWIERDZONE: Wielokategoriowe `Credential` + `CredentialResolver`** | Tabela `credential_category` (wiele kategorii per klucz, np. `PKG_MANAGEMENT`, `PKG_MANAGEMENT_FALLBACK`, `SSH_TERMINAL`); role `PKG_MANAGEMENT` / `PKG_MANAGEMENT_FALLBACK` unikalne per urządzenie; kaskada `PKG_MANAGEMENT` → `PKG_MANAGEMENT_FALLBACK` (max 1 próba przy `AUTH_FAILED`, nigdy przy `HOST_KEY_MISMATCH`) → `NetworkService(SSH).credential`; pełny audyt `credential_id` + `used_fallback` na `patch_job`. |
+| **ADR-0** | `gnm-pkg-worker` Language | **APPROVED: Go (1.23+)** | Static binary in `distroless`, `golang.org/x/crypto/ssh`, native goroutines and NDJSON streaming, zero JVM footprint. |
+| **ADR-1** | CVE Engine (Step 4) | **APPROVED: Option A (OSV.dev API in MVP)** | Zero new dependencies in MVP; clean `VulnerabilityProvider` interface ready for optional `aquasec/trivy server` sidecar in Stage 6. |
+| **ADR-2** | Windows Support | **APPROVED: No Windows Support** | Strictly POSIX hosts over SSH (Linux, BSD, IoT). Zero WinRM/PowerShell code. |
+| **ADR-3** | `sudo` Elevation | **APPROVED: MVP `sudo -n` (`NOPASSWD`), forward-compatible with `sudo -S`** | Contract `v1` includes `elevationMode` (`NONE`, `SUDO_NOPASSWD`, `SUDO_PASSWORD`) and optional `sudoSecret`. |
+| **ADR-4** | SSH Drop During Patch | **APPROVED: Option A** | Abrupt EOF without exit code is recorded as `CONNECTION_LOST` and schedules a delayed Inventory re-check after 60s. |
+| **ADR-5** | Execution & Schedules | **APPROVED: Manual GUI + Per-Device GUI Schedule** | `device_package_schedule` table (`V28`) with separate schedules for Inventory, Update Check, and opt-in Auto-Patch (`SECURITY_ONLY`/`FULL_UPGRADE`). |
+| **ADR-6** | Security Baseline | **Hardened from Day 1** | All new endpoints use explicit `@RolesAllowed`, DTOs, TOFU enforcement, and single-use `AuthTicket` for SSE. |
+| **ADR-7** | OS Profile Import/Export | **APPROVED: Option A (`schemaVersion: 1`)** | Versioned JSON export/import in the UI. |
+| **ADR-8** | Core ↔ Worker Channel | **APPROVED: Option A (Internal Docker network + HMAC-SHA256 ±30s)** | Zero host port exposure on the worker container. |
+| **ADR-9** | SSH Credential Selection | **APPROVED: Multi-Category `Credential` + `CredentialResolver`** | `credential_category` table; exclusive `PKG_MANAGEMENT` / `PKG_MANAGEMENT_FALLBACK` per device; cascade `PKG_MANAGEMENT` → `PKG_MANAGEMENT_FALLBACK` (max 1 retry on `AUTH_FAILED`, never on `HOST_KEY_MISMATCH`) → `NetworkService(SSH).credential`. |
