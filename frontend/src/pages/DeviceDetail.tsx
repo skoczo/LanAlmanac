@@ -21,7 +21,9 @@ import {
   GitMerge,
   Wifi,
   Terminal as TerminalIcon,
-  RefreshCcw
+  RefreshCcw,
+  Radio,
+  AlertTriangle
 } from 'lucide-react'
 import { Terminal } from '../components/Terminal'
 import { DevicePackagesTab } from '../components/packages/DevicePackagesTab'
@@ -140,6 +142,13 @@ interface Device {
   credentials: Credential[]
   services: NetworkService[]
   portScanState: string
+  osProfile?: {
+    id: string
+    slug: string
+    displayName: string
+  }
+  rebootRequired?: boolean
+  updatesLastCheckedAt?: string
 }
 
 interface TelemetryPoint {
@@ -149,6 +158,21 @@ interface TelemetryPoint {
   }
   value: number
 }
+
+type TabType =
+  | 'overview'
+  | 'packages'
+  | 'updates'
+  | 'vulnerabilities'
+  | 'identities'
+  | 'fingerprint'
+  | 'correlation'
+  | 'status_history'
+  | 'services'
+  | 'credentials'
+  | 'monitor'
+  | 'connections'
+  | 'settings'
 
 export const DeviceDetail: React.FC = () => {
   const { id: deviceId } = useParams({ strict: false }) as { id: string }
@@ -161,7 +185,14 @@ export const DeviceDetail: React.FC = () => {
   const [links, setLinks] = useState<NetworkLink[]>([])
   const [allDevices, setAllDevices] = useState<Device[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'packages' | 'updates' | 'vulnerabilities' | 'identities' | 'fingerprint' | 'correlation' | 'status_history' | 'services' | 'credentials' | 'monitor' | 'connections' | 'settings'>('overview')
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    const param = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tab') : null
+    const validTabs: TabType[] = ['overview', 'packages', 'updates', 'vulnerabilities', 'identities', 'fingerprint', 'correlation', 'status_history', 'services', 'credentials', 'monitor', 'connections', 'settings']
+    if (param && validTabs.includes(param as TabType)) {
+      return param as TabType
+    }
+    return 'overview'
+  })
   const [newLabel, setNewLabel] = useState('')
   const [showAddLink, setShowAddLink] = useState(false)
   const [newLink, setNewLink] = useState({ targetDeviceId: '' })
@@ -233,6 +264,16 @@ export const DeviceDetail: React.FC = () => {
   }, [deviceId, apiClient])
   
   const navigate = useNavigate()
+  const isManaged = device?.managementState === 'MANAGED'
+
+  useEffect(() => {
+    if (device && !isManaged) {
+      const managedOnlyTabs: TabType[] = ['packages', 'updates', 'vulnerabilities', 'credentials']
+      if (managedOnlyTabs.includes(activeTab)) {
+        setActiveTab('overview')
+      }
+    }
+  }, [device, isManaged, activeTab])
 
   const handleDeleteDevice = async () => {
     if (!window.confirm('Are you sure you want to permanently delete this device? This will remove all associated telemetry, credentials, and fingerprints.')) {
@@ -499,6 +540,25 @@ export const DeviceDetail: React.FC = () => {
               <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
                 {device.status}
               </span>
+
+              {isManaged ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-accent-primary/10 border border-accent-primary/20 text-accent-primary">
+                  <ShieldCheck className="w-3 h-3" />
+                  Managed Node
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-bg-surface-raised border border-border-subtle text-text-secondary">
+                  <Radio className="w-3 h-3 text-accent-warning" />
+                  Monitored Presence
+                </span>
+              )}
+
+              {device.rebootRequired && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-accent-danger/10 border border-accent-danger/20 text-accent-danger animate-pulse">
+                  <AlertTriangle className="w-3 h-3" />
+                  Reboot Required
+                </span>
+              )}
               
               <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider ${
                 device.portScanState === 'FULLY_SCANNED' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' :
@@ -537,17 +597,44 @@ export const DeviceDetail: React.FC = () => {
 
     {/* Navigation tabs */}
       <div className="flex items-center border-b border-border-subtle gap-2 overflow-x-auto">
-        {(['overview', 'packages', 'updates', 'vulnerabilities', 'identities', 'fingerprint', 'correlation', 'status_history', 'services', 'credentials', 'monitor', 'connections', 'settings'] as const).map((tab) => (
+        {(isManaged
+          ? [
+              { id: 'overview', label: 'Overview' },
+              { id: 'updates', label: 'Updates' },
+              { id: 'packages', label: 'Packages' },
+              { id: 'vulnerabilities', label: 'Vulnerabilities' },
+              { id: 'services', label: 'Services' },
+              { id: 'credentials', label: 'Credentials' },
+              { id: 'identities', label: 'Identities' },
+              { id: 'fingerprint', label: 'Fingerprint' },
+              { id: 'correlation', label: 'Correlation' },
+              { id: 'status_history', label: 'Status History' },
+              { id: 'monitor', label: 'Monitor' },
+              { id: 'connections', label: 'Connections' },
+              { id: 'settings', label: 'Settings' }
+            ]
+          : [
+              { id: 'overview', label: 'Overview' },
+              { id: 'identities', label: 'Identities' },
+              { id: 'fingerprint', label: 'Fingerprint' },
+              { id: 'services', label: 'Services' },
+              { id: 'correlation', label: 'Correlation' },
+              { id: 'status_history', label: 'Status History' },
+              { id: 'monitor', label: 'Monitor' },
+              { id: 'connections', label: 'Connections' },
+              { id: 'settings', label: 'Settings' }
+            ]
+        ).map((tab) => (
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as TabType)}
             className={`py-3.5 px-5 text-xs font-semibold uppercase tracking-wider border-b-2 cursor-pointer transition-all whitespace-nowrap ${
-              activeTab === tab
+              activeTab === tab.id
                 ? 'border-accent-primary text-accent-primary'
                 : 'border-transparent text-text-secondary hover:text-text-primary'
             }`}
           >
-            {tab.replace('_', ' ')}
+            {tab.label}
           </button>
         ))}
       </div>
@@ -556,7 +643,60 @@ export const DeviceDetail: React.FC = () => {
       <div className="mt-6">
         {/* OVERVIEW TAB */}
         {activeTab === 'overview' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="space-y-6">
+            {!isManaged && (
+              <div className="p-4 rounded-2xl bg-bg-surface border border-border-subtle shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-accent-warning/10 border border-accent-warning/20 text-accent-warning shrink-0">
+                    <Radio className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-text-primary text-sm">Monitored Network Device</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-bg-surface-raised border border-border-subtle text-text-secondary">
+                        Presence & Telemetry Only
+                      </span>
+                    </div>
+                    <p className="text-xs text-text-secondary mt-0.5">
+                      This system is discovered and tracked for network presence, traffic, and fingerprint changes. Promote to a Managed Node to unlock package inventory, system updates, and credential management.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleUpdateManagementState('MANAGED')}
+                  className="px-4 py-2 rounded-xl bg-accent-primary hover:bg-accent-primary/90 text-white font-semibold text-xs transition-all shadow-md cursor-pointer whitespace-nowrap flex items-center gap-2 shrink-0"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  Promote to Managed Node
+                </button>
+              </div>
+            )}
+
+            {isManaged && device.rebootRequired && (
+              <div className="p-4 rounded-2xl bg-accent-danger/10 border border-accent-danger/30 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-accent-danger/20 text-accent-danger shrink-0">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-text-primary text-sm">System Reboot Required</div>
+                    <p className="text-xs text-text-secondary mt-0.5">
+                      Recent kernel or package updates require a system reboot to take full effect.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('updates')}
+                  className="px-3 py-1.5 rounded-xl bg-accent-danger/20 hover:bg-accent-danger/30 border border-accent-danger/40 text-accent-danger font-semibold text-xs transition-all cursor-pointer whitespace-nowrap"
+                >
+                  View Updates
+                </button>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Specs card */}
             <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 shadow-lg relative">
               <div className="flex justify-between items-center mb-5">
@@ -752,7 +892,8 @@ export const DeviceDetail: React.FC = () => {
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
         {/* IDENTITIES TAB */}
         {activeTab === 'identities' && (
@@ -1683,23 +1824,44 @@ export const DeviceDetail: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg">
-              <div>
-                <h3 className="font-bold text-sm tracking-tight text-accent-primary">Package & Patch Operations</h3>
-                <p className="text-xs text-text-secondary mt-1">Manage updates, vulnerability remediation, and live SSH patch execution.</p>
+            {isManaged ? (
+              <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg">
+                <div>
+                  <h3 className="font-bold text-sm tracking-tight text-accent-primary">Package & Patch Operations</h3>
+                  <p className="text-xs text-text-secondary mt-1">Manage updates, vulnerability remediation, and live SSH patch execution.</p>
+                </div>
+                <div className="p-4 rounded-xl border border-border-subtle bg-bg-surface-raised">
+                  <h4 className="text-xs font-bold text-text-primary">Agentless Package & Patch Manager</h4>
+                  <p className="text-[10px] text-text-secondary mt-1 mb-3">Check available package updates, configure sudoers.d, or run OS-profile-aware upgrades with live console streaming.</p>
+                  <button 
+                    type="button"
+                    onClick={() => setActiveTab('updates')}
+                    className="px-4 py-2 bg-accent-primary hover:bg-accent-primary/90 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Open Updates & Patching
+                  </button>
+                </div>
               </div>
-              <div className="p-4 rounded-xl border border-border-subtle bg-bg-surface-raised">
-                <h4 className="text-xs font-bold text-text-primary">Agentless Package & Patch Manager</h4>
-                <p className="text-[10px] text-text-secondary mt-1 mb-3">Check available package updates, configure sudoers.d, or run OS-profile-aware upgrades with live console streaming.</p>
-                <button 
-                  type="button"
-                  onClick={() => setActiveTab('updates')}
-                  className="px-4 py-2 bg-accent-primary hover:bg-accent-primary/90 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                >
-                  Open Updates & Patching
-                </button>
+            ) : (
+              <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg">
+                <div>
+                  <h3 className="font-bold text-sm tracking-tight text-text-secondary">Package & Patch Operations</h3>
+                  <p className="text-xs text-text-secondary mt-1">Management features are disabled for monitored network devices.</p>
+                </div>
+                <div className="p-4 rounded-xl border border-border-subtle bg-bg-surface-raised">
+                  <h4 className="text-xs font-bold text-text-primary">Monitored Device</h4>
+                  <p className="text-[10px] text-text-secondary mt-1 mb-3">This device is monitored for presence and network telemetry only. Promote this device to a Managed Node to configure credentials, scan packages, and install updates.</p>
+                  <button 
+                    type="button"
+                    onClick={() => handleUpdateManagementState('MANAGED')}
+                    className="px-4 py-2 bg-accent-primary hover:bg-accent-primary/90 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-2"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    Promote to Managed Node
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg">
               <div>
