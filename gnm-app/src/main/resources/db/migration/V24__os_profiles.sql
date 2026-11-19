@@ -60,8 +60,8 @@ INSERT INTO os_profile (
       "verifyCommand": "command -v dpkg-query >/dev/null 2>&1"
     }'::jsonb,
     '{"LC_ALL": "C", "LANG": "C"}'::jsonb,
-    '{
-      "command": "dpkg-query -W -f=''${Status}\t${Package}\t${Version}\t${Architecture}\t${source:Package}\t${source:Version}\n''",
+    ('{
+      "command": "dpkg-query -W -f=''$' || '{Status}\t$' || '{Package}\t$' || '{Version}\t$' || '{Architecture}\t$' || '{source:Package}\t$' || '{source:Version}\n''",
       "requiresPrivilege": false,
       "timeoutSeconds": 60,
       "parserType": "DELIMITED",
@@ -78,7 +78,7 @@ INSERT INTO os_profile (
         }
       },
       "purlTemplate": "pkg:deb/{{os.id}}/{{name}}@{{version}}?arch={{arch}}"
-    }'::jsonb,
+    }')::jsonb,
     '{
       "refreshCommand": "apt-get update -qq",
       "refreshRequiresPrivilege": true,
