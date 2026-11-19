@@ -18,6 +18,7 @@ import { Topology } from './pages/Topology'
 import { Vault } from './pages/Vault'
 import { Alerts } from './pages/Alerts'
 import { Settings } from './pages/Settings'
+import { VulnerabilitiesPage } from './pages/VulnerabilitiesPage'
 
 // 1. Root Router Guard Component
 const RootComponent = () => {
@@ -94,6 +95,12 @@ const alertsRoute = createRoute({
   component: Alerts
 })
 
+const vulnerabilitiesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/vulnerabilities',
+  component: VulnerabilitiesPage
+})
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
@@ -107,6 +114,7 @@ const routeTree = rootRoute.addChildren([
   topologyRoute,
   vaultRoute,
   alertsRoute,
+  vulnerabilitiesRoute,
   settingsRoute,
   loginRoute
 ])

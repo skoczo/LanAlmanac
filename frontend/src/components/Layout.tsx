@@ -134,8 +134,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     { name: 'Dashboard', icon: LayoutDashboard, path: '/' },
     { name: 'Devices', icon: Server, path: '/devices' },
     { name: 'Network Map', icon: Network, path: '/topology' },
+    { name: 'Vulnerabilities', icon: ShieldAlert, path: '/vulnerabilities' },
     { name: 'Vault', icon: KeyRound, path: '/vault' },
-    { name: 'Alerts', icon: ShieldAlert, path: '/alerts' },
+    { name: 'Alerts', icon: Bell, path: '/alerts' },
     { name: 'Settings', icon: Settings, path: '/settings' },
   ]
 

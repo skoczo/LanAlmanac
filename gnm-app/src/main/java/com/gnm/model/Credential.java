@@ -1,11 +1,14 @@
 package com.gnm.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.gnm.model.enums.CredentialCategory;
+import com.gnm.model.enums.CredentialType;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.gnm.model.enums.CredentialType;
 
 @Entity
 @Table(name = "credential")
@@ -44,4 +47,12 @@ public class Credential extends PanacheEntityBase {
 
     @Column(name = "updated_at", nullable = false)
     public Instant updatedAt;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+            name = "credential_category",
+            joinColumns = @JoinColumn(name = "credential_id"))
+    @Enumerated(EnumType.STRING)
+    @Column(name = "category", nullable = false)
+    public Set<CredentialCategory> categories = new HashSet<>();
 }

@@ -16,11 +16,14 @@ public record AuthTicket(
         Instant expiresAt) {
 
     public static final String PURPOSE_SSE_UPDATE = "sse-update";
+    public static final String PURPOSE_SSE_PATCH_JOB = "sse-patch-job";
     public static final String PURPOSE_WS_TERMINAL = "ws-terminal";
     public static final String PURPOSE_WS_EVENTS = "ws-events";
 
-    public static final Set<String> VALID_PURPOSES = Set.of(
-            PURPOSE_SSE_UPDATE,
-            PURPOSE_WS_TERMINAL,
-            PURPOSE_WS_EVENTS);
+    public static final Set<String> VALID_PURPOSES =
+            Set.of(
+                    PURPOSE_SSE_UPDATE,
+                    PURPOSE_SSE_PATCH_JOB,
+                    PURPOSE_WS_TERMINAL,
+                    PURPOSE_WS_EVENTS);
 }

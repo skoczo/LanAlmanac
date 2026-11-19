@@ -24,6 +24,9 @@ import {
   RefreshCcw
 } from 'lucide-react'
 import { Terminal } from '../components/Terminal'
+import { DevicePackagesTab } from '../components/packages/DevicePackagesTab'
+import { DeviceUpdatesTab } from '../components/packages/DeviceUpdatesTab'
+import { DeviceVulnerabilitiesTab } from '../components/packages/DeviceVulnerabilitiesTab'
 import { useNavigate } from '@tanstack/react-router'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
@@ -79,7 +82,18 @@ interface Credential {
   credentialType: string
   username: string
   port: number
+  categories?: string[]
 }
+
+const CREDENTIAL_CATEGORIES = [
+  { id: 'PKG_MANAGEMENT', label: 'Pkg Management (Primary)', badgeClass: 'bg-accent-primary/15 text-accent-primary border-accent-primary/30' },
+  { id: 'PKG_MANAGEMENT_FALLBACK', label: 'Pkg Management (Fallback)', badgeClass: 'bg-accent-warning/15 text-accent-warning border-accent-warning/30' },
+  { id: 'SSH_TERMINAL', label: 'SSH Terminal', badgeClass: 'bg-accent-success/15 text-accent-success border-accent-success/30' },
+  { id: 'WEB_ADMIN', label: 'Web Admin', badgeClass: 'bg-border-subtle/60 text-text-secondary border-border-subtle' },
+  { id: 'MONITORING', label: 'Monitoring', badgeClass: 'bg-border-subtle/60 text-text-secondary border-border-subtle' },
+  { id: 'API', label: 'API', badgeClass: 'bg-border-subtle/60 text-text-secondary border-border-subtle' },
+  { id: 'GENERAL', label: 'General', badgeClass: 'bg-border-subtle/60 text-text-secondary border-border-subtle' }
+] as const
 
 interface NetworkService {
   id: string
@@ -147,7 +161,7 @@ export const DeviceDetail: React.FC = () => {
   const [links, setLinks] = useState<NetworkLink[]>([])
   const [allDevices, setAllDevices] = useState<Device[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'identities' | 'fingerprint' | 'correlation' | 'status_history' | 'services' | 'credentials' | 'monitor' | 'connections' | 'settings'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'packages' | 'updates' | 'vulnerabilities' | 'identities' | 'fingerprint' | 'correlation' | 'status_history' | 'services' | 'credentials' | 'monitor' | 'connections' | 'settings'>('overview')
   const [newLabel, setNewLabel] = useState('')
   const [showAddLink, setShowAddLink] = useState(false)
   const [newLink, setNewLink] = useState({ targetDeviceId: '' })
@@ -157,7 +171,23 @@ export const DeviceDetail: React.FC = () => {
   
   const [showAddCred, setShowAddCred] = useState(false)
   const [editingCredId, setEditingCredId] = useState<string | null>(null)
-  const [newCred, setNewCred] = useState({ label: '', type: 'SSH_KEY', username: '', secret: '', port: '' })
+  const [newCred, setNewCred] = useState<{
+    label: string
+    type: string
+    username: string
+    secret: string
+    port: string
+    categories: string[]
+    reassignExclusiveCategories: boolean
+  }>({
+    label: '',
+    type: 'SSH_KEY',
+    username: '',
+    secret: '',
+    port: '',
+    categories: [],
+    reassignExclusiveCategories: true
+  })
   const [revealedCreds, setRevealedCreds] = useState<Record<string, string>>({})
   
   const [showAddService, setShowAddService] = useState(false)
@@ -305,7 +335,7 @@ export const DeviceDetail: React.FC = () => {
       setDevice(deviceData)
       setShowAddCred(false)
       setEditingCredId(null)
-      setNewCred({ label: '', type: 'SSH_KEY', username: '', secret: '', port: '' })
+      setNewCred({ label: '', type: 'SSH_KEY', username: '', secret: '', port: '', categories: [], reassignExclusiveCategories: true })
     } catch (err) {
       console.error(err)
     }
@@ -507,7 +537,7 @@ export const DeviceDetail: React.FC = () => {
 
     {/* Navigation tabs */}
       <div className="flex items-center border-b border-border-subtle gap-2 overflow-x-auto">
-        {(['overview', 'identities', 'fingerprint', 'correlation', 'status_history', 'services', 'credentials', 'monitor', 'connections', 'settings'] as const).map((tab) => (
+        {(['overview', 'packages', 'updates', 'vulnerabilities', 'identities', 'fingerprint', 'correlation', 'status_history', 'services', 'credentials', 'monitor', 'connections', 'settings'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -954,7 +984,7 @@ export const DeviceDetail: React.FC = () => {
               <button
                 onClick={() => {
                   setEditingCredId(null)
-                  setNewCred({ label: '', type: 'SSH_KEY', username: '', secret: '', port: '' })
+                  setNewCred({ label: '', type: 'SSH_KEY', username: '', secret: '', port: '', categories: [], reassignExclusiveCategories: true })
                   setShowAddCred(true)
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-primary text-white rounded-lg text-sm font-semibold hover:bg-accent-primary-hover transition-colors"
@@ -968,12 +998,23 @@ export const DeviceDetail: React.FC = () => {
                 {device.credentials.map((cred) => (
                   <div key={cred.id} className="flex justify-between items-center p-4 rounded-xl bg-bg-surface-raised border border-border-subtle hover:border-accent-primary/50 transition-colors">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <KeyRound className="w-4 h-4 text-text-secondary" />
                         <span className="font-bold text-text-primary">{cred.label}</span>
                         <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-border-subtle/50 text-text-secondary">
                           {cred.credentialType.replace('_', ' ')}
                         </span>
+                        {(cred.categories || []).map(catId => {
+                          const catMeta = CREDENTIAL_CATEGORIES.find(c => c.id === catId)
+                          return (
+                            <span
+                              key={catId}
+                              className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border ${catMeta?.badgeClass || 'bg-border-subtle/50 text-text-secondary border-border-subtle'}`}
+                            >
+                              {catMeta?.label || catId}
+                            </span>
+                          )
+                        })}
                       </div>
                       <div className="text-sm text-text-secondary mt-1 ml-6">
                         {cred.username ? <span className="font-mono">{cred.username}</span> : 'No Username'}
@@ -1004,7 +1045,9 @@ export const DeviceDetail: React.FC = () => {
                             type: cred.credentialType,
                             username: cred.username || '',
                             port: cred.port ? String(cred.port) : '',
-                            secret: ''
+                            secret: '',
+                            categories: cred.categories || [],
+                            reassignExclusiveCategories: true
                           })
                           setEditingCredId(cred.id)
                           setShowAddCred(true)
@@ -1126,6 +1169,37 @@ export const DeviceDetail: React.FC = () => {
                           rows={4}
                           className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary font-mono focus:outline-none focus:border-accent-primary"
                         />
+                      </div>
+
+                      <div>
+                        <span className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1.5">Categories & Roles</span>
+                        <div className="flex flex-wrap gap-2">
+                          {CREDENTIAL_CATEGORIES.map((cat) => {
+                            const selected = newCred.categories.includes(cat.id)
+                            return (
+                              <button
+                                key={cat.id}
+                                type="button"
+                                onClick={() => {
+                                  const next = selected
+                                    ? newCred.categories.filter(c => c !== cat.id)
+                                    : [...newCred.categories, cat.id]
+                                  setNewCred({ ...newCred, categories: next })
+                                }}
+                                className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors cursor-pointer ${
+                                  selected
+                                    ? 'bg-accent-primary/20 text-accent-primary border-accent-primary'
+                                    : 'bg-bg-base text-text-secondary border-border-subtle hover:border-text-secondary'
+                                }`}
+                              >
+                                {cat.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                        <p className="text-[11px] text-text-muted mt-1.5">
+                          Assigning <code>Pkg Management (Primary)</code> or <code>(Fallback)</code> automatically moves that role from any other credential on this device.
+                        </p>
                       </div>
                     </form>
                   </div>
@@ -1611,38 +1685,18 @@ export const DeviceDetail: React.FC = () => {
 
             <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg">
               <div>
-                <h3 className="font-bold text-sm tracking-tight text-accent-danger">System Operations</h3>
-                <p className="text-xs text-text-secondary mt-1">Execute high-privilege remote commands.</p>
+                <h3 className="font-bold text-sm tracking-tight text-accent-primary">Package & Patch Operations</h3>
+                <p className="text-xs text-text-secondary mt-1">Manage updates, vulnerability remediation, and live SSH patch execution.</p>
               </div>
-              <div className="p-4 rounded-xl border border-accent-danger/20 bg-accent-danger/5">
-                <h4 className="text-xs font-bold text-text-primary">Remote Package Update</h4>
-                <p className="text-[10px] text-text-secondary mt-1 mb-3">Execute apt-get update & upgrade over SSH using the default saved credential.</p>
+              <div className="p-4 rounded-xl border border-border-subtle bg-bg-surface-raised">
+                <h4 className="text-xs font-bold text-text-primary">Agentless Package & Patch Manager</h4>
+                <p className="text-[10px] text-text-secondary mt-1 mb-3">Check available package updates, configure sudoers.d, or run OS-profile-aware upgrades with live console streaming.</p>
                 <button 
-                  onClick={async () => {
-                    try {
-                      const { ticket } = await apiClient<{ ticket: string; expiresAt: string }>('/api/auth/ticket', {
-                        method: 'POST',
-                        body: JSON.stringify({ purpose: 'sse-update', resourceId: device.id })
-                      });
-                      const evtSource = new EventSource(`/api/devices/${device.id}/update?ticket=${encodeURIComponent(ticket)}`);
-                      evtSource.onmessage = function(event) {
-                        console.log("Update output: ", event.data);
-                        if (event.data.includes("Update Complete") || event.data.includes("Update Failed") || event.data.includes("Error:")) {
-                          evtSource.close();
-                          alert(event.data);
-                        }
-                      };
-                      evtSource.onerror = function() {
-                        evtSource.close();
-                      };
-                    } catch (err) {
-                      console.error("Failed to start system update:", err);
-                      alert("Error: Failed to obtain authorization ticket for update.");
-                    }
-                  }}
-                  className="px-4 py-2 bg-accent-danger hover:bg-accent-danger/90 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                  type="button"
+                  onClick={() => setActiveTab('updates')}
+                  className="px-4 py-2 bg-accent-primary hover:bg-accent-primary/90 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
                 >
-                  Apply System Updates
+                  Open Updates & Patching
                 </button>
               </div>
             </div>
@@ -1680,6 +1734,10 @@ export const DeviceDetail: React.FC = () => {
             </div>
           </div>
         )}
+
+        {activeTab === 'packages' && <DevicePackagesTab deviceId={device.id} />}
+        {activeTab === 'updates' && <DeviceUpdatesTab deviceId={device.id} />}
+        {activeTab === 'vulnerabilities' && <DeviceVulnerabilitiesTab deviceId={device.id} />}
 
       </div>
     </div>

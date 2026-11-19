@@ -67,7 +67,7 @@ Cel etapu: zamrożenie kontraktu OpenAPI `v1` oraz działający, przetestowany k
 
 Cel etapu: kompletna, przetestowana ścieżka `gnm-app` → `gnm-pkg-worker` → SSH host (TOFU + `PASSWORD` i `SSH_KEY`), baza profili OS (`V24`) i auto-detekcja bez `if/else`.
 
-### 1.1 [ ] Transport SSH w `gnm-pkg-worker`: `/v1/ssh/fingerprint` i `/v1/probe` — **M**
+### 1.1 [x] Transport SSH w `gnm-pkg-worker`: `/v1/ssh/fingerprint` i `/v1/probe` — **M**
 **Cel:** pobranie fingerprintu host key bez poświadczeń, weryfikacja `expectedHostKeySha256` przed auth, obsługa `PASSWORD` i `SSH_KEY` (Ed25519/RSA/ECDSA) z zerowaniem sekretu w RAM oraz generyczny probe POSIX.
 
 **Pliki:**
@@ -86,7 +86,7 @@ Cel etapu: kompletna, przetestowana ścieżka `gnm-app` → `gnm-pkg-worker` →
 
 ---
 
-### 1.2 [ ] `PkgWorkerClient`, `PkgWorkerHmacSigner`, `DeviceLockManager` i `CredentialResolver` w `gnm-app` — **M**
+### 1.2 [x] `PkgWorkerClient`, `PkgWorkerHmacSigner`, `DeviceLockManager` i `CredentialResolver` w `gnm-app` — **M**
 **Cel:** klient HTTP/NDJSON w `gnm-app` z podpisem HMAC-SHA256, twardą bramką TOFU przed odszyfrowaniem z `VaultEngine`, zerowaniem `byte[]`/`char[]`, lockiem per urządzenie oraz deterministycznym doborem poświadczeń wg kategorii (ADR-9).
 
 **Pliki:**
@@ -118,7 +118,7 @@ Cel etapu: kompletna, przetestowana ścieżka `gnm-app` → `gnm-pkg-worker` →
 
 ---
 
-### 1.3 [ ] Migracja `V24__os_profiles.sql`, encja `OsProfile`, `credential_category`, `ProfileValidator` i `OsProfileMatcher` — **M**
+### 1.3 [x] Migracja `V24__os_profiles.sql`, encja `OsProfile`, `credential_category`, `ProfileValidator` i `OsProfileMatcher` — **M**
 **Cel:** baza profili OS z 3 profilami systemowymi (`debian-apt`, `rhel-dnf`, `alpine-apk`), wielokategoriowe `Credential` (`credential_category`), walidacja bezpieczeństwa profili oraz auto-detekcja bez `if/else`.
 
 **Pliki:**
@@ -141,7 +141,7 @@ Cel etapu: kompletna, przetestowana ścieżka `gnm-app` → `gnm-pkg-worker` →
 
 ---
 
-### 1.4 [ ] REST API `OsProfileResource` oraz kategorie w `CredentialResource` + UI poświadczeń — **L**
+### 1.4 [x] REST API `OsProfileResource` oraz kategorie w `CredentialResource` + UI poświadczeń — **L**
 **Cel:** kompletne, utwardzone API profili OS (wyłącznie DTO, `@RolesAllowed`, audit log, ADR-7) oraz obsługa wielu kategorii w `CredentialResource` i formularzu poświadczeń w UI (Inwariant #14, ADR-9).
 
 **Pliki:**
@@ -163,7 +163,7 @@ Cel etapu: kompletna, przetestowana ścieżka `gnm-app` → `gnm-pkg-worker` →
 
 Cel etapu: pełna inwentaryzacja pakietów (read-only na hostach) i analiza CVE po stronie serwera z deduplikacją floty.
 
-### 2.1 [ ] 4 generyczne parsery i endpoint `/v1/inventory` w `gnm-pkg-worker` — **M**
+### 2.1 [x] 4 generyczne parsery i endpoint `/v1/inventory` w `gnm-pkg-worker` — **M**
 **Cel:** strumieniowe parsowanie wyjść (`DELIMITED`, `KEY_VALUE_BLOCKS`, `JSON_MAPPING`, `REGEX_LINE`), bezpieczne renderowanie `purlTemplate` i obsługa `sourceName`/`sourceVersion`.
 
 **Pliki:**
@@ -182,7 +182,7 @@ Cel etapu: pełna inwentaryzacja pakietów (read-only na hostach) i analiza CVE 
 
 ---
 
-### 2.2 [ ] Migracja `V25`, `InventoryService` i eksport CycloneDX w `gnm-app` — **L**
+### 2.2 [x] Migracja `V25`, `InventoryService` i eksport CycloneDX w `gnm-app` — **L**
 **Cel:** zapis pakietów w PostgreSQL + generowanie CycloneDX 1.5 JSON w locie.
 
 **Pliki:**
@@ -204,7 +204,7 @@ Cel etapu: pełna inwentaryzacja pakietów (read-only na hostach) i analiza CVE 
 
 ---
 
-### 2.3 [ ] `OsvApiVulnerabilityProvider` i `VulnerabilityAssessmentService` w `gnm-app` — **L**
+### 2.3 [x] `OsvApiVulnerabilityProvider` i `VulnerabilityAssessmentService` w `gnm-app` — **L**
 **Cel:** offline'owa analiza CVE w `gnm-app` z deduplikacją w skali całej floty, obsługą backportów dystrybucyjnych i cache poradników (ADR-1).
 
 **Pliki:**
@@ -228,7 +228,7 @@ Cel etapu: pełna inwentaryzacja pakietów (read-only na hostach) i analiza CVE 
 
 ---
 
-### 2.4 [ ] REST API i Frontend dla Inventory + Vulnerabilities — **L**
+### 2.4 [x] REST API i Frontend dla Inventory + Vulnerabilities — **L**
 **Cel:** kompletne API + zakładki `Packages` i `Vulnerabilities` w `DeviceDetail` oraz globalny widok `/vulnerabilities` (Inwariant #14).
 
 **Pliki:**
@@ -249,7 +249,7 @@ Cel etapu: pełna inwentaryzacja pakietów (read-only na hostach) i analiza CVE 
 
 ## Etap 3 — Krok 2 (Update Check, `sudo -n` + generator `sudoers.d`, locki)
 
-### 3.1 [ ] Endpoint `/v1/updates/check` w `gnm-pkg-worker` — **M**
+### 3.1 [x] Endpoint `/v1/updates/check` w `gnm-pkg-worker` — **M**
 **Cel:** dwufazowe sprawdzanie aktualizacji (`refresh` + `check`), retry na locki menedżera pakietów, obsługa niestandardowych kodów wyjścia (`100` dla `dnf`) oraz weryfikacja `elevationMode` (ADR-3).
 
 **Pliki:**
@@ -266,7 +266,7 @@ Cel etapu: pełna inwentaryzacja pakietów (read-only na hostach) i analiza CVE 
 
 ---
 
-### 3.2 [ ] Migracja `V26`, `UpdateCheckService`, `SudoersSnippetGenerator` i UI — **L**
+### 3.2 [x] Migracja `V26`, `UpdateCheckService`, `SudoersSnippetGenerator` i UI — **L**
 **Cel:** zapis dostępnych aktualizacji, korelacja `fix_available_now` z CVE oraz zakładka Updates + generator `/etc/sudoers.d/lanalmanac`.
 
 **Pliki:**
@@ -288,7 +288,7 @@ Cel etapu: pełna inwentaryzacja pakietów (read-only na hostach) i analiza CVE 
 
 ## Etap 4 — Krok 3 (Patch Job Engine, Live Streaming NDJSON → SSE, wygaszenie `UpdateResource`)
 
-### 4.1 [ ] Endpoint `/v1/patch/execute` (NDJSON stream) i `/cancel` w `gnm-pkg-worker` — **L**
+### 4.1 [x] Endpoint `/v1/patch/execute` (NDJSON stream) i `/cancel` w `gnm-pkg-worker` — **L**
 **Cel:** strumieniowe wykonywanie faz patchowania z równoległym odczytem `stdout`/`stderr`, ochroną przeciw Command Injection, detekcją `CONNECTION_LOST` (ADR-4) i obsługą anulowania.
 
 **Pliki:**
@@ -309,7 +309,7 @@ Cel etapu: pełna inwentaryzacja pakietów (read-only na hostach) i analiza CVE 
 
 ---
 
-### 4.2 [ ] Migracja `V27`, `PatchJobService`, `PatchJobLogBroker` i `PatchJobResource` w `gnm-app` — **L**
+### 4.2 [x] Migracja `V27`, `PatchJobService`, `PatchJobLogBroker` i `PatchJobResource` w `gnm-app` — **L**
 **Cel:** trwałe zadania i logi w PostgreSQL, konsumpcja strumienia NDJSON z workera oraz uwierzytelniony SSE z `AuthTicket` i bezstratnym reconnectem (`Last-Event-ID`).
 
 **Pliki:**
@@ -335,7 +335,7 @@ Cel etapu: pełna inwentaryzacja pakietów (read-only na hostach) i analiza CVE 
 
 ---
 
-### 4.3 [ ] Live Log Viewer w UI + wygaszenie starego `UpdateResource.java` — **L**
+### 4.3 [x] Live Log Viewer w UI + wygaszenie starego `UpdateResource.java` — **L**
 **Cel:** obsługa ręcznego uruchamiania aktualizacji z GUI, podgląd logów na żywo z reconnectem i usunięcie zahardkodowanego `UpdateResource.java`.
 
 **Pliki:**
@@ -350,7 +350,7 @@ Cel etapu: pełna inwentaryzacja pakietów (read-only na hostach) i analiza CVE 
 
 ## Etap 5 — Harmonogramy per urządzenie (GUI), Edytor Profili (Dry-Run) i Testy E2E / Kontraktowe
 
-### 5.1 [ ] Migracja `V28`, `DevicePackageSchedule`, `PackageManagementScheduler` i GUI (ADR-5) — **L**
+### 5.1 [x] Migracja `V28`, `DevicePackageSchedule`, `PackageManagementScheduler` i GUI (ADR-5) — **L**
 **Cel:** konfiguracja harmonogramów per urządzenie bezpośrednio z GUI (Inventory, Update Check, opt-in Auto-Patch `SECURITY_ONLY`/`FULL_UPGRADE`) z bezpiecznym wykonaniem i audytem.
 
 **Pliki:**
@@ -377,7 +377,7 @@ Cel etapu: pełna inwentaryzacja pakietów (read-only na hostach) i analiza CVE 
 
 ---
 
-### 5.2 [ ] Dry-run (`POST /api/os-profiles/test`) i `OsProfilesSettingsTab.tsx` — **L**
+### 5.2 [x] Dry-run (`POST /api/os-profiles/test`) i `OsProfilesSettingsTab.tsx` — **L**
 **Cel:** dodawanie/edycja customowych profili OS, import/eksport JSON (`schemaVersion: 1`) oraz podgląd dry-run z poziomu GUI (`gnm-admin`).
 
 **Pliki:**
@@ -392,7 +392,7 @@ Cel etapu: pełna inwentaryzacja pakietów (read-only na hostach) i analiza CVE 
 
 ---
 
-### 5.3 [ ] Contract Test Suite (`PkgWorkerContractTest`) przeciw kontenerom labowym — **M**
+### 5.3 [x] Contract Test Suite (`PkgWorkerContractTest`) przeciw kontenerom labowym — **M**
 **Cel:** automatyczna weryfikacja czarnej skrzynki gwarantująca, że `gnm-pkg-worker` (oraz każda jego przyszła podmiana) spełnia w 100% `contracts/pkg-worker-v1.openapi.yaml` na realnych obrazach Debian/Ubuntu, CentOS/Rocky i Alpine.
 
 **Pliki:**
@@ -408,7 +408,7 @@ Cel etapu: pełna inwentaryzacja pakietów (read-only na hostach) i analiza CVE 
 
 ---
 
-### 5.4 [ ] Testy E2E Playwright (`frontend/tests/package-management.spec.ts`) — **M**
+### 5.4 [x] Testy E2E Playwright (`frontend/tests/package-management.spec.ts`) — **M**
 **Cel:** automatyczne testy end-to-end kluczowych ścieżek UI.
 
 **Pliki:**

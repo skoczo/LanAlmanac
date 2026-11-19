@@ -1,16 +1,20 @@
 package com.gnm.model;
 
+import com.gnm.model.enums.DeviceStatus;
+import com.gnm.model.enums.DeviceType;
+import com.gnm.model.enums.ManagementState;
+import com.gnm.pkgmgmt.profile.OsProfile;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
-import com.gnm.model.enums.DeviceStatus;
-import com.gnm.model.enums.DeviceType;
-import com.gnm.model.enums.ManagementState;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "physical_device")
@@ -90,4 +94,24 @@ public class PhysicalDevice extends PanacheEntityBase {
 
     @OneToMany(mappedBy = "physicalDevice", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     public Set<NetworkService> services = new HashSet<>();
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "os_profile_id")
+    public OsProfile osProfile;
+
+    @Column(name = "os_profile_pinned", nullable = false)
+    public boolean osProfilePinned = false;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "os_facts", columnDefinition = "jsonb")
+    public Map<String, String> osFacts;
+
+    @Column(name = "os_detected_at")
+    public Instant osDetectedAt;
+
+    @Column(name = "updates_last_checked_at")
+    public Instant updatesLastCheckedAt;
+
+    @Column(name = "reboot_required", nullable = false)
+    public boolean rebootRequired = false;
 }

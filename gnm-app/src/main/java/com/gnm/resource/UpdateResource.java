@@ -76,7 +76,31 @@ public class UpdateResource {
             byte[] noncePayload,
             UUID serviceId,
             String sshHostKey,
-            boolean sshHostKeyTrusted) {}
+            boolean sshHostKeyTrusted,
+            String command) {
+        UpdateTarget(
+                UUID deviceId,
+                String ipAddress,
+                String username,
+                int port,
+                byte[] encryptedPayload,
+                byte[] noncePayload,
+                UUID serviceId,
+                String sshHostKey,
+                boolean sshHostKeyTrusted) {
+            this(
+                    deviceId,
+                    ipAddress,
+                    username,
+                    port,
+                    encryptedPayload,
+                    noncePayload,
+                    serviceId,
+                    sshHostKey,
+                    sshHostKeyTrusted,
+                    "true");
+        }
+    }
 
     @Inject
     public UpdateResource(
@@ -146,6 +170,13 @@ public class UpdateResource {
                 .findFirst()
                 .orElse(null);
 
+        String profileCommand = resolveProfileUpgradeCommand(device);
+        if (profileCommand == null) {
+            sink.send(sse.newEvent("Error: No OS profile assigned to device."));
+            sink.close();
+            return;
+        }
+
         UpdateTarget target = new UpdateTarget(
                 id,
                 ipAddress,
@@ -155,7 +186,8 @@ public class UpdateResource {
                 Arrays.copyOf(cred.noncePayload, cred.noncePayload.length),
                 sshService != null ? sshService.id : null,
                 sshService != null ? sshService.sshHostKey : null,
-                sshService != null && Boolean.TRUE.equals(sshService.sshHostKeyTrusted));
+                sshService != null && Boolean.TRUE.equals(sshService.sshHostKeyTrusted),
+                profileCommand);
 
         Thread.startVirtualThread(() -> executeUpdate(target, sink, sse));
     }
@@ -184,6 +216,22 @@ public class UpdateResource {
 
     private static boolean hasOperatorOrAdminRole(Set<String> roles) {
         return roles != null && (roles.contains("gnm-admin") || roles.contains("gnm-operator"));
+    }
+
+    private static String resolveProfileUpgradeCommand(PhysicalDevice device) {
+        if (device == null
+                || device.osProfile == null
+                || device.osProfile.patchExecSpec == null
+                || device.osProfile.patchExecSpec.fullUpgradeCommand() == null) {
+            return null;
+        }
+        String cmd = device.osProfile.patchExecSpec.fullUpgradeCommand();
+        if (device.osProfile.patchExecSpec.requiresPrivilege()
+                && device.osProfile.privilegeSpec != null
+                && device.osProfile.privilegeSpec.wrapperTemplate() != null) {
+            cmd = device.osProfile.privilegeSpec.wrapperTemplate().replace("{{command}}", cmd);
+        }
+        return cmd;
     }
 
     void executeUpdate(UpdateTarget target, SseEventSink sink, Sse sse) {
@@ -248,7 +296,7 @@ public class UpdateResource {
             Arrays.fill(passwordChars, '\0');
             session.auth().verify(10000);
 
-            String command = "sudo apt-get update && sudo apt-get upgrade -y";
+            String command = target.command();
             try (ChannelExec channel = session.createExecChannel(command)) {
                 channel.open().verify(5000);
 

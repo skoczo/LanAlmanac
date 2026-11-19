@@ -75,14 +75,29 @@ Aktualizuj ten plik, gdy przeniesiesz lub dodasz istotny plik.
 | `fingerprint/probes/Jndi*.java` | JNDI DNS — **do przepisania**, Etap 5.5 |
 | `service/SubnetFilter.java` | walidacja CIDR, czysta logika — dobry kandydat na testy jqwik |
 
-### Konfiguracja i infrastruktura
+### Config & Infrastructure
 | Plik | Uwaga |
 |:---|:---|
 | `src/main/resources/application.properties` | linia 35: lista ścieżek publicznych — Etap 1; 8-9, 51: domyślne poświadczenia — Etap 4 |
-| `src/main/resources/db/migration/` | V1-V23; kolejna migracja to **V24** |
+| `src/main/resources/db/migration/` | V1-V28 (V24..V28: OS profiles, packages/vulnerabilities, available updates, patch jobs, schedules) |
 | `build.gradle.kts` | linia 77 `ignoreFailures = true` — Etap 7.1 |
 | `../build.gradle.kts` (root) | Sonar `sonar.sources=frontend/src` tylko — Etap 7.3 |
 | `../.github/workflows/build-and-push.yml` | `continue-on-error` w 47 i 54 — Etap 7.2 |
+
+### Agentless Package, Update, Patch & Vulnerability Management (`com.gnm.pkgmgmt.*` + `gnm-pkg-worker/`)
+| Plik | Co zawiera |
+|:---|:---|
+| `contracts/pkg-worker-v1.openapi.yaml` | Kontrakt `v1` pomiędzy `gnm-app` a bezstanowym kontenerem Go `gnm-pkg-worker` |
+| `gnm-pkg-worker/` | Bezstanowy worker Go 1.23+ (`internal/auth`, `internal/sshclient`, `internal/parsers`, `internal/updates`, `internal/patcher`, `internal/httpapi`) |
+| `pkgmgmt/worker/PkgWorkerClient.java` | Klient HTTP/NDJSON z podpisem HMAC-SHA256 (`PkgWorkerHmacSigner`), TOFU, `CredentialResolver`, `DeviceLockManager` |
+| `pkgmgmt/profile/*` | `OsProfileSpecs`, `ProfileValidator`, `OsProfileMatcher`, `OsDiscoveryService` |
+| `pkgmgmt/inventory/*` | `InventoryService`, `CycloneDxExportService`, `InventoryUpdatedEvent` |
+| `pkgmgmt/vuln/*` | `VulnerabilityProvider`, `OsvApiVulnerabilityProvider`, `VulnerabilityAssessmentService` |
+| `pkgmgmt/updates/*` | `UpdateCheckService`, `SudoersSnippetGenerator` |
+| `pkgmgmt/patch/*` | `PatchJobService`, `PatchJobLogBroker` (SSE replay + delayed 60s re-check on `CONNECTION_LOST`) |
+| `pkgmgmt/schedule/*` | `CronScheduleCalculator`, `PackageManagementScheduler` |
+| `resource/OsProfileResource.java`, `DevicePackageResource.java`, `VulnerabilityResource.java`, `PatchJobResource.java` | Endpointy REST/SSE z DTO i `@RolesAllowed` |
+| `frontend/src/components/packages/*`, `pages/VulnerabilitiesPage.tsx`, `pages/OsProfilesSettingsTab.tsx` | UI: Packages, Vulnerabilities, Updates, Live Patch Log Modal, Per-Device Schedule, OS Profiles Settings |
 
 ## Frontend — `frontend/src/`
 

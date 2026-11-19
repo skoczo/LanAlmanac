@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Save, Loader2, AlertCircle, Settings as SettingsIcon, Users } from 'lucide-react'
+import { Save, Loader2, AlertCircle, Settings as SettingsIcon, Users, Terminal } from 'lucide-react'
 import { useAuth } from '../lib/auth/auth-context'
 import { UsersTab } from './UsersTab'
 import { BackupSettingsTab } from './BackupSettingsTab'
+import { OsProfilesSettingsTab } from './OsProfilesSettingsTab'
 
 interface Setting {
   key: string
@@ -10,7 +11,7 @@ interface Setting {
 }
 
 export const Settings = () => {
-  const [activeTab, setActiveTab] = useState<'system' | 'users' | 'backup'>('system')
+  const [activeTab, setActiveTab] = useState<'system' | 'users' | 'backup' | 'os-profiles'>('system')
   const [settings, setSettings] = useState<Setting[]>([])
   const [interfaces, setInterfaces] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -153,6 +154,16 @@ export const Settings = () => {
             <Save className="w-4 h-4" /> Backup & Restore
           </button>
         )}
+        <button
+          onClick={() => setActiveTab('os-profiles')}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-colors ${
+            activeTab === 'os-profiles'
+              ? 'border-accent-primary text-accent-primary'
+              : 'border-transparent text-text-secondary hover:text-text-primary'
+          }`}
+        >
+          <Terminal className="w-4 h-4" /> OS Profiles
+        </button>
       </div>
 
       {activeTab === 'system' ? (
@@ -237,6 +248,8 @@ export const Settings = () => {
         </div>
       ) : activeTab === 'users' ? (
         <UsersTab />
+      ) : activeTab === 'os-profiles' ? (
+        <OsProfilesSettingsTab />
       ) : (
         <BackupSettingsTab />
       )}
