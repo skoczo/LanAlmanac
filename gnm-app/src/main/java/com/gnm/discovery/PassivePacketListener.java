@@ -269,10 +269,13 @@ public class PassivePacketListener {
                         String requestedIp = null;
                         String clientMac = mac; // fallback to Ethernet header
                         String clientIp = "0.0.0.0";
+                        int dhcpMsgType = 0;
                         
                         try {
                             byte[] udpPayload = udp.getPayload() != null ? udp.getPayload().getRawData() : null;
                             if (udpPayload != null && udpPayload.length > 240) {
+                                int op = udpPayload[0] & 0xFF; // 1 = BOOTREQUEST (client), 2 = BOOTREPLY (server)
+
                                 // Extract client MAC from chaddr field (bytes 28-33)
                                 String chaddr = String.format("%02X:%02X:%02X:%02X:%02X:%02X",
                                         udpPayload[28] & 0xFF, udpPayload[29] & 0xFF,
@@ -314,6 +317,8 @@ public class PassivePacketListener {
                                         if (!"0.0.0.0".equals(reqIp)) {
                                             requestedIp = reqIp;
                                         }
+                                    } else if (optType == 53 && optLen == 1) { // DHCP Message Type
+                                        dhcpMsgType = optData[0] & 0xFF;
                                     } else if (optType == 55) { // Parameter Request List
                                         StringBuilder sb = new StringBuilder();
                                         for (int j = 0; j < optData.length; j++) {
@@ -327,14 +332,20 @@ public class PassivePacketListener {
                                     i += 2 + optLen;
                                 }
 
-                                // Determine client IP: yiaddr > ciaddr > Option 50 requestedIp > IP header src
+                                // Ignore DHCPDECLINE (4), DHCPNAK (6), DHCPRELEASE (7)
+                                if (dhcpMsgType == 4 || dhcpMsgType == 6 || dhcpMsgType == 7) {
+                                    return Optional.empty();
+                                }
+
+                                // Determine client IP: yiaddr > ciaddr > (for client BOOTREQUEST only: Option 50 requestedIp > client IP header src)
+                                // Never use IP header src when op == 2 (BOOTREPLY from DHCP server, e.g. 192.168.1.1)!
                                 if (!"0.0.0.0".equals(yiaddr)) {
                                     clientIp = yiaddr;
                                 } else if (!"0.0.0.0".equals(ciaddr)) {
                                     clientIp = ciaddr;
-                                } else if (requestedIp != null) {
+                                } else if (op == 1 && requestedIp != null) {
                                     clientIp = requestedIp;
-                                } else if (!"0.0.0.0".equals(ip)) {
+                                } else if (op == 1 && srcPort == 68 && !"0.0.0.0".equals(ip)) {
                                     clientIp = ip;
                                 }
                             }

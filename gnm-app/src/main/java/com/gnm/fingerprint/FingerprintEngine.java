@@ -132,9 +132,6 @@ public class FingerprintEngine {
                     LOG.debugf("Ignoring sighting for IP %s as it is outside allowed subnet (%s)", sighting.ipAddress, subnetFilter.getSubnetConfig());
                     continue;
                 }
-                
-                // Smart Presence Engine - record activity to prevent unnecessary active probing
-                livenessManager.recordActivity(sighting.ipAddress);
 
                 String debounceKey = sighting.ipAddress + "|" + sighting.macAddress + "|" + (sighting.source != null ? sighting.source : "");
                 java.time.Instant lastDbUpdate = lastDbUpdateTimes.get(debounceKey);

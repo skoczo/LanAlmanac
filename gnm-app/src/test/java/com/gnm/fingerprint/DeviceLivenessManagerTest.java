@@ -150,6 +150,55 @@ class DeviceLivenessManagerTest {
         assertEquals(DeviceStatus.OFFLINE, dbDevice.status);
     }
 
+    @Test
+    void testEvaluatePresence_HistoricalIdentityDoesNotKeepDeviceOnline() {
+        String historicalIp = "10.0.0.1";
+        addHistoricalIdentity(historicalIp);
+        pushDeviceLastSeenBack(150);
+
+        // Another active device is talking on the historical IP
+        livenessManager.recordActivity(historicalIp);
+
+        livenessManager.evaluatePresence();
+
+        PhysicalDevice dbDevice = PhysicalDevice.findById(testDevice.id);
+        assertEquals(DeviceStatus.OFFLINE, dbDevice.status);
+    }
+
+    @Test
+    void testEvaluatePresence_NoCurrentIdentitiesMarksDeviceOffline() {
+        deactivateAllIdentities();
+        livenessManager.recordActivity(testIp);
+
+        livenessManager.evaluatePresence();
+
+        PhysicalDevice dbDevice = PhysicalDevice.findById(testDevice.id);
+        assertEquals(DeviceStatus.OFFLINE, dbDevice.status);
+    }
+
+    @Transactional
+    protected void addHistoricalIdentity(String ip) {
+        testDevice = PhysicalDevice.findById(testDevice.id);
+        NetworkIdentity oldId = new NetworkIdentity();
+        oldId.physicalDevice = testDevice;
+        oldId.ipAddress = ip;
+        oldId.macAddress = "00:11:22:33:44:55";
+        oldId.firstSeen = Instant.now().minusSeconds(3600);
+        oldId.lastSeen = Instant.now().minusSeconds(3600);
+        oldId.current = false;
+        oldId.persist();
+        testDevice.identities.add(oldId);
+        testDevice.persist();
+    }
+
+    @Transactional
+    protected void deactivateAllIdentities() {
+        for (NetworkIdentity id : NetworkIdentity.<NetworkIdentity>list("physicalDevice.id", testDevice.id)) {
+            id.current = false;
+            id.persist();
+        }
+    }
+
     @Transactional
     protected void pushDeviceLastSeenBack(int seconds) {
         testDevice = PhysicalDevice.findById(testDevice.id);

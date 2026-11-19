@@ -100,20 +100,23 @@ public class DeviceLivenessManager {
     }
 
     private void processDevicePresence(PhysicalDevice device, Instant now, int activeCheckSeconds, int offlineSeconds) {
-        // Collect IPs
-        List<String> deviceIps = device.identities.stream()
+        // Collect current active IPs only
+        List<String> currentIps = device.identities.stream()
+            .filter(id -> id.current)
             .map(id -> id.ipAddress)
             .filter(ip -> ip != null && !ip.isBlank())
             .distinct()
             .toList();
 
-        if (deviceIps.isEmpty()) return;
+        // If the device has no current active identities on the network, it cannot be considered online
+        if (currentIps.isEmpty()) {
+            if (device.status != DeviceStatus.OFFLINE) {
+                self.markOffline(device.id, null);
+            }
+            return;
+        }
 
-        String currentIp = device.identities.stream()
-            .filter(id -> id.current)
-            .map(id -> id.ipAddress)
-            .findFirst()
-            .orElse(deviceIps.get(0));
+        String currentIp = currentIps.get(0);
 
         // Mobile phones get longer timeouts (usually sleep longer to save battery)
         int effOfflineSeconds = offlineSeconds;
@@ -124,7 +127,7 @@ public class DeviceLivenessManager {
         }
 
         Instant latestSeen = device.lastSeen;
-        for (String ip : deviceIps) {
+        for (String ip : currentIps) {
             Instant memSeen = lastSeenMap.get(ip);
             if (memSeen != null && (latestSeen == null || memSeen.isAfter(latestSeen))) {
                 latestSeen = memSeen;

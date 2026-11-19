@@ -27,6 +27,7 @@ public class DeviceIdentityManager {
     private final SimilarityEngine similarityEngine;
     private final DeviceIdentityManager self;
     private final FingerprintEngine fingerprintEngine;
+    private final DeviceLivenessManager livenessManager;
 
     @ConfigProperty(name = "gnm.fingerprint.merge-threshold", defaultValue = "0.75") Double mergeThreshold;
     private final java.util.concurrent.locks.ReentrantLock dbLock = new java.util.concurrent.locks.ReentrantLock();
@@ -35,20 +36,26 @@ public class DeviceIdentityManager {
 
     @jakarta.transaction.Transactional(jakarta.transaction.Transactional.TxType.REQUIRES_NEW)
     protected void saveSightingInTransaction(NetworkSighting sighting, FingerprintVector candidate, String resolvedHostname) {
-        // 2. Look for existing identity
-        NetworkIdentity identity = NetworkIdentity.find("select n from NetworkIdentity n join fetch n.physicalDevice where n.ipAddress = ?1 and n.macAddress = ?2", 
-                sighting.ipAddress, sighting.macAddress).firstResult();
+        boolean sightingIsPlaceholder = sighting.macAddress == null || sighting.macAddress.equals(DEFAULT_MAC_ZERO) || sighting.macAddress.isEmpty();
+
+        // 2. Look for existing identity (do not match historical non-current placeholder MAC records)
+        NetworkIdentity identity = null;
+        if (!sightingIsPlaceholder) {
+            identity = NetworkIdentity.find("select n from NetworkIdentity n join fetch n.physicalDevice where n.ipAddress = ?1 and n.macAddress = ?2", 
+                    sighting.ipAddress, sighting.macAddress).firstResult();
+        }
 
         if (identity == null) {
             // Check if there is an active identity on this IP first
             NetworkIdentity activeIdOnIp = NetworkIdentity.find("select n from NetworkIdentity n join fetch n.physicalDevice where n.ipAddress = ?1 and n.current = true", sighting.ipAddress).firstResult();
             if (activeIdOnIp != null) {
-                boolean sightingIsPlaceholder = sighting.macAddress == null || sighting.macAddress.equals(DEFAULT_MAC_ZERO) || sighting.macAddress.isEmpty();
                 boolean activeIsPlaceholder = activeIdOnIp.macAddress == null || activeIdOnIp.macAddress.equals(DEFAULT_MAC_ZERO) || activeIdOnIp.macAddress.isEmpty();
                 boolean derivedMacMatch = isDerivedMacMatch(sighting.macAddress, activeIdOnIp.macAddress);
+                boolean allowPlaceholderReuse = sightingIsPlaceholder
+                        && (activeIsPlaceholder || activeIdOnIp.physicalDevice.status == DeviceStatus.ONLINE);
 
-                // Reuse activeIdOnIp if placeholder OR if sighting MAC is derived from active MAC (e.g. VAP / randomized MAC on OpenWrt/Linux)
-                if (sightingIsPlaceholder || activeIsPlaceholder || derivedMacMatch) {
+                // Reuse activeIdOnIp if placeholder (for online/placeholder devices) OR if sighting MAC is derived from active MAC (e.g. VAP / randomized MAC on OpenWrt/Linux)
+                if (allowPlaceholderReuse || activeIsPlaceholder || derivedMacMatch) {
                     identity = activeIdOnIp;
                     if (!sightingIsPlaceholder && activeIsPlaceholder) {
                         // ARP scan upgraded a placeholder MAC to a real MAC — record this in the correlation history.
@@ -119,11 +126,14 @@ public class DeviceIdentityManager {
             device.lastSeen = sighting.observedAt;
             device.consecutiveMissedProbes = 0; // Reset on any successful sighting
             
-            // Keep identities current if seen recently (within last 30 minutes) to support multi-homed/dual-interface devices
+            // Keep identities current only if already current on a different interface/MAC and seen recently (within last 30 minutes)
             java.time.Instant recentCutoff = java.time.Instant.now().minus(30, java.time.temporal.ChronoUnit.MINUTES);
             List<NetworkIdentity> allIdentities = NetworkIdentity.list("physicalDevice.id", device.id);
             for (NetworkIdentity oldId : allIdentities) {
-                if (oldId.id.equals(identity.id) || (oldId.lastSeen != null && oldId.lastSeen.isAfter(recentCutoff))) {
+                boolean sameMac = oldId.macAddress != null && identity.macAddress != null
+                        && oldId.macAddress.equalsIgnoreCase(identity.macAddress);
+                if (oldId.id.equals(identity.id)
+                        || (Boolean.TRUE.equals(oldId.current) && !sameMac && oldId.lastSeen != null && oldId.lastSeen.isAfter(recentCutoff))) {
                     oldId.current = true;
                 } else {
                     oldId.current = false;
@@ -131,7 +141,6 @@ public class DeviceIdentityManager {
                 oldId.persist();
             }
             
-            // Merge matching candidate signals to historical vector
             // Merge matching candidate signals to historical vector
             FingerprintVector historical = FingerprintVector.find("physicalDevice.id = ?1", device.id).firstResult();
             if (historical != null) {
@@ -144,6 +153,7 @@ public class DeviceIdentityManager {
 
             // Enforce IP Uniqueness for this IP
             enforceIpUniqueness(sighting.ipAddress, device.id);
+            livenessManager.recordActivity(sighting.ipAddress);
 
             if (statusChanged) {
                 eventBroadcaster.fireAsync(new FingerprintEngine.DeviceEvent("STATUS_CHANGE", device.id.toString(), device.displayName, "ONLINE", sighting.ipAddress));
@@ -270,6 +280,8 @@ public class DeviceIdentityManager {
             correlationEvent.timestamp = sighting.observedAt;
             correlationEvent.persist();
 
+            livenessManager.recordActivity(sighting.ipAddress);
+
             if (statusChanged) {
                 eventBroadcaster.fireAsync(new FingerprintEngine.DeviceEvent("STATUS_CHANGE", bestMatch.id.toString(), bestMatch.displayName, "ONLINE", sighting.ipAddress));
             }
@@ -279,6 +291,9 @@ public class DeviceIdentityManager {
 
             if ("DETECTION".equals(appMode)) {
                 LOG.warn("IDS DETECTION MODE: Unknown device detected on network! Generating ThreatEvent.");
+                if (!sightingIsPlaceholder) {
+                    enforceIpUniqueness(sighting.ipAddress, null);
+                }
                 String desc = "Rogue Device Detected: Unauthorized access attempt from " + (resolvedHostname != null ? resolvedHostname : "Unknown");
                 ThreatEvent existing = ThreatEvent.find("ipAddress = ?1 and macAddress = ?2 and description = ?3", sighting.ipAddress, sighting.macAddress, desc).firstResult();
                 if (existing != null) {
@@ -365,6 +380,8 @@ public class DeviceIdentityManager {
             correlationEvent.details = "Device first discovered on network";
             correlationEvent.timestamp = sighting.observedAt;
             correlationEvent.persist();
+
+            livenessManager.recordActivity(sighting.ipAddress);
 
             eventBroadcaster.fireAsync(new FingerprintEngine.DeviceEvent("NEW_DEVICE", newDevice.id.toString(), newDevice.displayName, "ONLINE", sighting.ipAddress));
         }
@@ -518,11 +535,12 @@ public class DeviceIdentityManager {
     }
 
     @Inject
-    public DeviceIdentityManager(Event<FingerprintEngine.DeviceEvent> eventBroadcaster, Event<ThreatEvent> threatBroadcaster, SimilarityEngine similarityEngine, DeviceIdentityManager self, FingerprintEngine fingerprintEngine) {
+    public DeviceIdentityManager(Event<FingerprintEngine.DeviceEvent> eventBroadcaster, Event<ThreatEvent> threatBroadcaster, SimilarityEngine similarityEngine, DeviceIdentityManager self, FingerprintEngine fingerprintEngine, DeviceLivenessManager livenessManager) {
         this.eventBroadcaster = eventBroadcaster;
         this.threatBroadcaster = threatBroadcaster;
         this.similarityEngine = similarityEngine;
         this.self = self;
         this.fingerprintEngine = fingerprintEngine;
+        this.livenessManager = livenessManager;
     }
 }
