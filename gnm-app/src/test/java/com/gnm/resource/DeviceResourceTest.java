@@ -57,6 +57,28 @@ class DeviceResourceTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "gnm-admin")
+    void testGetAllDevicesWithFingerprintMdnsServices() {
+        io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
+            PhysicalDevice device = PhysicalDevice.findAll().firstResult();
+            com.gnm.model.FingerprintVector fp = new com.gnm.model.FingerprintVector();
+            fp.physicalDevice = device;
+            fp.mdnsServices = List.of("_http._tcp.local", "_googlecast._tcp.local");
+            fp.openPorts = List.of(80, 443, 8080);
+            fp.capturedAt = Instant.now();
+            fp.persist();
+        });
+
+        given()
+          .when().get("/api/devices")
+          .then()
+             .statusCode(200)
+             .body("size()", is(1))
+             .body("[0].fingerprints[0].mdnsServices", hasItems("_http._tcp.local", "_googlecast._tcp.local"))
+             .body("[0].fingerprints[0].openPorts", hasItems(80, 443, 8080));
+    }
+
+    @Test
+    @TestSecurity(user = "admin", roles = "gnm-admin")
     @Transactional
     void testGetDeviceById() {
         PhysicalDevice device = PhysicalDevice.findAll().firstResult();

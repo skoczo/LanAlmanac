@@ -6,8 +6,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Entity
@@ -35,8 +33,8 @@ public class FingerprintVector extends PanacheEntityBase {
     @Column(name = "tcp_fingerprint")
     public String tcpFingerprint;
 
-    @Column(name = "mdns_services")
-    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "mdns_services", columnDefinition = "text[]")
+    @Convert(converter = com.gnm.model.converter.StringListToArrayConverter.class)
     public List<String> mdnsServices;
 
     @Column(name = "ssdp_usn")
@@ -56,8 +54,8 @@ public class FingerprintVector extends PanacheEntityBase {
     @Column(name = "tls_cert_subject")
     public String tlsCertSubject;
 
-    @Column(name = "open_ports")
-    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "open_ports", columnDefinition = "integer[]")
+    @Convert(converter = com.gnm.model.converter.IntegerListToArrayConverter.class)
     public List<Integer> openPorts;
 
     @Column(name = "mac_oui")
