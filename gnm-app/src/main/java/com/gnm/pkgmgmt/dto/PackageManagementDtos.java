@@ -42,9 +42,19 @@ public final class PackageManagementDtos {
             String ecosystem,
             String purl,
             Instant lastSeenAt,
-            int openVulnerabilityCount) {
+            int openVulnerabilityCount,
+            String candidateVersion,
+            boolean isSecurityUpdate) {
 
         public static DevicePackageDto fromEntity(DevicePackage p, int openVulnCount) {
+            return fromEntity(p, openVulnCount, null, false);
+        }
+
+        public static DevicePackageDto fromEntity(
+                DevicePackage p,
+                int openVulnCount,
+                String candidateVersion,
+                boolean isSecurityUpdate) {
             return new DevicePackageDto(
                     p.id,
                     p.name,
@@ -55,7 +65,9 @@ public final class PackageManagementDtos {
                     p.ecosystem,
                     p.purl,
                     p.lastSeenAt,
-                    openVulnCount);
+                    openVulnCount,
+                    candidateVersion,
+                    isSecurityUpdate);
         }
     }
 

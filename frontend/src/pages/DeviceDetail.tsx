@@ -27,7 +27,6 @@ import {
 } from 'lucide-react'
 import { Terminal } from '../components/Terminal'
 import { DevicePackagesTab } from '../components/packages/DevicePackagesTab'
-import { DeviceUpdatesTab } from '../components/packages/DeviceUpdatesTab'
 import { DeviceVulnerabilitiesTab } from '../components/packages/DeviceVulnerabilitiesTab'
 import { useNavigate } from '@tanstack/react-router'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
@@ -162,7 +161,6 @@ interface TelemetryPoint {
 type TabType =
   | 'overview'
   | 'packages'
-  | 'updates'
   | 'vulnerabilities'
   | 'identities'
   | 'fingerprint'
@@ -187,7 +185,8 @@ export const DeviceDetail: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const param = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tab') : null
-    const validTabs: TabType[] = ['overview', 'packages', 'updates', 'vulnerabilities', 'identities', 'fingerprint', 'correlation', 'status_history', 'services', 'credentials', 'monitor', 'connections', 'settings']
+    if (param === 'updates') return 'packages'
+    const validTabs: TabType[] = ['overview', 'packages', 'vulnerabilities', 'identities', 'fingerprint', 'correlation', 'status_history', 'services', 'credentials', 'monitor', 'connections', 'settings']
     if (param && validTabs.includes(param as TabType)) {
       return param as TabType
     }
@@ -268,7 +267,7 @@ export const DeviceDetail: React.FC = () => {
 
   useEffect(() => {
     if (device && !isManaged) {
-      const managedOnlyTabs: TabType[] = ['packages', 'updates', 'vulnerabilities', 'credentials']
+      const managedOnlyTabs: TabType[] = ['packages', 'vulnerabilities', 'credentials']
       if (managedOnlyTabs.includes(activeTab)) {
         setActiveTab('overview')
       }
@@ -600,8 +599,7 @@ export const DeviceDetail: React.FC = () => {
         {(isManaged
           ? [
               { id: 'overview', label: 'Overview' },
-              { id: 'updates', label: 'Updates' },
-              { id: 'packages', label: 'Packages' },
+              { id: 'packages', label: 'Packages & Updates' },
               { id: 'vulnerabilities', label: 'Vulnerabilities' },
               { id: 'services', label: 'Services' },
               { id: 'credentials', label: 'Credentials' },
@@ -688,10 +686,10 @@ export const DeviceDetail: React.FC = () => {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('updates')}
+                  onClick={() => setActiveTab('packages')}
                   className="px-3 py-1.5 rounded-xl bg-accent-danger/20 hover:bg-accent-danger/30 border border-accent-danger/40 text-accent-danger font-semibold text-xs transition-all cursor-pointer whitespace-nowrap"
                 >
-                  View Updates
+                  View Packages & Updates
                 </button>
               </div>
             )}
@@ -1835,10 +1833,10 @@ export const DeviceDetail: React.FC = () => {
                   <p className="text-[10px] text-text-secondary mt-1 mb-3">Check available package updates, configure sudoers.d, or run OS-profile-aware upgrades with live console streaming.</p>
                   <button 
                     type="button"
-                    onClick={() => setActiveTab('updates')}
+                    onClick={() => setActiveTab('packages')}
                     className="px-4 py-2 bg-accent-primary hover:bg-accent-primary/90 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
                   >
-                    Open Updates & Patching
+                    Open Packages & Patching
                   </button>
                 </div>
               </div>
@@ -1897,8 +1895,12 @@ export const DeviceDetail: React.FC = () => {
           </div>
         )}
 
-        {activeTab === 'packages' && <DevicePackagesTab deviceId={device.id} />}
-        {activeTab === 'updates' && <DeviceUpdatesTab deviceId={device.id} />}
+        {activeTab === 'packages' && (
+          <DevicePackagesTab
+            deviceId={device.id}
+            rebootRequired={device.rebootRequired}
+          />
+        )}
         {activeTab === 'vulnerabilities' && <DeviceVulnerabilitiesTab deviceId={device.id} />}
 
       </div>

@@ -27,7 +27,8 @@ class DevicePackageResourceTest {
                         "triggerInventoryScan",
                         "triggerVulnerabilityScan",
                         "triggerUpdateCheck",
-                        "updatePackageSchedule")) {
+                        "updatePackageSchedule",
+                        "startPatchJob")) {
             Method m =
                     Arrays.stream(DevicePackageResource.class.getDeclaredMethods())
                             .filter(method -> method.getName().equals(methodName))

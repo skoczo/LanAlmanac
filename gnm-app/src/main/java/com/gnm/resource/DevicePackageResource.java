@@ -13,11 +13,15 @@ import com.gnm.pkgmgmt.dto.PackageManagementDtos.DevicePackageScanDto;
 import com.gnm.pkgmgmt.dto.PackageManagementDtos.DevicePackageScheduleDto;
 import com.gnm.pkgmgmt.dto.PackageManagementDtos.DevicePackageScheduleUpdateRequest;
 import com.gnm.pkgmgmt.dto.PackageManagementDtos.DeviceVulnerabilityDto;
+import com.gnm.pkgmgmt.dto.PackageManagementDtos.PatchJobCreateRequest;
+import com.gnm.pkgmgmt.dto.PackageManagementDtos.PatchJobDto;
 import com.gnm.pkgmgmt.dto.PackageManagementDtos.SudoersSnippetDto;
 import com.gnm.pkgmgmt.inventory.CycloneDxExportService;
 import com.gnm.pkgmgmt.inventory.DevicePackage;
 import com.gnm.pkgmgmt.inventory.DevicePackageScan;
 import com.gnm.pkgmgmt.inventory.InventoryService;
+import com.gnm.pkgmgmt.patching.PatchJob;
+import com.gnm.pkgmgmt.patching.PatchJobService;
 import com.gnm.pkgmgmt.profile.OsDiscoveryService;
 import com.gnm.pkgmgmt.profile.OsProfile;
 import com.gnm.pkgmgmt.schedule.CronScheduleCalculator;
@@ -68,6 +72,7 @@ public class DevicePackageResource {
     private final CredentialResolver credentialResolver;
     private final CronScheduleCalculator cronCalculator;
     private final SecurityIdentity securityIdentity;
+    private final PatchJobService patchJobService;
 
     @Inject
     public DevicePackageResource(
@@ -79,7 +84,8 @@ public class DevicePackageResource {
             SudoersSnippetGenerator sudoersSnippetGenerator,
             CredentialResolver credentialResolver,
             CronScheduleCalculator cronCalculator,
-            SecurityIdentity securityIdentity) {
+            SecurityIdentity securityIdentity,
+            PatchJobService patchJobService) {
         this.inventoryService = inventoryService;
         this.cycloneDxExportService = cycloneDxExportService;
         this.osDiscoveryService = osDiscoveryService;
@@ -89,6 +95,7 @@ public class DevicePackageResource {
         this.credentialResolver = credentialResolver;
         this.cronCalculator = cronCalculator;
         this.securityIdentity = securityIdentity;
+        this.patchJobService = patchJobService;
     }
 
     @GET
@@ -161,7 +168,8 @@ public class DevicePackageResource {
     public Response getDevicePackages(
             @PathParam("id") UUID deviceId,
             @QueryParam("q") String query,
-            @QueryParam("vulnerableOnly") boolean vulnerableOnly) {
+            @QueryParam("vulnerableOnly") boolean vulnerableOnly,
+            @QueryParam("updatesOnly") boolean updatesOnly) {
         PhysicalDevice device = PhysicalDevice.findById(deviceId);
         if (device == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
@@ -171,10 +179,19 @@ public class DevicePackageResource {
         List<DeviceVulnerability> openVulns =
                 DeviceVulnerability.list(
                         "physicalDevice.id = ?1 and status = 'OPEN'", deviceId);
+        List<DeviceAvailableUpdate> updates =
+                DeviceAvailableUpdate.list("physicalDevice.id", deviceId);
 
         Map<String, Integer> vulnCountByPkg = new HashMap<>();
         for (DeviceVulnerability v : openVulns) {
             vulnCountByPkg.merge(v.packageName, 1, Integer::sum);
+        }
+
+        Map<String, DeviceAvailableUpdate> updatesByPkg = new HashMap<>();
+        for (DeviceAvailableUpdate u : updates) {
+            if (u.packageName != null) {
+                updatesByPkg.put(u.packageName, u);
+            }
         }
 
         String qLower = query != null ? query.trim().toLowerCase(Locale.ROOT) : "";
@@ -189,10 +206,18 @@ public class DevicePackageResource {
                                                         .toLowerCase(Locale.ROOT)
                                                         .contains(qLower))
                         .map(
-                                p ->
-                                        DevicePackageDto.fromEntity(
-                                                p, vulnCountByPkg.getOrDefault(p.name, 0)))
+                                p -> {
+                                    DeviceAvailableUpdate u = updatesByPkg.get(p.name);
+                                    String candidate = u != null ? u.candidateVersion : null;
+                                    boolean sec = u != null && u.isSecurityUpdate;
+                                    return DevicePackageDto.fromEntity(
+                                            p,
+                                            vulnCountByPkg.getOrDefault(p.name, 0),
+                                            candidate,
+                                            sec);
+                                })
                         .filter(dto -> !vulnerableOnly || dto.openVulnerabilityCount() > 0)
+                        .filter(dto -> !updatesOnly || dto.candidateVersion() != null)
                         .sorted(Comparator.comparing(DevicePackageDto::name))
                         .toList();
 
@@ -357,6 +382,51 @@ public class DevicePackageResource {
                     .entity(Map.of(KEY_ERROR, e.getMessage()))
                     .build();
         }
+    }
+
+    @POST
+    @Path("/patch-jobs")
+    @RolesAllowed({"gnm-admin", "gnm-operator"})
+    public Response startPatchJob(
+            @PathParam("id") UUID deviceId, PatchJobCreateRequest req) {
+        try {
+            String mode = req != null ? req.mode() : "FULL_UPGRADE";
+            List<String> packages = req != null ? req.packages() : List.of();
+            PatchJob job =
+                    patchJobService.startAsyncPatchJob(
+                            deviceId, mode, packages, currentActor());
+            return Response.status(Response.Status.ACCEPTED)
+                    .entity(PatchJobDto.fromEntity(job))
+                    .build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of(KEY_ERROR, e.getMessage()))
+                    .build();
+        } catch (PkgWorkerException e) {
+            return Response.status(e.httpStatus())
+                    .entity(Map.of(KEY_ERROR_CODE, e.errorCode(), KEY_ERROR, e.getMessage()))
+                    .build();
+        }
+    }
+
+    @GET
+    @Path("/patch-jobs")
+    @Transactional
+    public List<PatchJobDto> listDevicePatchJobs(@PathParam("id") UUID deviceId) {
+        List<PatchJob> jobs =
+                PatchJob.list(
+                        "physicalDevice.id = ?1 order by createdAt desc", deviceId);
+        return jobs.stream().map(PatchJobDto::fromEntity).toList();
+    }
+
+    private String currentActor() {
+        if (securityIdentity != null
+                && securityIdentity.getPrincipal() != null
+                && securityIdentity.getPrincipal().getName() != null
+                && !securityIdentity.getPrincipal().getName().isBlank()) {
+            return securityIdentity.getPrincipal().getName();
+        }
+        return "system";
     }
 
     @GET

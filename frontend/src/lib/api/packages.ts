@@ -31,6 +31,8 @@ export interface DevicePackageItem {
   purl: string
   lastSeenAt: string
   openVulnerabilityCount: number
+  candidateVersion?: string | null
+  isSecurityUpdate?: boolean
 }
 
 export interface DevicePackageScanResult {

@@ -245,7 +245,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (!response.ok) {
-      const errorMsg = await response.text()
+      let errorMsg = await response.text()
+      try {
+        const json = JSON.parse(errorMsg)
+        errorMsg = json.message || json.error || errorMsg
+      } catch {
+        if (errorMsg.includes('<html') || errorMsg.includes('<body')) {
+          const match = errorMsg.match(/<h[1-3][^>]*>(.*?)<\/h[1-3]>/i)
+          errorMsg = match
+            ? match[1].replace(/<[^>]+>/g, '').trim()
+            : `Server returned ${response.status} ${response.statusText || 'Error'}`
+        }
+      }
       throw new Error(errorMsg || `Request failed with status ${response.status}`)
     }
 
