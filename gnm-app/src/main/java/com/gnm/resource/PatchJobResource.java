@@ -2,8 +2,6 @@ package com.gnm.resource;
 
 import com.gnm.auth.AuthTicketService;
 import com.gnm.dto.AuthTicket;
-import com.gnm.pkgmgmt.client.PkgWorkerException;
-import com.gnm.pkgmgmt.dto.PackageManagementDtos.PatchJobCreateRequest;
 import com.gnm.pkgmgmt.dto.PackageManagementDtos.PatchJobDetailDto;
 import com.gnm.pkgmgmt.dto.PackageManagementDtos.PatchJobDto;
 import com.gnm.pkgmgmt.dto.PackageManagementDtos.PatchJobLogDto;
@@ -58,8 +56,6 @@ import java.util.regex.Pattern;
 public class PatchJobResource {
 
     private static final String SSE_PATCH_JOB_TICKET_ATTR = "gnm.sse.patch.ticket";
-    private static final String KEY_ERROR = "error";
-    private static final String KEY_ERROR_CODE = "errorCode";
 
     private final PatchJobService patchJobService;
     private final PatchJobLogBroker logBroker;
@@ -76,41 +72,6 @@ public class PatchJobResource {
         this.logBroker = logBroker;
         this.ticketService = ticketService;
         this.securityIdentity = securityIdentity;
-    }
-
-    @POST
-    @Path("/devices/{id}/patch-jobs")
-    @RolesAllowed({"gnm-admin", "gnm-operator"})
-    public Response startPatchJob(
-            @PathParam("id") UUID deviceId, PatchJobCreateRequest req) {
-        try {
-            String mode = req != null ? req.mode() : "FULL_UPGRADE";
-            List<String> packages = req != null ? req.packages() : List.of();
-            PatchJob job =
-                    patchJobService.startAsyncPatchJob(
-                            deviceId, mode, packages, currentActor());
-            return Response.status(Response.Status.ACCEPTED)
-                    .entity(PatchJobDto.fromEntity(job))
-                    .build();
-        } catch (IllegalArgumentException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity(Map.of(KEY_ERROR, e.getMessage()))
-                    .build();
-        } catch (PkgWorkerException e) {
-            return Response.status(e.httpStatus())
-                    .entity(Map.of(KEY_ERROR_CODE, e.errorCode(), KEY_ERROR, e.getMessage()))
-                    .build();
-        }
-    }
-
-    @GET
-    @Path("/devices/{id}/patch-jobs")
-    @Transactional
-    public List<PatchJobDto> listDevicePatchJobs(@PathParam("id") UUID deviceId) {
-        List<PatchJob> jobs =
-                PatchJob.list(
-                        "physicalDevice.id = ?1 order by createdAt desc", deviceId);
-        return jobs.stream().map(PatchJobDto::fromEntity).toList();
     }
 
     @GET
@@ -258,15 +219,6 @@ public class PatchJobResource {
                 .replace("\"", "\\\"")
                 .replace("\n", "\\n")
                 .replace("\r", "");
-    }
-
-    private String currentActor() {
-        if (securityIdentity != null
-                && !securityIdentity.isAnonymous()
-                && securityIdentity.getPrincipal() != null) {
-            return securityIdentity.getPrincipal().getName();
-        }
-        return "operator";
     }
 
     @ApplicationScoped

@@ -23,3 +23,9 @@ This plan tracks the fixes and UX enhancements requested for Agentless Package M
 - [x] **3.3** Update `VulnerabilityAssessmentService` to perform offline matching against the local DB first without outbound API queries when local advisories exist.
 - [x] **3.4** Add unit/integration tests verifying local dump ingestion and offline CVE matching (`LocalVulnerabilityDatabaseServiceTest`, `VulnerabilityResourceTest`).
 - [x] **3.5** Verify `./gradlew :gnm-app:compileJava` and `./gradlew spotlessApply`.
+
+## Step 4 — Resolve Build Collision & Fast-Jar Validation
+- [x] **4.1** Remove duplicate `startPatchJob` and `listDevicePatchJobs` endpoints from `PatchJobResource.java` to eliminate Quarkus RESTEasy deployment collision with `DevicePackageResource`.
+- [x] **4.2** Update `PatchJobResourceTest.java` reflection assertions to match remaining methods.
+- [x] **4.3** Run `./gradlew spotlessApply` and verify fast-jar build `./gradlew :gnm-app:build -Dquarkus.package.type=fast-jar -x test --no-daemon`.
+- [x] **4.4** Verify unit test suite (`PatchJobResourceTest`, `DevicePackageResourceTest`, `VulnerabilityResourceTest`, `LocalVulnerabilityDatabaseServiceTest`).

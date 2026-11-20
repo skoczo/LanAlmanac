@@ -33,7 +33,7 @@ class PatchJobResourceTest {
                 Set.of("gnm-admin", "gnm-operator", "gnm-viewer"),
                 Set.copyOf(Arrays.asList(classRoles.value())));
 
-        for (String methodName : List.of("startPatchJob", "cancelPatchJob")) {
+        for (String methodName : List.of("cancelPatchJob")) {
             Method m =
                     Arrays.stream(PatchJobResource.class.getDeclaredMethods())
                             .filter(method -> method.getName().equals(methodName))
