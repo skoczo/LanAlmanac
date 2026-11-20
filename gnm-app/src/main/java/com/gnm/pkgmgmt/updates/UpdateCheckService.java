@@ -166,7 +166,9 @@ public class UpdateCheckService {
                 DeviceAvailableUpdate target = existingByKey.get(key);
                 if (target == null) {
                     target = new DeviceAvailableUpdate();
-                    target.id = UUID.randomUUID();
+                    if (!persistToDb) {
+                        target.id = UUID.randomUUID();
+                    }
                     target.physicalDevice = device;
                     target.packageName = au.packageName();
                     target.arch = arch;
