@@ -239,6 +239,8 @@ public class DevicePackageResource {
             return Response.status(e.httpStatus())
                     .entity(Map.of(KEY_ERROR_CODE, e.errorCode(), KEY_ERROR, e.getMessage()))
                     .build();
+        } catch (Exception e) {
+            return handleGenericException(e, "Inventory scan failed");
         }
     }
 
@@ -345,6 +347,8 @@ public class DevicePackageResource {
             return Response.status(e.httpStatus())
                     .entity(Map.of(KEY_ERROR_CODE, e.errorCode(), KEY_ERROR, e.getMessage()))
                     .build();
+        } catch (Exception e) {
+            return handleGenericException(e, "Inventory scan failed");
         }
     }
 
@@ -572,6 +576,22 @@ public class DevicePackageResource {
                 credUsername,
                 credSource,
                 trusted);
+    }
+
+    private static Response handleGenericException(Exception e, String fallbackMessage) {
+        Throwable root = e;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+            if (root instanceof PkgWorkerException pwe) {
+                return Response.status(pwe.httpStatus())
+                        .entity(Map.of(KEY_ERROR_CODE, pwe.errorCode(), KEY_ERROR, pwe.getMessage()))
+                        .build();
+            }
+        }
+        String msg = root.getMessage() != null && !root.getMessage().isBlank() ? root.getMessage() : e.getMessage();
+        return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(Map.of(KEY_ERROR, msg != null && !msg.isBlank() ? msg : fallbackMessage))
+                .build();
     }
 }
 

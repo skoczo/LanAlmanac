@@ -331,7 +331,7 @@ public class PkgWorkerClient {
                     cred.username != null && !cred.username.isBlank() ? cred.username : "root",
                     trustedHostKey,
                     new AuthConfig(cred.credentialType.name(), new String(secretChars), null),
-                    10);
+                    30);
         } finally {
             if (decryptedBytes != null) {
                 Arrays.fill(decryptedBytes, (byte) 0);

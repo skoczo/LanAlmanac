@@ -29,3 +29,11 @@ This plan tracks the fixes and UX enhancements requested for Agentless Package M
 - [x] **4.2** Update `PatchJobResourceTest.java` reflection assertions to match remaining methods.
 - [x] **4.3** Run `./gradlew spotlessApply` and verify fast-jar build `./gradlew :gnm-app:build -Dquarkus.package.type=fast-jar -x test --no-daemon`.
 - [x] **4.4** Verify unit test suite (`PatchJobResourceTest`, `DevicePackageResourceTest`, `VulnerabilityResourceTest`, `LocalVulnerabilityDatabaseServiceTest`).
+
+## Step 5 — Fix Long-Running Remote SSH Transaction Timeouts
+- [x] **5.1** Identify root cause of `Error id 3d3a0b67-b638-4d1b-a224-0e943442a108-1`: `UpdateCheckService.checkDeviceUpdates` had `@Transactional` holding a DB transaction while `apt-get` was executed remotely over SSH via `gnm-pkg-worker`. On low-power ARM nodes (e.g. Raspberry Pi 1 `watchdog`), this remote SSH query takes ~75s, exceeding Narayana's 60s JTA timeout. At 60s, Narayana's `TransactionReaper` aborted the transaction, causing `Failing fast as the transaction has rolled back` and `ARJUNA016102: The transaction is not active!`.
+- [x] **5.2** Decouple remote HTTP/SSH worker calls from database transactions in `UpdateCheckService` and `InventoryService` using discrete `QuarkusTransaction.requiringNew()` blocks for entity reads and reconcile/writes.
+- [x] **5.3** Increase SSH connect timeout in `PkgWorkerClient.buildDecryptedTarget` from 10s to 30s to prevent handshake drops on constrained nodes.
+- [x] **5.4** Add exception cause unwrapping in `DevicePackageResource` to return proper HTTP error codes instead of generic 500 Arc proxy exceptions.
+- [x] **5.5** Improve error parsing in `auth-context.tsx` to display clean server messages instead of raw serialized JSON.
+- [x] **5.6** Verified with `./gradlew spotlessApply`, compileJava, targeted unit tests, frontend issue scans, and fast-jar build.

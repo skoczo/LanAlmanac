@@ -10,9 +10,9 @@ import com.gnm.pkgmgmt.client.dto.WorkerContractDtos.UpdateCheckResponse;
 import com.gnm.pkgmgmt.profile.OsDiscoveryService;
 import com.gnm.pkgmgmt.profile.OsProfile;
 import com.gnm.pkgmgmt.vulnerability.DeviceVulnerability;
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
@@ -40,42 +40,69 @@ public class UpdateCheckService {
         this.discoveryService = discoveryService;
     }
 
-    @Transactional
     public List<DeviceAvailableUpdate> checkDeviceUpdates(UUID deviceId, boolean skipRefresh) {
-        PhysicalDevice device = PhysicalDevice.findById(deviceId);
-        if (device == null) {
-            throw new IllegalArgumentException("Device not found: " + deviceId);
+        if (deviceId == null) {
+            throw new IllegalArgumentException("deviceId is required");
         }
         return lockManager.withDeviceLock(
                 deviceId,
                 Duration.ofMinutes(10),
                 () -> {
-                    OsProfile profile = resolveProfile(device);
+                    DeviceUpdateContext ctx =
+                            QuarkusTransaction.requiringNew()
+                                    .call(
+                                            () -> {
+                                                PhysicalDevice device = PhysicalDevice.findById(deviceId);
+                                                if (device == null) {
+                                                    throw new IllegalArgumentException(
+                                                            "Device not found: " + deviceId);
+                                                }
+                                                OsProfile profile = resolveProfile(device);
+                                                if (device.identities != null) {
+                                                    device.identities.size();
+                                                }
+                                                return new DeviceUpdateContext(device, profile);
+                                            });
+
                     AuthenticatedCallResult<UpdateCheckResponse> call =
                             workerClient.checkUpdates(
-                                    device,
-                                    profile.environmentVars,
+                                    ctx.device(),
+                                    ctx.profile().environmentVars,
                                     skipRefresh,
-                                    profile.updateCheckSpec,
-                                    profile.privilegeSpec,
-                                    profile.lockSpec);
+                                    ctx.profile().updateCheckSpec,
+                                    ctx.profile().privilegeSpec,
+                                    ctx.profile().lockSpec);
 
-                    List<DeviceAvailableUpdate> existingUpdates =
-                            DeviceAvailableUpdate.list("physicalDevice.id", deviceId);
-                    List<DeviceVulnerability> vulns =
-                            DeviceVulnerability.list("physicalDevice.id", deviceId);
+                    return QuarkusTransaction.requiringNew()
+                            .call(
+                                    () -> {
+                                        PhysicalDevice device = PhysicalDevice.findById(deviceId);
+                                        if (device == null) {
+                                            throw new IllegalArgumentException(
+                                                    "Device not found: " + deviceId);
+                                        }
+                                        List<DeviceAvailableUpdate> existingUpdates =
+                                                DeviceAvailableUpdate.list(
+                                                        "physicalDevice.id", deviceId);
+                                        List<DeviceVulnerability> vulns =
+                                                DeviceVulnerability.list(
+                                                        "physicalDevice.id", deviceId);
 
-                    reconcileUpdates(
-                            device,
-                            call.response().updates(),
-                            existingUpdates,
-                            vulns,
-                            true);
-                    device.persist();
-                    return DeviceAvailableUpdate.list(
-                            "physicalDevice.id = ?1 order by packageName asc", deviceId);
+                                        reconcileUpdates(
+                                                device,
+                                                call.response().updates(),
+                                                existingUpdates,
+                                                vulns,
+                                                true);
+                                        device.persist();
+                                        return DeviceAvailableUpdate.list(
+                                                "physicalDevice.id = ?1 order by packageName asc",
+                                                deviceId);
+                                    });
                 });
     }
+
+    private record DeviceUpdateContext(PhysicalDevice device, OsProfile profile) {}
 
     /**
      * In-memory execution entry point for deterministic unit testing.

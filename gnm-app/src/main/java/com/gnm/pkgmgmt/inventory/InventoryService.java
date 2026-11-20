@@ -9,10 +9,10 @@ import com.gnm.pkgmgmt.client.dto.WorkerContractDtos.InventoryResponse;
 import com.gnm.pkgmgmt.client.dto.WorkerContractDtos.NormalizedPackage;
 import com.gnm.pkgmgmt.profile.OsDiscoveryService;
 import com.gnm.pkgmgmt.profile.OsProfile;
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
@@ -43,67 +43,113 @@ public class InventoryService {
         this.inventoryUpdatedEvent = inventoryUpdatedEvent;
     }
 
-    @Transactional
     public DevicePackageScan scanDevice(UUID deviceId) {
-        PhysicalDevice device = PhysicalDevice.findById(deviceId);
-        if (device == null) {
+        if (deviceId == null) {
             throw new IllegalArgumentException("Device not found: " + deviceId);
         }
         return lockManager.withDeviceLock(
                 deviceId,
                 Duration.ofMinutes(10),
                 () -> {
-                    OsProfile profile = resolveProfile(device);
-                    DevicePackageScan scan = new DevicePackageScan();
-                    scan.physicalDevice = device;
-                    scan.osProfile = profile;
-                    scan.status = "RUNNING";
-                    scan.startedAt = Instant.now();
-                    scan.persist();
+                    ScanContext ctx =
+                            QuarkusTransaction.requiringNew()
+                                    .call(
+                                            () -> {
+                                                PhysicalDevice device = PhysicalDevice.findById(deviceId);
+                                                if (device == null) {
+                                                    throw new IllegalArgumentException(
+                                                            "Device not found: " + deviceId);
+                                                }
+                                                OsProfile profile = resolveProfile(device);
+                                                if (device.identities != null) {
+                                                    device.identities.size();
+                                                }
+                                                DevicePackageScan scan = new DevicePackageScan();
+                                                scan.physicalDevice = device;
+                                                scan.osProfile = profile;
+                                                scan.status = "RUNNING";
+                                                scan.startedAt = Instant.now();
+                                                scan.persist();
+                                                return new ScanContext(device, profile, scan.id);
+                                            });
 
                     try {
                         AuthenticatedCallResult<InventoryResponse> call =
                                 workerClient.collectInventory(
-                                        device,
-                                        profile.environmentVars,
-                                        device.osFacts != null ? device.osFacts : Map.of(),
-                                        profile.inventorySpec,
-                                        profile.privilegeSpec,
+                                        ctx.device(),
+                                        ctx.profile().environmentVars,
+                                        ctx.device().osFacts != null ? ctx.device().osFacts : Map.of(),
+                                        ctx.profile().inventorySpec,
+                                        ctx.profile().privilegeSpec,
                                         null);
 
-                        List<DevicePackage> existing =
-                                DevicePackage.list("physicalDevice.id", device.id);
-                        reconcilePackages(
-                                device,
-                                profile,
-                                call.response().packages(),
-                                scan.id,
-                                existing,
-                                true);
+                        return QuarkusTransaction.requiringNew()
+                                .call(
+                                        () -> {
+                                            PhysicalDevice device = PhysicalDevice.findById(deviceId);
+                                            DevicePackageScan scan = DevicePackageScan.findById(ctx.scanId());
+                                            OsProfile profile = OsProfile.findById(ctx.profile().id);
+                                            List<DevicePackage> existing =
+                                                    DevicePackage.list("physicalDevice.id", deviceId);
+                                            reconcilePackages(
+                                                    device,
+                                                    profile,
+                                                    call.response().packages(),
+                                                    scan.id,
+                                                    existing,
+                                                    true);
 
-                        scan.credentialId = call.credentialId();
-                        scan.credentialUsername = call.credentialUsername();
-                        scan.usedFallback = call.usedFallback();
-                        scan.status = "SUCCEEDED";
-                        scan.packageCount = call.response().totalParsed();
-                        scan.skippedLines = call.response().skippedLines();
-                        scan.finishedAt = Instant.now();
-                        scan.persist();
+                                            scan.credentialId = call.credentialId();
+                                            scan.credentialUsername = call.credentialUsername();
+                                            scan.usedFallback = call.usedFallback();
+                                            scan.status = "SUCCEEDED";
+                                            scan.packageCount = call.response().totalParsed();
+                                            scan.skippedLines = call.response().skippedLines();
+                                            scan.finishedAt = Instant.now();
+                                            scan.persist();
 
-                        if (inventoryUpdatedEvent != null) {
-                            inventoryUpdatedEvent.fireAsync(new InventoryUpdatedEvent(device.id));
-                        }
-                        return scan;
+                                            if (inventoryUpdatedEvent != null) {
+                                                inventoryUpdatedEvent.fireAsync(
+                                                        new InventoryUpdatedEvent(deviceId));
+                                            }
+                                            return scan;
+                                        });
                     } catch (PkgWorkerException e) {
-                        scan.status = "FAILED";
-                        scan.errorCode = e.errorCode();
-                        scan.errorMessage = e.getMessage();
-                        scan.finishedAt = Instant.now();
-                        scan.persist();
+                        QuarkusTransaction.requiringNew()
+                                .run(
+                                        () -> {
+                                            DevicePackageScan scan = DevicePackageScan.findById(ctx.scanId());
+                                            if (scan != null) {
+                                                scan.status = "FAILED";
+                                                scan.errorCode = e.errorCode();
+                                                scan.errorMessage = e.getMessage();
+                                                scan.finishedAt = Instant.now();
+                                                scan.persist();
+                                            }
+                                        });
                         throw e;
+                    } catch (Exception e) {
+                        QuarkusTransaction.requiringNew()
+                                .run(
+                                        () -> {
+                                            DevicePackageScan scan = DevicePackageScan.findById(ctx.scanId());
+                                            if (scan != null) {
+                                                scan.status = "FAILED";
+                                                scan.errorCode = "INVENTORY_ERROR";
+                                                scan.errorMessage = e.getMessage();
+                                                scan.finishedAt = Instant.now();
+                                                scan.persist();
+                                            }
+                                        });
+                        if (e instanceof RuntimeException re) {
+                            throw re;
+                        }
+                        throw new RuntimeException(e);
                     }
                 });
     }
+
+    private record ScanContext(PhysicalDevice device, OsProfile profile, UUID scanId) {}
 
     /**
      * In-memory execution entry point for deterministic unit testing without a live Panache session.
