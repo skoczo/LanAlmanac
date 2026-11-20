@@ -248,15 +248,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let errorMsg = await response.text()
       try {
         const json = JSON.parse(errorMsg)
-        if (json.message) {
-          errorMsg = json.message
-        } else if (json.error) {
-          errorMsg = json.error
-        } else if (json.details) {
-          errorMsg = typeof json.details === 'string' && json.details.startsWith('Error id')
-            ? `Server error (${json.details.split(':')[0].trim()})`
-            : String(json.details)
-        }
+        errorMsg = json.message || json.error || errorMsg
       } catch {
         if (errorMsg.includes('<html') || errorMsg.includes('<body')) {
           const match = errorMsg.match(/<h[1-3][^>]*>(.*?)<\/h[1-3]>/i)

@@ -1,6 +1,7 @@
 package com.gnm.pkgmgmt.updates;
 
 import com.gnm.model.PhysicalDevice;
+import com.gnm.pkgmgmt.client.CredentialResolver;
 import com.gnm.pkgmgmt.client.DeviceLockManager;
 import com.gnm.pkgmgmt.client.PkgWorkerClient;
 import com.gnm.pkgmgmt.client.PkgWorkerClient.AuthenticatedCallResult;
@@ -58,9 +59,7 @@ public class UpdateCheckService {
                                                             "Device not found: " + deviceId);
                                                 }
                                                 OsProfile profile = resolveProfile(device);
-                                                if (device.identities != null) {
-                                                    device.identities.size();
-                                                }
+                                                CredentialResolver.initializeForExecution(device);
                                                 return new DeviceUpdateContext(device, profile);
                                             });
 

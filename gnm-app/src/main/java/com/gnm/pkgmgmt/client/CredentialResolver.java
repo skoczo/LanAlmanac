@@ -116,5 +116,33 @@ public class CredentialResolver {
     private static int effectivePort(Credential c, int defaultPort) {
         return (c.port != null && c.port > 0) ? c.port : defaultPort;
     }
+
+    public static void initializeForExecution(PhysicalDevice device) {
+        if (device == null) {
+            return;
+        }
+        if (device.identities != null) {
+            device.identities.size();
+        }
+        if (device.services != null) {
+            device.services.size();
+            for (NetworkService s : device.services) {
+                if (s != null && s.credential != null) {
+                    s.credential.id.toString();
+                    if (s.credential.categories != null) {
+                        s.credential.categories.size();
+                    }
+                }
+            }
+        }
+        if (device.credentials != null) {
+            device.credentials.size();
+            for (Credential c : device.credentials) {
+                if (c != null && c.categories != null) {
+                    c.categories.size();
+                }
+            }
+        }
+    }
 }
 

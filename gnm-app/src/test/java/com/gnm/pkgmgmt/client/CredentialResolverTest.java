@@ -97,5 +97,26 @@ class CredentialResolverTest {
         var candidates = resolver.resolveCandidates(device);
         assertTrue(candidates.isEmpty());
     }
+
+    @Test
+    void initializeForExecutionTouchesLazyCollectionsSafely() {
+        CredentialResolver.initializeForExecution(null);
+
+        PhysicalDevice device = new PhysicalDevice();
+        device.id = UUID.randomUUID();
+        CredentialResolver.initializeForExecution(device);
+
+        Credential c = cred("test-user", CredentialType.PASSWORD, CredentialCategory.PKG_MANAGEMENT);
+        device.credentials = List.of(c);
+
+        NetworkService s = new NetworkService();
+        s.serviceType = "SSH";
+        s.credential = c;
+        device.services = Set.of(s);
+
+        CredentialResolver.initializeForExecution(device);
+
+        assertEquals("test-user", CredentialResolver.findSshService(device).orElseThrow().credential.username);
+    }
 }
 

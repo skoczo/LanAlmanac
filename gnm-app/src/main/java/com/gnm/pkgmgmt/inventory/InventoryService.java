@@ -1,6 +1,7 @@
 package com.gnm.pkgmgmt.inventory;
 
 import com.gnm.model.PhysicalDevice;
+import com.gnm.pkgmgmt.client.CredentialResolver;
 import com.gnm.pkgmgmt.client.DeviceLockManager;
 import com.gnm.pkgmgmt.client.PkgWorkerClient;
 import com.gnm.pkgmgmt.client.PkgWorkerClient.AuthenticatedCallResult;
@@ -61,9 +62,7 @@ public class InventoryService {
                                                             "Device not found: " + deviceId);
                                                 }
                                                 OsProfile profile = resolveProfile(device);
-                                                if (device.identities != null) {
-                                                    device.identities.size();
-                                                }
+                                                CredentialResolver.initializeForExecution(device);
                                                 DevicePackageScan scan = new DevicePackageScan();
                                                 scan.physicalDevice = device;
                                                 scan.osProfile = profile;

@@ -37,3 +37,10 @@ This plan tracks the fixes and UX enhancements requested for Agentless Package M
 - [x] **5.4** Add exception cause unwrapping in `DevicePackageResource` to return proper HTTP error codes instead of generic 500 Arc proxy exceptions.
 - [x] **5.5** Improve error parsing in `auth-context.tsx` to display clean server messages instead of raw serialized JSON.
 - [x] **5.6** Verified with `./gradlew spotlessApply`, compileJava, targeted unit tests, frontend issue scans, and fast-jar build.
+
+## Step 6 — Fix LazyInitializationException on Detached PhysicalDevice
+- [x] **6.1** Identified root cause of `Cannot lazily initialize collection of role 'com.gnm.model.PhysicalDevice.services' with key '...' (no session)`: when `PhysicalDevice` was loaded and detached from the initial short transaction in `UpdateCheckService`, its `@OneToMany(fetch = FetchType.LAZY)` collections (`services`, `credentials`, `categories`) remained uninitialized Hibernate proxies. When `PkgWorkerClient` tried to read `device.services` for SSH matching, Hibernate threw `LazyInitializationException`.
+- [x] **6.2** Added `CredentialResolver.initializeForExecution(PhysicalDevice device)` to eagerly traverse and touch `device.identities`, `device.services` (including credentials and categories), and `device.credentials` while the initial transaction session is still active.
+- [x] **6.3** Integrated `CredentialResolver.initializeForExecution(device)` in `UpdateCheckService`, `InventoryService`, and `PatchJobService`.
+- [x] **6.4** Added regression unit tests in `CredentialResolverTest.java` verifying lazy collections initialization on `PhysicalDevice`.
+- [x] **6.5** Ran `./gradlew spotlessApply`, unit tests, and verified fast-jar build.

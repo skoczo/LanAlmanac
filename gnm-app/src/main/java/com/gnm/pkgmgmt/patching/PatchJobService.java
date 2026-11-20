@@ -1,6 +1,7 @@
 package com.gnm.pkgmgmt.patching;
 
 import com.gnm.model.PhysicalDevice;
+import com.gnm.pkgmgmt.client.CredentialResolver;
 import com.gnm.pkgmgmt.client.DeviceLockManager;
 import com.gnm.pkgmgmt.client.PkgWorkerClient;
 import com.gnm.pkgmgmt.client.PkgWorkerClient.AuthenticatedCallResult;
@@ -107,7 +108,14 @@ public class PatchJobService {
                     () -> {
                         PhysicalDevice device =
                                 QuarkusTransaction.requiringNew()
-                                        .call(() -> PhysicalDevice.findById(deviceId));
+                                        .call(
+                                                () -> {
+                                                    PhysicalDevice d = PhysicalDevice.findById(deviceId);
+                                                    if (d != null) {
+                                                        CredentialResolver.initializeForExecution(d);
+                                                    }
+                                                    return d;
+                                                });
                         PatchJob job =
                                 QuarkusTransaction.requiringNew()
                                         .call(() -> PatchJob.findById(jobId));
