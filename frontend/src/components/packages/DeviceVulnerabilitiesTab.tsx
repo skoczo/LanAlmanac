@@ -20,6 +20,7 @@ export const DeviceVulnerabilitiesTab: React.FC<Props> = ({ deviceId }) => {
   const [vulns, setVulns] = useState<DeviceVulnerabilityItem[]>([])
   const [statusFilter, setStatusFilter] = useState('OPEN')
   const [severityFilter, setSeverityFilter] = useState('')
+  const [fixAvailableOnly, setFixAvailableOnly] = useState(true)
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -31,6 +32,7 @@ export const DeviceVulnerabilitiesTab: React.FC<Props> = ({ deviceId }) => {
       const params = new URLSearchParams()
       if (statusFilter) params.set('status', statusFilter)
       if (severityFilter) params.set('severity', severityFilter)
+      if (fixAvailableOnly) params.set('fixAvailable', 'true')
       const qs = params.toString() ? `?${params.toString()}` : ''
       const data = await apiClient<DeviceVulnerabilityItem[]>(
         `/api/devices/${deviceId}/vulnerabilities${qs}`
@@ -41,7 +43,7 @@ export const DeviceVulnerabilitiesTab: React.FC<Props> = ({ deviceId }) => {
     } finally {
       setLoading(false)
     }
-  }, [apiClient, deviceId, statusFilter, severityFilter])
+  }, [apiClient, deviceId, statusFilter, severityFilter, fixAvailableOnly])
 
   useEffect(() => {
     loadVulns()
@@ -116,6 +118,16 @@ export const DeviceVulnerabilitiesTab: React.FC<Props> = ({ deviceId }) => {
             <option value="LOW">Low</option>
           </select>
 
+          <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer bg-bg-base border border-border-subtle rounded-lg px-3 py-1.5">
+            <input
+              type="checkbox"
+              checked={fixAvailableOnly}
+              onChange={(e) => setFixAvailableOnly(e.target.checked)}
+              className="accent-accent-primary rounded"
+            />
+            Fix available only
+          </label>
+
           <button
             type="button"
             onClick={handleRefreshAssessment}
@@ -155,7 +167,7 @@ export const DeviceVulnerabilitiesTab: React.FC<Props> = ({ deviceId }) => {
                       SEVERITY_STYLES[v.severity] || SEVERITY_STYLES.UNKNOWN
                     }`}
                   >
-                    {v.severity}
+                    {v.severity}{v.cvssScore != null ? ` (${v.cvssScore})` : ''}
                   </span>
                   <span className="font-bold text-sm font-mono text-text-primary">{v.advisoryId}</span>
                   {v.cveAliases.map((cve) => (

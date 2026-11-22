@@ -1,6 +1,19 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useAuth } from '../lib/auth/auth-context'
-import { ShieldAlert, CheckCircle, ShieldCheck, MessageSquare, Key, Network, AlertOctagon, RotateCcw } from 'lucide-react'
+import {
+  ShieldAlert,
+  CheckCircle,
+  ShieldCheck,
+  MessageSquare,
+  Key,
+  Network,
+  AlertOctagon,
+  RotateCcw,
+  ChevronDown,
+  ChevronRight,
+  Layers,
+  CheckCheck
+} from 'lucide-react'
 
 export interface ThreatEvent {
   id: string
@@ -35,6 +48,12 @@ export const Alerts: React.FC = () => {
   const [hostnameEdits, setHostnameEdits] = useState<{ [key: string]: string }>({})
   const [noteEdits, setNoteEdits] = useState<{ [key: string]: string }>({})
   const [expandedNotes, setExpandedNotes] = useState<{ [key: string]: boolean }>({})
+
+  const [groupByDevice, setGroupByDevice] = useState(true)
+  const [collapsedDevices, setCollapsedDevices] = useState<{ [key: string]: boolean }>({})
+  const [deviceDisplayLimit, setDeviceDisplayLimit] = useState<{ [key: string]: number }>({})
+  const [resolvingDevice, setResolvingDevice] = useState<string | null>(null)
+  const [resolvingAll, setResolvingAll] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -75,6 +94,33 @@ export const Alerts: React.FC = () => {
       fetchData()
     } catch (err) {
       console.error('Failed to resolve threat', err)
+    }
+  }
+
+  const handleResolveDevice = async (deviceId: string) => {
+    try {
+      setResolvingDevice(deviceId)
+      await apiClient(`/api/threats/devices/${deviceId}/resolve`, { method: 'PUT' })
+      fetchData()
+    } catch (err) {
+      console.error('Failed to resolve threats for device', err)
+    } finally {
+      setResolvingDevice(null)
+    }
+  }
+
+  const handleResolveAll = async () => {
+    if (!window.confirm(`Are you sure you want to mark all ${activeThreats.length} unresolved alerts as resolved?`)) {
+      return
+    }
+    try {
+      setResolvingAll(true)
+      await apiClient('/api/threats/resolve-all', { method: 'PUT' })
+      fetchData()
+    } catch (err) {
+      console.error('Failed to resolve all threats', err)
+    } finally {
+      setResolvingAll(false)
     }
   }
 
@@ -153,6 +199,33 @@ export const Alerts: React.FC = () => {
     }
   }
 
+  const activeThreats = threats.filter(t => !t.resolved)
+  const resolvedThreats = threats.filter(t => t.resolved)
+
+  const deviceGroups = useMemo(() => {
+    const groups: { [key: string]: { deviceId: string; name: string; threats: ThreatEvent[]; highestSeverity: string } } = {}
+    for (const t of activeThreats) {
+      const devId = t.physicalDeviceId || (t.macAddress ? macToDevId[t.macAddress.toLowerCase()] : undefined) || 'unassociated'
+      if (!groups[devId]) {
+        groups[devId] = {
+          deviceId: devId,
+          name: devId === 'unassociated' ? 'Unassociated Alerts' : devices[devId] || 'Unknown Device',
+          threats: [],
+          highestSeverity: 'LOW'
+        }
+      }
+      groups[devId].threats.push(t)
+      if (t.severity === 'CRITICAL') {
+        groups[devId].highestSeverity = 'CRITICAL'
+      } else if (t.severity === 'HIGH' && groups[devId].highestSeverity !== 'CRITICAL') {
+        groups[devId].highestSeverity = 'HIGH'
+      } else if (t.severity === 'MEDIUM' && groups[devId].highestSeverity === 'LOW') {
+        groups[devId].highestSeverity = 'MEDIUM'
+      }
+    }
+    return Object.values(groups).sort((a, b) => b.threats.length - a.threats.length)
+  }, [activeThreats, devices, macToDevId])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -160,9 +233,6 @@ export const Alerts: React.FC = () => {
       </div>
     )
   }
-
-  const activeThreats = threats.filter(t => !t.resolved)
-  const resolvedThreats = threats.filter(t => t.resolved)
 
   const renderThreatCard = (threat: ThreatEvent) => {
     const isUnknownHostname = threat.description.includes('Hostname: Unknown') || threat.description.includes('from Unknown')
@@ -388,14 +458,41 @@ export const Alerts: React.FC = () => {
       <div className="space-y-6">
         {/* Active Alerts Section */}
         <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 shadow-lg flex flex-col space-y-5">
-          <div className="flex items-center justify-between border-b border-border-subtle pb-4">
+          <div className="flex flex-wrap items-center justify-between border-b border-border-subtle pb-4 gap-3">
             <div className="flex items-center gap-3">
               <ShieldAlert className="w-6 h-6 text-accent-danger" />
               <h2 className="text-lg font-bold tracking-tight">Active Alerts</h2>
+              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-accent-danger/20 text-accent-danger border border-accent-danger/30">
+                {activeThreats.length} Unresolved
+              </span>
             </div>
-            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-accent-danger/20 text-accent-danger border border-accent-danger/30">
-              {activeThreats.length} Unresolved
-            </span>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setGroupByDevice(!groupByDevice)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                  groupByDevice
+                    ? 'bg-accent-primary/20 border-accent-primary/50 text-accent-primary'
+                    : 'bg-bg-surface-raised border-border-subtle text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                {groupByDevice ? 'Grouped by Device' : 'Flat List'}
+              </button>
+
+              {activeThreats.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleResolveAll}
+                  disabled={resolvingAll}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-danger/20 border border-accent-danger/40 hover:bg-accent-danger/30 text-accent-danger text-xs font-semibold transition-colors disabled:opacity-50"
+                >
+                  <CheckCheck className="w-3.5 h-3.5" />
+                  {resolvingAll ? 'Resolving...' : 'Resolve All Alerts'}
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="flex-1 space-y-4">
@@ -404,6 +501,96 @@ export const Alerts: React.FC = () => {
                 <ShieldCheck className="w-10 h-10 mb-3 text-accent-success opacity-80" />
                 <p className="text-sm font-semibold text-text-primary">No active alerts</p>
                 <p className="text-xs">Your network is clean and all threats are resolved.</p>
+              </div>
+            ) : groupByDevice ? (
+              <div className="space-y-4">
+                {deviceGroups.map((group) => {
+                  const isCollapsed = collapsedDevices[group.deviceId] ?? false
+                  const limit = deviceDisplayLimit[group.deviceId] || 10
+                  const visibleThreats = group.threats.slice(0, limit)
+                  const hasMore = group.threats.length > limit
+
+                  return (
+                    <div
+                      key={group.deviceId}
+                      className="border border-border-subtle rounded-xl bg-bg-surface-raised/40 overflow-hidden"
+                    >
+                      <div className="p-4 flex flex-wrap items-center justify-between gap-3 bg-bg-surface-raised border-b border-border-subtle/50">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCollapsedDevices((prev) => ({
+                              ...prev,
+                              [group.deviceId]: !isCollapsed
+                            }))
+                          }
+                          className="flex items-center gap-3 text-left focus:outline-none cursor-pointer"
+                        >
+                          {isCollapsed ? (
+                            <ChevronRight className="w-4 h-4 text-text-muted" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-text-muted" />
+                          )}
+                          <div className="flex items-center gap-2">
+                            <Network className="w-4 h-4 text-accent-primary" />
+                            <span className="font-bold text-sm text-text-primary">{group.name}</span>
+                          </div>
+                          <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-accent-danger/15 text-accent-danger border border-accent-danger/30">
+                            {group.threats.length} alert{group.threats.length === 1 ? '' : 's'}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                              group.highestSeverity === 'CRITICAL'
+                                ? 'bg-red-500/20 text-red-500 border border-red-500/50'
+                                : group.highestSeverity === 'HIGH'
+                                ? 'bg-accent-danger/20 text-accent-danger'
+                                : 'bg-accent-warning/20 text-accent-warning'
+                            }`}
+                          >
+                            {group.highestSeverity}
+                          </span>
+                        </button>
+
+                        <div className="flex items-center gap-2">
+                          {group.deviceId !== 'unassociated' && (
+                            <button
+                              type="button"
+                              onClick={() => handleResolveDevice(group.deviceId)}
+                              disabled={resolvingDevice === group.deviceId}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-primary/10 hover:bg-accent-primary/20 border border-accent-primary/30 text-accent-primary text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              {resolvingDevice === group.deviceId ? 'Resolving...' : 'Mark Group Viewed/Resolved'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {!isCollapsed && (
+                        <div className="p-4 space-y-3">
+                          {visibleThreats.map(renderThreatCard)}
+
+                          {hasMore && (
+                            <div className="pt-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDeviceDisplayLimit((prev) => ({
+                                    ...prev,
+                                    [group.deviceId]: limit + 50
+                                  }))
+                                }
+                                className="px-4 py-2 rounded-lg bg-bg-surface border border-border-subtle hover:border-text-secondary text-xs text-text-secondary hover:text-text-primary font-semibold transition-colors cursor-pointer"
+                              >
+                                Showing {limit} of {group.threats.length} alerts. Show more...
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             ) : (
               activeThreats.map(renderThreatCard)

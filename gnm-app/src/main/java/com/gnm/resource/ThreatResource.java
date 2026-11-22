@@ -1,9 +1,11 @@
 package com.gnm.resource;
 
 import com.gnm.model.ThreatEvent;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -18,6 +20,7 @@ import java.time.Instant;
 @Path("/api/threats")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
+@RolesAllowed({"gnm-admin", "gnm-operator", "gnm-viewer"})
 public class ThreatResource {
 
     private static final String QUERY_MAC_ADDRESS = "macAddress = ?1";
@@ -28,18 +31,19 @@ public class ThreatResource {
     @Transactional
     public List<ThreatEvent> getThreats() {
         List<ThreatEvent> threats = ThreatEvent.list("ORDER BY resolved ASC, detectedAt DESC");
+        Map<String, NetworkIdentity> macCache = new HashMap<>();
         for (ThreatEvent threat : threats) {
-            if (threat.macAddress != null && !threat.macAddress.isEmpty()) {
-                NetworkIdentity identity = NetworkIdentity.find(QUERY_MAC_ADDRESS, threat.macAddress).firstResult();
+            if (threat.physicalDeviceId == null && threat.macAddress != null && !threat.macAddress.isEmpty()) {
+                NetworkIdentity identity =
+                        macCache.computeIfAbsent(
+                                threat.macAddress,
+                                mac -> NetworkIdentity.find(QUERY_MAC_ADDRESS, mac).firstResult());
                 if (identity != null && identity.physicalDevice != null) {
                     boolean updated = false;
-                    if (threat.physicalDeviceId == null) {
-                        threat.physicalDeviceId = identity.physicalDevice.id;
-                        updated = true;
-                    }
+                    threat.physicalDeviceId = identity.physicalDevice.id;
+                    updated = true;
                     if (threat.description != null && threat.description.startsWith("Rogue Device Detected") && !threat.resolved) {
                         threat.resolved = true;
-                        updated = true;
                     }
                     if (updated) {
                         threat.persist();
@@ -57,7 +61,29 @@ public class ThreatResource {
     }
 
     @PUT
+    @Path("/devices/{deviceId}/resolve")
+    @RolesAllowed({"gnm-admin", "gnm-operator"})
+    @Transactional
+    public Map<String, Object> resolveDeviceThreats(@PathParam("deviceId") UUID deviceId) {
+        int updated =
+                ThreatEvent.update(
+                        "resolved = true where physicalDeviceId = ?1 and resolved = false",
+                        deviceId);
+        return Map.of("resolvedCount", updated);
+    }
+
+    @PUT
+    @Path("/resolve-all")
+    @RolesAllowed({"gnm-admin", "gnm-operator"})
+    @Transactional
+    public Map<String, Object> resolveAllThreats() {
+        int updated = ThreatEvent.update("resolved = true where resolved = false");
+        return Map.of("resolvedCount", updated);
+    }
+
+    @PUT
     @Path("/{id}/resolve")
+    @RolesAllowed({"gnm-admin", "gnm-operator"})
     @Transactional
     public ThreatEvent resolveThreat(@PathParam("id") UUID id) {
         ThreatEvent threat = ThreatEvent.findById(id);
@@ -70,6 +96,7 @@ public class ThreatResource {
 
     @PUT
     @Path("/{id}/unresolve")
+    @RolesAllowed({"gnm-admin", "gnm-operator"})
     @Transactional
     public ThreatEvent unresolveThreat(@PathParam("id") UUID id) {
         ThreatEvent threat = ThreatEvent.findById(id);
@@ -82,6 +109,7 @@ public class ThreatResource {
 
     @PUT
     @Path("/{id}/note")
+    @RolesAllowed({"gnm-admin", "gnm-operator"})
     @Transactional
     public ThreatEvent updateNote(@PathParam("id") UUID id, Map<String, String> payload) {
         ThreatEvent threat = ThreatEvent.findById(id);
@@ -94,6 +122,7 @@ public class ThreatResource {
 
     @PUT
     @Path("/{id}/accept-ssh-key")
+    @RolesAllowed({"gnm-admin", "gnm-operator"})
     @Transactional
     public ThreatEvent acceptSshKey(@PathParam("id") UUID id) {
         ThreatEvent threat = ThreatEvent.findById(id);
@@ -131,6 +160,7 @@ public class ThreatResource {
 
     @POST
     @Path("/{id}/approve-device")
+    @RolesAllowed({"gnm-admin", "gnm-operator"})
     @Transactional
     public ThreatEvent approveDevice(@PathParam("id") UUID id, Map<String, String> payload) {
         ThreatEvent threat = ThreatEvent.findById(id);

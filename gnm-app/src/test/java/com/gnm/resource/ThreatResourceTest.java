@@ -69,4 +69,42 @@ class ThreatResourceTest extends AbstractE2ETest {
             assertEquals("Approved Test Phone", dev.displayName);
         });
     }
+
+    @Test
+    @TestSecurity(user = "admin", roles = {"gnm-admin", "ADMIN"})
+    void testResolveAllAndDeviceThreats() {
+        java.util.UUID devId = java.util.UUID.randomUUID();
+        io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
+            ThreatEvent t1 = new ThreatEvent();
+            t1.severity = "HIGH";
+            t1.description = "Test threat on device";
+            t1.physicalDeviceId = devId;
+            t1.detectedAt = Instant.now();
+            t1.resolved = false;
+            t1.persist();
+
+            ThreatEvent t2 = new ThreatEvent();
+            t2.severity = "MEDIUM";
+            t2.description = "Global unassigned threat";
+            t2.detectedAt = Instant.now();
+            t2.resolved = false;
+            t2.persist();
+        });
+
+        // Resolve by device
+        given()
+            .when()
+            .put("/api/threats/devices/" + devId + "/resolve")
+            .then()
+            .statusCode(200)
+            .body("resolvedCount", greaterThanOrEqualTo(1));
+
+        // Resolve all
+        given()
+            .when()
+            .put("/api/threats/resolve-all")
+            .then()
+            .statusCode(200)
+            .body("resolvedCount", greaterThanOrEqualTo(1));
+    }
 }

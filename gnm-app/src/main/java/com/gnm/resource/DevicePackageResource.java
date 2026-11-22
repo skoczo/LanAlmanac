@@ -268,7 +268,8 @@ public class DevicePackageResource {
     public Response getDeviceVulnerabilities(
             @PathParam("id") UUID deviceId,
             @QueryParam("status") String statusFilter,
-            @QueryParam("severity") String severityFilter) {
+            @QueryParam("severity") String severityFilter,
+            @QueryParam("fixAvailable") Boolean fixAvailableFilter) {
         PhysicalDevice device = PhysicalDevice.findById(deviceId);
         if (device == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
@@ -286,6 +287,11 @@ public class DevicePackageResource {
         if (severityFilter != null && !severityFilter.isBlank()) {
             query.append(" and upper(advisory.severity) = :severity");
             params.put("severity", severityFilter.trim().toUpperCase(Locale.ROOT));
+        }
+
+        if (fixAvailableFilter != null) {
+            query.append(" and fixAvailableNow = :fixAvailable");
+            params.put("fixAvailable", fixAvailableFilter);
         }
 
         List<DeviceVulnerability> vulns =
