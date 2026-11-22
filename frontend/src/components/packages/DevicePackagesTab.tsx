@@ -59,6 +59,40 @@ export const DevicePackagesTab: React.FC<Props> = ({ deviceId, rebootRequired })
   const [lastScan, setLastScan] = useState<DevicePackageScanResult | null>(null)
   const [selectedPkgs, setSelectedPkgs] = useState<string[]>([])
 
+  const getJobStatusBadge = (status: string) => {
+    const norm = (status || '').toUpperCase()
+    if (norm === 'SUCCEEDED' || norm === 'SUCCESS' || norm === 'COMPLETED') {
+      return {
+        bg: 'bg-accent-success/15 text-accent-success border-accent-success/30',
+        icon: <CheckCircle2 className="w-3.5 h-3.5 text-accent-success" />,
+        label: 'SUCCEEDED'
+      }
+    }
+    if (norm === 'RUNNING' || norm === 'PENDING') {
+      return {
+        bg: 'bg-accent-primary/15 text-accent-primary border-accent-primary/30 animate-pulse',
+        icon: <RefreshCcw className="w-3.5 h-3.5 text-accent-primary animate-spin" />,
+        label: norm === 'PENDING' ? 'PENDING' : 'RUNNING'
+      }
+    }
+    if (norm === 'CANCELLED') {
+      return {
+        bg: 'bg-accent-warning/15 text-accent-warning border-accent-warning/30',
+        icon: <AlertTriangle className="w-3.5 h-3.5 text-accent-warning" />,
+        label: 'CANCELLED'
+      }
+    }
+    return {
+      bg: 'bg-accent-danger/15 text-accent-danger border-accent-danger/30',
+      icon: <XCircle className="w-3.5 h-3.5 text-accent-danger" />,
+      label: norm || 'FAILED'
+    }
+  }
+
+  const activeRunningJob = patchJobs.find(
+    (j) => j.status === 'RUNNING' || j.status === 'PENDING'
+  )
+
   const loadData = useCallback(async () => {
     setLoading(true)
     setErrorMsg(null)
@@ -87,8 +121,30 @@ export const DevicePackagesTab: React.FC<Props> = ({ deviceId, rebootRequired })
   }, [apiClient, deviceId, query, filterView])
 
   useEffect(() => {
-    loadData()
+    void loadData()
   }, [loadData])
+
+  // Real-time polling when an operation/patch job is active on the node
+  useEffect(() => {
+    if (!activeRunningJob && !startingPatchJob && !scanning && !checkingUpdates) return
+
+    const timer = setInterval(() => {
+      void apiClient<PatchJobItem[]>(`/api/devices/${deviceId}/patch-jobs`)
+        .then((jobs) => {
+          setPatchJobs(jobs)
+          const currentlyActive = jobs.some(
+            (j) => j.status === 'RUNNING' || j.status === 'PENDING'
+          )
+          // If the job just completed, refresh the package inventory and updates list automatically
+          if (activeRunningJob && !currentlyActive) {
+            void loadData()
+          }
+        })
+        .catch(() => { })
+    }, 3000)
+
+    return () => clearInterval(timer)
+  }, [activeRunningJob, startingPatchJob, scanning, checkingUpdates, apiClient, deviceId, loadData])
 
   const handleScanInventory = async () => {
     setScanning(true)
@@ -320,6 +376,50 @@ export const DevicePackagesTab: React.FC<Props> = ({ deviceId, rebootRequired })
         </div>
       </div>
 
+      {/* Active Running Operation Banner */}
+      {activeRunningJob && (
+        <div className="p-4 rounded-2xl bg-accent-primary/10 border border-accent-primary/30 flex flex-wrap items-center justify-between gap-4 shadow-lg animate-pulse">
+          <div className="flex items-center gap-3.5">
+            <div className="p-2.5 rounded-xl bg-accent-primary/20 text-accent-primary flex items-center justify-center">
+              <RefreshCcw className="w-5 h-5 animate-spin" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm text-text-primary">
+                  Operation in Progress: {activeRunningJob.mode.replace('_', ' ')}
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-accent-primary/20 text-accent-primary">
+                  {activeRunningJob.status}
+                </span>
+                {activeRunningJob.currentPhase && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-bg-base border border-border-subtle text-accent-info">
+                    Phase: {activeRunningJob.currentPhase}
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-text-secondary mt-1 flex items-center gap-2">
+                <Clock className="w-3.5 h-3.5 text-text-muted" />
+                <span>
+                  Started: {new Date(activeRunningJob.startedAt || activeRunningJob.createdAt || Date.now()).toLocaleTimeString()}
+                </span>
+                {activeRunningJob.triggeredBy && <span>· By: {activeRunningJob.triggeredBy}</span>}
+                {activeRunningJob.requestedPackages && activeRunningJob.requestedPackages.length > 0 && (
+                  <span>· ({activeRunningJob.requestedPackages.length} package(s))</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveJobId(activeRunningJob.id)}
+            className="px-4 py-2 rounded-xl bg-accent-primary text-white text-xs font-semibold hover:bg-accent-primary/90 flex items-center gap-2 cursor-pointer shadow"
+          >
+            <Terminal className="w-4 h-4" />
+            View Live Stream
+          </button>
+        </div>
+      )}
+
       {errorMsg && (
         <div className="p-4 rounded-xl bg-accent-danger/10 border border-accent-danger/30 text-accent-danger text-xs font-semibold">
           {errorMsg}
@@ -348,22 +448,20 @@ export const DevicePackagesTab: React.FC<Props> = ({ deviceId, rebootRequired })
               <button
                 type="button"
                 onClick={() => setFilterView('ALL')}
-                className={`px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
-                  filterView === 'ALL'
+                className={`px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer ${filterView === 'ALL'
                     ? 'bg-accent-primary text-white shadow-sm'
                     : 'text-text-secondary hover:text-text-primary'
-                }`}
+                  }`}
               >
                 All Packages ({packages.length})
               </button>
               <button
                 type="button"
                 onClick={() => setFilterView('UPDATES')}
-                className={`px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  filterView === 'UPDATES'
+                className={`px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${filterView === 'UPDATES'
                     ? 'bg-accent-primary text-white shadow-sm'
                     : 'text-text-secondary hover:text-text-primary'
-                }`}
+                  }`}
               >
                 <ArrowUpCircle className="w-3.5 h-3.5 text-accent-info" />
                 Updates Available ({updatesCount})
@@ -371,11 +469,10 @@ export const DevicePackagesTab: React.FC<Props> = ({ deviceId, rebootRequired })
               <button
                 type="button"
                 onClick={() => setFilterView('VULNERABLE')}
-                className={`px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  filterView === 'VULNERABLE'
+                className={`px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${filterView === 'VULNERABLE'
                     ? 'bg-accent-primary text-white shadow-sm'
                     : 'text-text-secondary hover:text-text-primary'
-                }`}
+                  }`}
               >
                 <ShieldAlert className="w-3.5 h-3.5 text-accent-danger" />
                 Vulnerable ({vulnerableCount})
@@ -483,9 +580,8 @@ export const DevicePackagesTab: React.FC<Props> = ({ deviceId, rebootRequired })
                   return (
                     <tr
                       key={pkg.id}
-                      className={`transition-colors ${
-                        hasUpdate ? 'bg-accent-primary/[0.02] hover:bg-accent-primary/[0.05]' : 'hover:bg-bg-surface-raised/60'
-                      }`}
+                      className={`transition-colors ${hasUpdate ? 'bg-accent-primary/[0.02] hover:bg-accent-primary/[0.05]' : 'hover:bg-bg-surface-raised/60'
+                        }`}
                     >
                       <td className="py-2.5 px-3">
                         {hasUpdate ? (
@@ -546,75 +642,77 @@ export const DevicePackagesTab: React.FC<Props> = ({ deviceId, rebootRequired })
         )}
       </div>
 
-      {/* Patch Execution History Card */}
+      {/* Operations & Execution History Card */}
       {patchJobs.length > 0 && (
         <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-4 shadow-lg">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <Terminal className="w-4 h-4 text-accent-primary" />
-              <h4 className="font-bold text-sm">Recent Patch Execution History</h4>
+              <h4 className="font-bold text-sm">Node Operations & Execution History</h4>
             </div>
-            <span className="text-xs text-text-muted">{patchJobs.length} execution(s) recorded</span>
+            <span className="text-xs text-text-muted">{patchJobs.length} operation(s) recorded</span>
           </div>
 
           <div className="divide-y divide-border-subtle/50 text-xs">
-            {patchJobs.slice(0, 5).map((job) => (
-              <div
-                key={job.id}
-                className="py-3 flex flex-wrap items-center justify-between gap-3 hover:bg-bg-surface-raised/40 px-2 rounded-lg transition-colors cursor-pointer"
-                onClick={() => setActiveJobId(job.id)}
-              >
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`p-1.5 rounded-lg ${
-                      job.status === 'COMPLETED'
-                        ? 'bg-accent-success/15 text-accent-success'
-                        : job.status === 'RUNNING'
-                        ? 'bg-accent-primary/15 text-accent-primary animate-pulse'
-                        : 'bg-accent-danger/15 text-accent-danger'
-                    }`}
-                  >
-                    {job.status === 'COMPLETED' ? (
-                      <CheckCircle2 className="w-4 h-4" />
-                    ) : job.status === 'RUNNING' ? (
-                      <RefreshCcw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <XCircle className="w-4 h-4" />
-                    )}
-                  </span>
-                  <div>
-                    <div className="font-semibold text-text-primary flex items-center gap-2">
-                      <span>{job.mode.replace('_', ' ')}</span>
-                      <span className="text-[10px] font-mono text-text-muted">{job.osProfileSlug}</span>
-                    </div>
-                    <div className="text-[10px] text-text-secondary mt-0.5 flex items-center gap-2">
-                      <Clock className="w-3 h-3" />
-                      <span>{new Date(job.startedAt).toLocaleString()}</span>
-                      {job.rebootRequired && (
-                        <span className="text-accent-warning font-semibold">· Reboot Required</span>
-                      )}
+            {patchJobs.map((job) => {
+              const badge = getJobStatusBadge(job.status)
+              return (
+                <button
+                  type="button"
+                  key={job.id}
+                  className="w-full py-3.5 flex flex-wrap items-center justify-between gap-3 hover:bg-bg-surface-raised/40 px-2.5 rounded-xl transition-colors cursor-pointer text-left"
+                  onClick={() => setActiveJobId(job.id)}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`p-2 rounded-xl border ${badge.bg}`}>
+                      {badge.icon}
+                    </span>
+                    <div>
+                      <div className="font-semibold text-text-primary flex items-center gap-2">
+                        <span>{job.mode.replace('_', ' ')}</span>
+                        {job.osProfileSlug && (
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-bg-base border border-border-subtle text-text-muted">
+                            {job.osProfileSlug}
+                          </span>
+                        )}
+                        {job.currentPhase && (
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-accent-info/10 text-accent-info border border-accent-info/20">
+                            {job.currentPhase}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-text-secondary mt-1 flex flex-wrap items-center gap-2">
+                        <span className="flex items-center gap-1 text-text-muted">
+                          <Clock className="w-3 h-3" />
+                          {new Date(job.startedAt || job.createdAt || Date.now()).toLocaleString()}
+                        </span>
+                        {job.triggeredBy && <span>· By: {job.triggeredBy}</span>}
+                        {job.exitCode !== null && job.exitCode !== undefined && (
+                          <span>· Exit code: {job.exitCode}</span>
+                        )}
+                        {job.rebootRequired && (
+                          <span className="text-accent-warning font-semibold">· Reboot Required</span>
+                        )}
+                        {job.errorSummary && (
+                          <span className="text-accent-danger font-medium">· Error: {job.errorSummary}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                      job.status === 'COMPLETED'
-                        ? 'bg-accent-success/15 text-accent-success'
-                        : job.status === 'RUNNING'
-                        ? 'bg-accent-primary/15 text-accent-primary'
-                        : 'bg-accent-danger/15 text-accent-danger'
-                    }`}
-                  >
-                    {job.status}
-                  </span>
-                  <span className="text-accent-primary text-xs font-semibold hover:underline">
-                    View Logs
-                  </span>
-                </div>
-              </div>
-            ))}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${badge.bg}`}
+                    >
+                      {badge.label}
+                    </span>
+                    <span className="text-accent-primary text-xs font-semibold hover:underline">
+                      View Logs
+                    </span>
+                  </div>
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
@@ -625,10 +723,14 @@ export const DevicePackagesTab: React.FC<Props> = ({ deviceId, rebootRequired })
           jobId={activeJobId}
           onClose={() => {
             setActiveJobId(null)
-            loadData()
+            void loadData()
           }}
           onJobUpdated={(updated) => {
             setPatchJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)))
+            const norm = (updated.status || '').toUpperCase()
+            if (norm === 'SUCCEEDED' || norm === 'SUCCESS' || norm === 'FAILED' || norm === 'CANCELLED') {
+              void loadData()
+            }
           }}
         />
       )}
@@ -662,7 +764,7 @@ export const DevicePackagesTab: React.FC<Props> = ({ deviceId, rebootRequired })
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(sudoersModal.snippet)
+                    void navigator.clipboard.writeText(sudoersModal.snippet)
                     setCopied(true)
                   }}
                   className="px-3.5 py-1.5 rounded-lg bg-accent-primary text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"

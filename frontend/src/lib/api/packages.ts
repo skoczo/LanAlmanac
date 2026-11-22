@@ -98,13 +98,17 @@ export interface PatchJobItem {
   usedFallback: boolean
   mode: 'FULL_UPGRADE' | 'SECURITY_ONLY' | 'SELECTED_PACKAGES' | string
   requestedPackages: string[]
-  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CONNECTION_LOST' | 'CANCELLED' | string
-  errorCode: string | null
-  errorMessage: string | null
-  rebootRequired: boolean
+  status: 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'COMPLETED' | 'FAILED' | 'CONNECTION_LOST' | 'CANCELLED' | string
+  currentPhase?: string | null
+  rebootRequired?: boolean | null
+  exitCode?: number | null
+  errorCode?: string | null
+  errorSummary?: string | null
+  errorMessage?: string | null
   triggeredBy: string | null
-  startedAt: string
-  finishedAt: string | null
+  startedAt?: string | null
+  finishedAt?: string | null
+  createdAt?: string
 }
 
 export interface PatchJobLogLine {

@@ -60,6 +60,7 @@ public class PatchJobService {
     }
 
     @Transactional
+    @SuppressWarnings("java:S6906")
     public PatchJob startAsyncPatchJob(
             UUID deviceId, String rawMode, List<String> requestedPackages, String actor) {
         PhysicalDevice device = PhysicalDevice.findById(deviceId);
@@ -101,6 +102,7 @@ public class PatchJobService {
     }
 
     private void runAsyncJob(UUID deviceId, UUID jobId) {
+        boolean succeeded = false;
         try {
             lockManager.withDeviceLock(
                     deviceId,
@@ -124,10 +126,49 @@ public class PatchJobService {
                         }
                         executeStreamingCall(device, job, null, true);
                     });
+
+            PatchJob finishedJob =
+                    QuarkusTransaction.requiringNew()
+                            .call(() -> PatchJob.findById(jobId));
+            succeeded = finishedJob != null && ("SUCCEEDED".equalsIgnoreCase(finishedJob.status)
+                    || "SUCCESS".equalsIgnoreCase(finishedJob.status));
         } catch (Exception e) {
             log.errorf(e, "Async patch job %s failed", jobId);
         } finally {
             logBroker.completeJob(jobId);
+        }
+
+        if (succeeded) {
+            triggerPostPatchRefresh(deviceId, jobId);
+        }
+    }
+
+    private void triggerPostPatchRefresh(UUID deviceId, UUID jobId) {
+        try {
+            log.infof("Post-patch refresh: scanning package inventory and checking updates for device %s", deviceId);
+            appendLog(
+                    jobId,
+                    "SYSTEM",
+                    "--- Post-Patch: Refreshing package inventory and checking available updates ---",
+                    null,
+                    true);
+            inventoryService.scanDevice(deviceId);
+            updateCheckService.checkDeviceUpdates(deviceId, false);
+            appendLog(
+                    jobId,
+                    "SYSTEM",
+                    "--- Post-Patch: Package inventory and updates refreshed successfully ---",
+                    null,
+                    true);
+            log.infof("Post-patch refresh completed successfully for device %s", deviceId);
+        } catch (Exception e) {
+            log.warnf("Post-patch inventory refresh failed for device %s: %s", deviceId, e.getMessage());
+            appendLog(
+                    jobId,
+                    "SYSTEM",
+                    "Post-patch inventory refresh warning: " + e.getMessage(),
+                    null,
+                    true);
         }
     }
 
@@ -336,6 +377,8 @@ public class PatchJobService {
                     try {
                         Thread.sleep(Duration.ofSeconds(60));
                         inventoryService.scanDevice(deviceId);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
                     } catch (Exception ignored) {
                         // Best-effort delayed recheck after SSH connection drop (ADR-4).
                     }
