@@ -163,17 +163,39 @@ export const DeviceVulnerabilitiesTab: React.FC<Props> = ({ deviceId }) => {
               <div className="space-y-1.5 max-w-3xl">
                 <div className="flex flex-wrap items-center gap-2">
                   <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                    className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
                       SEVERITY_STYLES[v.severity] || SEVERITY_STYLES.UNKNOWN
                     }`}
                   >
-                    {v.severity}{v.cvssScore != null ? ` (${v.cvssScore})` : ''}
+                    {v.severity}
                   </span>
+
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold border ${
+                      v.cvssScore != null && v.cvssScore >= 9.0
+                        ? 'bg-red-500/20 text-red-400 border-red-500/40'
+                        : v.cvssScore != null && v.cvssScore >= 7.0
+                        ? 'bg-orange-500/20 text-orange-400 border-orange-500/40'
+                        : v.cvssScore != null && v.cvssScore >= 4.0
+                        ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40'
+                        : v.cvssScore != null
+                        ? 'bg-accent-info/20 text-accent-info border-accent-info/40'
+                        : 'bg-bg-base border-border-subtle text-text-muted'
+                    }`}
+                    title={
+                      v.cvssScore != null
+                        ? `CVSS v3 Base Score: ${v.cvssScore}`
+                        : 'CVSS Score not assigned by vendor'
+                    }
+                  >
+                    {v.cvssScore != null ? `CVSS ${v.cvssScore.toFixed(1)}` : 'CVSS N/A'}
+                  </span>
+
                   <span className="font-bold text-sm font-mono text-text-primary">{v.advisoryId}</span>
                   {v.cveAliases.map((cve) => (
                     <span
                       key={cve}
-                      className="px-2 py-0.5 rounded text-[10px] font-mono bg-bg-base border border-border-subtle text-text-secondary"
+                      className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-accent-info/10 border border-accent-info/30 text-accent-info"
                     >
                       {cve}
                     </span>

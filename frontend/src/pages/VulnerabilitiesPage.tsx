@@ -316,7 +316,14 @@ export const VulnerabilitiesPage: React.FC = () => {
                   <tbody className="divide-y divide-border-subtle/50">
                     {vulns.map((v) => (
                       <tr key={v.id} className="hover:bg-bg-surface-raised/60">
-                        <td className="py-2.5 px-3 font-bold">{v.severity}</td>
+                        <td className="py-2.5 px-3">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold">{v.severity}</span>
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono text-text-muted bg-bg-base border border-border-subtle">
+                              {v.cvssScore != null ? `CVSS ${v.cvssScore.toFixed(1)}` : 'CVSS N/A'}
+                            </span>
+                          </div>
+                        </td>
                         <td className="py-2.5 px-3 font-mono font-semibold text-text-primary">
                           {v.advisoryId}
                           {v.cveAliases.length > 0 && (
