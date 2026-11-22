@@ -28,34 +28,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - name: Setup docker-compose compatibility for Testcontainers
-        run: |
-          sudo curl -L "https://github.com/docker/compose/releases/download/v2.29.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
-
-      - name: Build Testcontainer Docker Images
-        run: |
-          docker build -t gnm-ne-linux-server:latest -f Dockerfile.ne-linux-server .
-          docker build -t gnm-ne-router-sim:latest -f Dockerfile.ne-router-sim .
-          docker build -t gnm-traffic-generator:latest -f Dockerfile.traffic-generator .
-
-      - name: Run Backend Tests & Generate Coverage
-        run: ./gradlew :gnm-app:test
-        continue-on-error: true
-
-      - name: Run SonarCloud Static Analysis Scan
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_IO_TOKEN || secrets.SONAR_TOKEN }}
-        run: ./gradlew sonar --info
-        continue-on-error: true
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -108,6 +80,46 @@ jobs:
             echo "- **Digest:** \`${{ steps.build_push.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Package Details:** [View in GitHub Packages](https://github.com/${GITHUB_REPOSITORY}/pkgs/container/${REPO_NAME})" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  backend-tests-and-sonar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Setup docker-compose compatibility for Testcontainers
+        run: |
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.29.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+
+      - name: Build Testcontainer Docker Images
+        run: |
+          docker build -t gnm-ne-linux-server:latest -f Dockerfile.ne-linux-server .
+          docker build -t gnm-ne-router-sim:latest -f Dockerfile.ne-router-sim .
+          docker build -t gnm-traffic-generator:latest -f Dockerfile.traffic-generator .
+
+      - name: Run Backend Tests & Generate Coverage
+        run: ./gradlew :gnm-app:test
+        continue-on-error: true
+
+      - name: Run SonarCloud Static Analysis Scan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_IO_TOKEN || secrets.SONAR_TOKEN }}
+        run: ./gradlew sonar --info
+        continue-on-error: true
 
   build-and-push-pkg-worker:
     runs-on: ubuntu-latest
