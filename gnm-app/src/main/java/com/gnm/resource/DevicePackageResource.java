@@ -305,6 +305,8 @@ public class DevicePackageResource {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(Map.of(KEY_ERROR, e.getMessage()))
                     .build();
+        } catch (Exception e) {
+            return handleGenericException(e, "Vulnerability scan failed");
         }
     }
 
