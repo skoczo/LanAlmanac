@@ -274,21 +274,25 @@ public class DevicePackageResource {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
 
+        StringBuilder query = new StringBuilder("physicalDevice.id = :deviceId");
+        Map<String, Object> params = new HashMap<>();
+        params.put("deviceId", deviceId);
+
+        if (statusFilter != null && !statusFilter.isBlank()) {
+            query.append(" and upper(status) = :status");
+            params.put("status", statusFilter.trim().toUpperCase(Locale.ROOT));
+        }
+
+        if (severityFilter != null && !severityFilter.isBlank()) {
+            query.append(" and upper(advisory.severity) = :severity");
+            params.put("severity", severityFilter.trim().toUpperCase(Locale.ROOT));
+        }
+
         List<DeviceVulnerability> vulns =
-                DeviceVulnerability.list("physicalDevice.id", deviceId);
+                DeviceVulnerability.find(query.toString(), params).list();
         List<DeviceVulnerabilityDto> dtos =
                 vulns.stream()
                         .map(DeviceVulnerabilityDto::fromEntity)
-                        .filter(
-                                v ->
-                                        statusFilter == null
-                                                || statusFilter.isBlank()
-                                                || statusFilter.equalsIgnoreCase(v.status()))
-                        .filter(
-                                v ->
-                                        severityFilter == null
-                                                || severityFilter.isBlank()
-                                                || severityFilter.equalsIgnoreCase(v.severity()))
                         .toList();
         return Response.ok(dtos).build();
     }
