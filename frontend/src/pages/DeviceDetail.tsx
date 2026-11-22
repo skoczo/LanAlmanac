@@ -241,19 +241,17 @@ export const DeviceDetail: React.FC = () => {
 
     Promise.all([
       apiClient<Device>(`/api/devices/${deviceId}`),
-      apiClient<TelemetryPoint[]>(`/api/devices/${deviceId}/telemetry`),
+      apiClient<TelemetryPoint[]>(`/api/devices/${deviceId}/telemetry?hours=24`),
       apiClient<CorrelationEvent[]>(`/api/devices/${deviceId}/correlation-history`).catch(() => []),
       apiClient<StatusHistoryEvent[]>(`/api/devices/${deviceId}/status-history`).catch(() => []),
-      apiClient<NetworkLink[]>(`/api/devices/${deviceId}/links`).catch(() => []),
-      apiClient<Device[]>('/api/devices').catch(() => [])
+      apiClient<NetworkLink[]>(`/api/devices/${deviceId}/links`).catch(() => [])
     ])
-      .then(([deviceData, telemetryData, correlationData, statusData, linksData, allDevs]) => {
+      .then(([deviceData, telemetryData, correlationData, statusData, linksData]) => {
         setDevice(deviceData)
         setTelemetry(telemetryData)
         setCorrelationHistory(correlationData)
         setStatusHistory(statusData)
         setLinks(linksData)
-        setAllDevices(allDevs.filter(d => d.id !== deviceId))
         setLoading(false)
       })
       .catch((err) => {
@@ -1679,7 +1677,14 @@ export const DeviceDetail: React.FC = () => {
             <div className="flex justify-between items-center pb-4 border-b border-border-subtle">
               <h3 className="font-bold text-lg tracking-tight">Network Connections</h3>
               <button
-                onClick={() => setShowAddLink(true)}
+                onClick={() => {
+                  setShowAddLink(true)
+                  if (allDevices.length === 0) {
+                    apiClient<Device[]>('/api/devices')
+                      .then((devs) => setAllDevices(devs.filter((d) => d.id !== deviceId)))
+                      .catch((e) => console.error(e))
+                  }
+                }}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-primary text-white rounded-lg text-sm font-semibold hover:bg-accent-primary-hover transition-colors"
               >
                 <Plus className="w-4 h-4" /> Add Connection

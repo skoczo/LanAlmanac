@@ -189,8 +189,15 @@ public class DeviceResource {
     @GET
     @Path("/{id}/telemetry")
     @Transactional
-    public List<Telemetry> getDeviceTelemetry(@PathParam("id") UUID id) {
-        return Telemetry.list("id.physicalDeviceId = ?1 order by id.time asc", id);
+    public List<Telemetry> getDeviceTelemetry(
+            @PathParam("id") UUID id,
+            @QueryParam("hours") @DefaultValue("24") int hours) {
+        if (hours <= 0) {
+            return Telemetry.list("id.physicalDeviceId = ?1 order by id.time asc", id);
+        }
+        java.time.Instant since = java.time.Instant.now().minus(java.time.Duration.ofHours(hours));
+        return Telemetry.list(
+                "id.physicalDeviceId = ?1 and id.time >= ?2 order by id.time asc", id, since);
     }
 
     @PUT
