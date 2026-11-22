@@ -629,8 +629,20 @@ export const VulnerabilitiesPage: React.FC = () => {
                           <td className="py-3 px-3 text-text-secondary">
                             {feed.lastSyncedAt ? new Date(feed.lastSyncedAt).toLocaleString() : 'Never'}
                           </td>
-                          <td className="py-3 px-3 text-accent-danger font-mono text-[11px]">
-                            {feed.errorMessage || '-'}
+                          <td className="py-3 px-3 text-[11px] font-mono max-w-xs break-words">
+                            {feed.errorMessage ? (
+                              <span className="flex items-center gap-1.5 text-accent-danger" title={feed.errorMessage}>
+                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                <span>{feed.errorMessage}</span>
+                              </span>
+                            ) : feed.status === 'FAILED' ? (
+                              <span className="flex items-center gap-1.5 text-accent-danger">
+                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                <span>Sync failed (check server logs)</span>
+                              </span>
+                            ) : (
+                              <span className="text-text-muted">-</span>
+                            )}
                           </td>
                           {canEdit && (
                             <td className="py-3 px-3 text-right">
