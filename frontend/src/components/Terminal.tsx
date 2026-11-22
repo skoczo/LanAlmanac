@@ -149,7 +149,12 @@ export const Terminal: React.FC<TerminalProps> = ({ deviceId, credentialId, onCl
       <div className="flex items-center justify-between px-3 py-2 bg-bg-surface-raised border-b border-border-subtle mb-2 rounded-t-lg">
         <div className="flex items-center gap-2">
           <div className="flex gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-accent-danger cursor-pointer hover:opacity-80" onClick={onClose} />
+            <button
+              type="button"
+              aria-label="Close terminal"
+              className="w-3 h-3 rounded-full bg-accent-danger cursor-pointer hover:opacity-80"
+              onClick={onClose}
+            />
             <div className="w-3 h-3 rounded-full bg-accent-warning" />
             <div className="w-3 h-3 rounded-full bg-accent-success" />
           </div>

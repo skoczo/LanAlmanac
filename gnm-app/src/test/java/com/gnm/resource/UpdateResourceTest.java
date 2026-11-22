@@ -314,6 +314,24 @@ class UpdateResourceTest {
         }
     }
 
+    @Test
+    void testUpdateTargetEqualsAndHashCode() {
+        UUID deviceId = UUID.randomUUID();
+        UUID serviceId = UUID.randomUUID();
+        UpdateResource.UpdateTarget t1 = new UpdateResource.UpdateTarget(
+                deviceId, "10.0.0.1", "root", 22, new byte[] {1, 2}, new byte[] {3, 4}, serviceId, "fingerprint", true);
+        UpdateResource.UpdateTarget t2 = new UpdateResource.UpdateTarget(
+                deviceId, "10.0.0.1", "root", 22, new byte[] {1, 2}, new byte[] {3, 4}, serviceId, "fingerprint", true);
+        UpdateResource.UpdateTarget t3 = new UpdateResource.UpdateTarget(
+                deviceId, "10.0.0.1", "root", 22, new byte[] {9, 9}, new byte[] {3, 4}, serviceId, "fingerprint", true);
+
+        assertEquals(t1, t2);
+        assertEquals(t1.hashCode(), t2.hashCode());
+        org.junit.jupiter.api.Assertions.assertNotEquals(t1, t3);
+        org.junit.jupiter.api.Assertions.assertNotEquals(t1, null);
+        org.junit.jupiter.api.Assertions.assertNotEquals(t1, new Object());
+    }
+
     private static RoutingContext mockRoutingContext(String path, String ticket) {
         RoutingContext ctx = mock(RoutingContext.class);
         HttpServerRequest req = mock(HttpServerRequest.class);

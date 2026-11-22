@@ -57,7 +57,7 @@ export const Settings = () => {
   }, [apiClient])
 
   useEffect(() => {
-    fetchSettings()
+    void fetchSettings()
   }, [fetchSettings])
 
   const handleSave = async (settingKey: string) => {

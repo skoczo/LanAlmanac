@@ -57,7 +57,7 @@ export const DeviceScheduleCard: React.FC<Props> = ({ deviceId }) => {
   }, [apiClient, deviceId])
 
   useEffect(() => {
-    loadSchedule()
+    void loadSchedule()
   }, [loadSchedule])
 
   const handleSave = async (e: React.FormEvent) => {

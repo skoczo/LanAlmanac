@@ -32,8 +32,10 @@ export const DiscoveryDashboardWidget: React.FC = () => {
   }, [apiClient])
 
   useEffect(() => {
-    fetchModules()
-    const interval = setInterval(fetchModules, 5000)
+    void fetchModules()
+    const interval = setInterval(() => {
+      void fetchModules()
+    }, 5000)
     return () => clearInterval(interval)
   }, [fetchModules])
 

@@ -67,8 +67,9 @@ public class TopologyEngine {
 
         Credential cred = snmpCredOpt.get();
         byte[] decryptedBytes = vaultEngine.decrypt(cred.encryptedPayload, cred.noncePayload);
+        if (decryptedBytes == null || decryptedBytes.length == 0) return;
         String communityString = new String(decryptedBytes, java.nio.charset.StandardCharsets.UTF_8);
-        if (communityString == null) return;
+        if (communityString.isBlank()) return;
 
         // Try to find the active IP address for this device
         String ipAddress = null;
@@ -113,7 +114,6 @@ public class TopologyEngine {
                     }
                 }
             }
-            snmp.close();
         } catch (Exception e) {
             LOG.error("Failed SNMP poll for device " + device.displayName, e);
         }

@@ -109,13 +109,10 @@ public class ArpScanner {
         MacAddress localMac = getLocalMacAddress(netIf);
         Inet4Address localIp = getLocalInet4Address(netIf);
 
-        PcapHandle handle = null;
         Set<String> liveIps = new HashSet<>();
 
-        try {
-            // Attempt to open live capture handle - tests NET_RAW / NET_ADMIN capabilities
-            handle = nif.openLive(65535, PcapNetworkInterface.PromiscuousMode.PROMISCUOUS, 10);
-
+        // Attempt to open live capture handle - tests NET_RAW / NET_ADMIN capabilities
+        try (PcapHandle handle = nif.openLive(65535, PcapNetworkInterface.PromiscuousMode.PROMISCUOUS, 10)) {
             // Set BPF filter to capture ARP replies only
             handle.setFilter("arp and arp[7] == 2", BpfProgram.BpfCompileMode.OPTIMIZE);
 
@@ -174,14 +171,6 @@ public class ArpScanner {
                 }
             }
             LOG.info("Native PCAP ARP scan completed. Discovered " + count + " IP/MAC pairs.");
-        } finally {
-            if (handle != null && handle.isOpen()) {
-                try {
-                    handle.close();
-                } catch (Exception e) {
-                    LOG.debug("Failed to close PCAP handle", e);
-                }
-            }
         }
         return liveIps;
     }

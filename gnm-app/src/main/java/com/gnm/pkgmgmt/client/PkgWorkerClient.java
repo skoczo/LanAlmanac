@@ -392,6 +392,12 @@ public class PkgWorkerClient {
             throw parseWorkerError(resp.statusCode(), resp.body());
         } catch (PkgWorkerException e) {
             throw e;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new PkgWorkerException(
+                    "WORKER_UNREACHABLE",
+                    "Interrupted while communicating with gnm-pkg-worker: " + e.getMessage(),
+                    500);
         } catch (Exception e) {
             throw new PkgWorkerException(
                     "WORKER_UNREACHABLE",
@@ -450,6 +456,12 @@ public class PkgWorkerClient {
             }
         } catch (PkgWorkerException e) {
             throw e;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new PkgWorkerException(
+                    "WORKER_UNREACHABLE",
+                    "Interrupted while communicating with gnm-pkg-worker: " + e.getMessage(),
+                    500);
         } catch (Exception e) {
             throw new PkgWorkerException(
                     "WORKER_STREAM_FAILED",

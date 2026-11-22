@@ -51,9 +51,13 @@ public class JndiDefaultGatewayProbe implements NetworkProbe {
     /**
      * Executes 'ip route' command to discover default gateway IP address.
      */
+    @SuppressWarnings("java:S4036")
     private String getDefaultGateway() {
         try {
-            Process process = Runtime.getRuntime().exec(new String[]{"ip", "route"});
+            String ipCmd = java.nio.file.Files.isExecutable(java.nio.file.Path.of("/sbin/ip"))
+                    ? "/sbin/ip"
+                    : (java.nio.file.Files.isExecutable(java.nio.file.Path.of("/usr/bin/ip")) ? "/usr/bin/ip" : "/bin/ip");
+            Process process = new ProcessBuilder(ipCmd, "route").start();
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String line;
                 while ((line = reader.readLine()) != null) {

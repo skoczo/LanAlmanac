@@ -125,9 +125,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     setToasts((prev) => prev.filter((t) => t.id !== id))
   }
 
-  const handleLogout = () => {
-    logout()
-    navigate({ to: '/login' })
+  const handleLogout = async () => {
+    await logout()
+    void navigate({ to: '/login' })
   }
 
   const menuItems = [

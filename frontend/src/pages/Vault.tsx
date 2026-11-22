@@ -27,7 +27,7 @@ export const Vault: React.FC = () => {
 
 
   useEffect(() => {
-    refreshStatus()
+    void refreshStatus()
     apiClient<Device[]>('/api/devices')
       .then(setDevices)
       .catch(console.error)

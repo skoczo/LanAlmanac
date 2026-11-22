@@ -35,6 +35,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @WebSocket(path = "/ws/terminal/{deviceId}/{credentialId}")
+@SuppressWarnings({"java:S6906", "java:S2095"})
 public class TerminalWebSocket {
 
     private static final Logger log = Logger.getLogger(TerminalWebSocket.class);
@@ -147,6 +148,7 @@ public class TerminalWebSocket {
         Thread.startVirtualThread(() -> connectSsh(connection, finalResult));
     }
 
+    @SuppressWarnings({"java:S6906", "java:S2095"})
     private void connectSsh(WebSocketConnection connection, SetupResult ctx) {
         try {
             log.infof("Entering connectSsh for ip: %s", ctx.ipAddress);
@@ -365,6 +367,7 @@ public class TerminalWebSocket {
     private void cleanup(String connectionId) {
         SshSessionContext ctx = activeSessions.remove(connectionId);
         if (ctx != null) {
+            try { if (ctx.out != null) ctx.out.close(); } catch (Exception e) { log.debug("Error closing output stream", e); }
             try { if (ctx.channel != null) ctx.channel.close(true); } catch (Exception e) { log.debug("Error closing SSH channel", e); }
             try { if (ctx.session != null) ctx.session.close(true); } catch (Exception e) { log.debug("Error closing SSH session", e); }
             try { if (ctx.client != null) ctx.client.stop(); } catch (Exception e) { log.debug("Error stopping SSH client", e); }

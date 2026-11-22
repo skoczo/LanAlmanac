@@ -57,6 +57,7 @@ import org.jboss.logging.Logger;
 
 @Path("/api/devices")
 @RolesAllowed({"gnm-admin", "gnm-operator"})
+@SuppressWarnings("java:S6906")
 public class UpdateResource {
 
     private static final Logger log = Logger.getLogger(UpdateResource.class);
@@ -99,6 +100,35 @@ public class UpdateResource {
                     sshHostKey,
                     sshHostKeyTrusted,
                     "true");
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof UpdateTarget that)) return false;
+            return port == that.port
+                    && sshHostKeyTrusted == that.sshHostKeyTrusted
+                    && java.util.Objects.equals(deviceId, that.deviceId)
+                    && java.util.Objects.equals(ipAddress, that.ipAddress)
+                    && java.util.Objects.equals(username, that.username)
+                    && java.util.Arrays.equals(encryptedPayload, that.encryptedPayload)
+                    && java.util.Arrays.equals(noncePayload, that.noncePayload)
+                    && java.util.Objects.equals(serviceId, that.serviceId)
+                    && java.util.Objects.equals(sshHostKey, that.sshHostKey)
+                    && java.util.Objects.equals(command, that.command);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = java.util.Objects.hash(deviceId, ipAddress, username, port, serviceId, sshHostKey, sshHostKeyTrusted, command);
+            result = 31 * result + java.util.Arrays.hashCode(encryptedPayload);
+            result = 31 * result + java.util.Arrays.hashCode(noncePayload);
+            return result;
+        }
+
+        @Override
+        public String toString() {
+            return "UpdateTarget[deviceId=" + deviceId + ", ipAddress=" + ipAddress + ", username=" + username + ", port=" + port + "]";
         }
     }
 

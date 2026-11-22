@@ -28,7 +28,8 @@ public class VaultEngine {
     private static final int GCM_TAG_LENGTH = 128; // bits
     private static final int SALT_LENGTH = 16;
 
-    private volatile SecretKey unsealedMasterKey = null;
+    private final java.util.concurrent.atomic.AtomicReference<SecretKey> unsealedMasterKey = new java.util.concurrent.atomic.AtomicReference<>();
+    private final SecureRandom secureRandom = new SecureRandom();
 
     void onStart(@Observes @Priority(Interceptor.Priority.PLATFORM_BEFORE) StartupEvent ev) {
         String envPassword = System.getenv("GNM_VAULT_PASSWORD");
@@ -59,7 +60,7 @@ public class VaultEngine {
     }
 
     public boolean isUnsealed() {
-        return unsealedMasterKey != null;
+        return unsealedMasterKey.get() != null;
     }
 
     public void initializeVault(String passcode) {
@@ -74,7 +75,7 @@ public class VaultEngine {
 
             // Generate salt for Argon2
             byte[] salt = new byte[SALT_LENGTH];
-            new SecureRandom().nextBytes(salt);
+            secureRandom.nextBytes(salt);
 
             // Derive KEK
             byte[] kekBytes = deriveKek(passcode, salt);
@@ -82,7 +83,7 @@ public class VaultEngine {
 
             // Encrypt Master Key with KEK using AES-GCM
             byte[] iv = new byte[GCM_IV_LENGTH];
-            new SecureRandom().nextBytes(iv);
+            secureRandom.nextBytes(iv);
 
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
@@ -101,7 +102,7 @@ public class VaultEngine {
             Files.write(new File(VAULT_FILE_PATH).toPath(), buffer.array());
 
             // Store in memory
-            this.unsealedMasterKey = masterKey;
+            this.unsealedMasterKey.set(masterKey);
         } catch (Exception e) {
             throw new RuntimeException("Failed to initialize vault", e);
         }
@@ -135,7 +136,7 @@ public class VaultEngine {
             cipher.init(Cipher.DECRYPT_MODE, kek, spec);
 
             byte[] masterKeyBytes = cipher.doFinal(encryptedMasterKey);
-            this.unsealedMasterKey = new SecretKeySpec(masterKeyBytes, "AES");
+            this.unsealedMasterKey.set(new SecretKeySpec(masterKeyBytes, "AES"));
             return true;
         } catch (javax.crypto.AEADBadTagException e) {
             // Wrong passcode
@@ -146,7 +147,7 @@ public class VaultEngine {
     }
 
     public void lockVault() {
-        this.unsealedMasterKey = null;
+        this.unsealedMasterKey.set(null);
     }
 
     private byte[] deriveKek(String passcode, byte[] salt) {
@@ -170,11 +171,11 @@ public class VaultEngine {
         if (plaintext == null || plaintext.length == 0) return new EncryptedRecord(new byte[0], new byte[0]);
         try {
             byte[] iv = new byte[GCM_IV_LENGTH];
-            new SecureRandom().nextBytes(iv);
+            secureRandom.nextBytes(iv);
             
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-            cipher.init(Cipher.ENCRYPT_MODE, unsealedMasterKey, spec);
+            cipher.init(Cipher.ENCRYPT_MODE, unsealedMasterKey.get(), spec);
             
             byte[] ciphertext = cipher.doFinal(plaintext);
             return new EncryptedRecord(ciphertext, iv);
@@ -189,7 +190,7 @@ public class VaultEngine {
         try {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-            cipher.init(Cipher.DECRYPT_MODE, unsealedMasterKey, spec);
+            cipher.init(Cipher.DECRYPT_MODE, unsealedMasterKey.get(), spec);
             
             return cipher.doFinal(ciphertext);
         } catch (Exception e) {

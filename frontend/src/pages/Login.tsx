@@ -13,7 +13,7 @@ export const Login: React.FC = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate({ to: '/', replace: true })
+      void navigate({ to: '/', replace: true })
     }
   }, [isAuthenticated, navigate])
 
@@ -43,7 +43,7 @@ export const Login: React.FC = () => {
 
       const data = await response.json()
       login(data.token, data.username, data.roles, data.mustChangePassword)
-      navigate({ to: '/', replace: true })
+      void navigate({ to: '/', replace: true })
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {

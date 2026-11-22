@@ -85,13 +85,13 @@ export const Alerts: React.FC = () => {
   }, [apiClient])
 
   useEffect(() => {
-    fetchData()
+    void fetchData()
   }, [fetchData])
 
   const handleResolve = async (id: string) => {
     try {
       await apiClient(`/api/threats/${id}/resolve`, { method: 'PUT' })
-      fetchData()
+      await fetchData()
     } catch (err) {
       console.error('Failed to resolve threat', err)
     }
@@ -101,7 +101,7 @@ export const Alerts: React.FC = () => {
     try {
       setResolvingDevice(deviceId)
       await apiClient(`/api/threats/devices/${deviceId}/resolve`, { method: 'PUT' })
-      fetchData()
+      await fetchData()
     } catch (err) {
       console.error('Failed to resolve threats for device', err)
     } finally {
@@ -116,7 +116,7 @@ export const Alerts: React.FC = () => {
     try {
       setResolvingAll(true)
       await apiClient('/api/threats/resolve-all', { method: 'PUT' })
-      fetchData()
+      await fetchData()
     } catch (err) {
       console.error('Failed to resolve all threats', err)
     } finally {
@@ -127,7 +127,7 @@ export const Alerts: React.FC = () => {
   const handleUnresolve = async (id: string) => {
     try {
       await apiClient(`/api/threats/${id}/unresolve`, { method: 'PUT' })
-      fetchData()
+      await fetchData()
     } catch (err) {
       console.error('Failed to unresolve threat', err)
     }
@@ -144,7 +144,7 @@ export const Alerts: React.FC = () => {
         delete next[id]
         return next
       })
-      fetchData()
+      await fetchData()
     } catch (err) {
       console.error('Failed to approve device', err)
     }
@@ -153,7 +153,7 @@ export const Alerts: React.FC = () => {
   const handleAcceptSshKey = async (id: string) => {
     try {
       await apiClient(`/api/threats/${id}/accept-ssh-key`, { method: 'PUT' })
-      fetchData()
+      await fetchData()
     } catch (err) {
       console.error('Failed to accept SSH key', err)
     }
@@ -168,7 +168,7 @@ export const Alerts: React.FC = () => {
         method: 'PUT',
         body: JSON.stringify({ notes: text })
       })
-      fetchData()
+      await fetchData()
       setExpandedNotes(prev => ({ ...prev, [id]: false }))
     } catch (err) {
       console.error('Failed to save note', err)
@@ -193,7 +193,7 @@ export const Alerts: React.FC = () => {
         delete next[threat.id]
         return next
       })
-      fetchData()
+      await fetchData()
     } catch (err) {
       console.error('Failed to update hostname and resolve threat', err)
     }
@@ -323,7 +323,7 @@ export const Alerts: React.FC = () => {
                 Cancel
               </button>
               <button 
-                onClick={() => handleSaveNote(threat.id)}
+                onClick={() => void handleSaveNote(threat.id)}
                 className="px-3 py-1.5 bg-accent-primary hover:bg-accent-primary/90 text-text-primary text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors"
               >
                 Save Note
@@ -345,11 +345,11 @@ export const Alerts: React.FC = () => {
                     value={hostnameEdits[threat.id] || ''}
                     onChange={(e) => setHostnameEdits({...hostnameEdits, [threat.id]: e.target.value})}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleSetHostnameAndResolve({ ...threat, physicalDeviceId: matchedDeviceId })
+                      if (e.key === 'Enter') void handleSetHostnameAndResolve({ ...threat, physicalDeviceId: matchedDeviceId })
                     }}
                   />
                   <button 
-                    onClick={() => handleSetHostnameAndResolve({ ...threat, physicalDeviceId: matchedDeviceId })}
+                    onClick={() => void handleSetHostnameAndResolve({ ...threat, physicalDeviceId: matchedDeviceId })}
                     disabled={!hostnameEdits[threat.id]}
                     className="px-3 py-1.5 bg-accent-primary hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-text-primary text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors"
                   >
@@ -360,7 +360,7 @@ export const Alerts: React.FC = () => {
 
               {isSshMutation && hasSshKey && (
                 <button 
-                  onClick={() => handleAcceptSshKey(threat.id)}
+                  onClick={() => void handleAcceptSshKey(threat.id)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-info hover:bg-accent-info/90 text-text-primary text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors mr-4"
                 >
                   <Key className="w-3.5 h-3.5" />
@@ -377,11 +377,11 @@ export const Alerts: React.FC = () => {
                     value={hostnameEdits[threat.id] || ''}
                     onChange={(e) => setHostnameEdits({...hostnameEdits, [threat.id]: e.target.value})}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleApproveDevice(threat.id, hostnameEdits[threat.id])
+                      if (e.key === 'Enter') void handleApproveDevice(threat.id, hostnameEdits[threat.id])
                     }}
                   />
                   <button 
-                    onClick={() => handleApproveDevice(threat.id, hostnameEdits[threat.id])}
+                    onClick={() => void handleApproveDevice(threat.id, hostnameEdits[threat.id])}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-success hover:bg-accent-success/90 text-bg-base text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors whitespace-nowrap"
                   >
                     <Network className="w-3.5 h-3.5" />
@@ -403,7 +403,7 @@ export const Alerts: React.FC = () => {
             </div>
 
             <button 
-              onClick={() => handleResolve(threat.id)} 
+              onClick={() => void handleResolve(threat.id)} 
               className="px-3 py-1.5 border border-border-subtle hover:border-text-secondary text-text-secondary hover:text-text-primary text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors ml-auto"
             >
               Mark as Resolved
@@ -415,7 +415,7 @@ export const Alerts: React.FC = () => {
           <div className="mt-2 pt-2 border-t border-border-subtle flex justify-end pl-9 gap-3 items-center">
             {isRogueDevice && !isDeviceInBaseline && (
               <button 
-                onClick={() => handleApproveDevice(threat.id, hostnameEdits[threat.id])}
+                onClick={() => void handleApproveDevice(threat.id, hostnameEdits[threat.id])}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-success/20 border border-accent-success/50 hover:bg-accent-success/30 text-accent-success text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors mr-auto"
               >
                 <Network className="w-3.5 h-3.5" />
@@ -433,7 +433,7 @@ export const Alerts: React.FC = () => {
                 {threat.notes ? 'Edit Note' : 'Add Note'}
             </button>
             <button
-              onClick={() => handleUnresolve(threat.id)}
+              onClick={() => void handleUnresolve(threat.id)}
               className="flex items-center gap-1.5 px-3 py-1.5 border border-border-subtle hover:border-accent-warning hover:text-accent-warning text-text-muted text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors"
               title="Reopen this alert"
             >
@@ -484,7 +484,7 @@ export const Alerts: React.FC = () => {
               {activeThreats.length > 0 && (
                 <button
                   type="button"
-                  onClick={handleResolveAll}
+                  onClick={() => void handleResolveAll()}
                   disabled={resolvingAll}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-danger/20 border border-accent-danger/40 hover:bg-accent-danger/30 text-accent-danger text-xs font-semibold transition-colors disabled:opacity-50"
                 >
@@ -555,7 +555,7 @@ export const Alerts: React.FC = () => {
                           {group.deviceId !== 'unassociated' && (
                             <button
                               type="button"
-                              onClick={() => handleResolveDevice(group.deviceId)}
+                              onClick={() => void handleResolveDevice(group.deviceId)}
                               disabled={resolvingDevice === group.deviceId}
                               className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-primary/10 hover:bg-accent-primary/20 border border-accent-primary/30 text-accent-primary text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
                             >

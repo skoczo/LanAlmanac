@@ -73,16 +73,18 @@ public class BackupResource {
             // restoreBackup will call System.exit(0) on success, so we won't actually return a response on success
             // in a standard way, but we will start it in a new thread to allow the HTTP response to be sent to the client.
             
-            Thread restoreThread = new Thread(() -> {
+            Thread.startVirtualThread(() -> {
                 try {
                     // Give the client a second to receive the 202 Accepted response
                     Thread.sleep(1000);
                     backupService.restoreBackup(file.uploadedFile(), password);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    LOG.error("Restore interrupted!", e);
                 } catch (Exception e) {
                     LOG.error("Restore failed!", e);
                 }
             });
-            restoreThread.start();
 
             return Response.accepted().entity("{\"message\": \"Restore initiated. System will restart shortly.\"}").build();
         } catch (Exception e) {

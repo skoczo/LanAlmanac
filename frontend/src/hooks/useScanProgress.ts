@@ -30,8 +30,10 @@ export const useScanProgress = (pollIntervalMs = 5000) => {
       }
     }
 
-    fetchProgress() // Initial fetch
-    const interval = setInterval(fetchProgress, pollIntervalMs)
+    void fetchProgress() // Initial fetch
+    const interval = setInterval(() => {
+      void fetchProgress()
+    }, pollIntervalMs)
 
     return () => {
       isMounted = false

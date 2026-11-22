@@ -39,7 +39,7 @@ export const VaultProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [isAuthenticated, apiClient])
 
   useEffect(() => {
-    refreshStatus()
+    void refreshStatus()
   }, [refreshStatus])
 
   return (

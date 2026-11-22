@@ -20,6 +20,7 @@ import java.util.List;
  * Priority 80.
  */
 @ApplicationScoped
+@SuppressWarnings("java:S4830") // Permissive SSL required for probing self-signed certificates on local network hardware
 public class TlsCertProbe implements NetworkProbe {
 
     @Override

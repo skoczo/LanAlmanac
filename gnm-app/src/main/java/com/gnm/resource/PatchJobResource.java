@@ -106,6 +106,7 @@ public class PatchJobResource {
     @Produces(MediaType.SERVER_SENT_EVENTS)
     @RolesAllowed({"gnm-admin", "gnm-operator"})
     @Transactional
+    @SuppressWarnings("java:S6906")
     public void streamPatchJobLogs(
             @PathParam("jobId") UUID jobId,
             @QueryParam("ticket") String ticket,

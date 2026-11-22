@@ -161,7 +161,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(false)
     }
 
-    init()
+    void init()
   }, [])
 
   const login = (newToken: string, username: string, roles: string[], mustChange: boolean = false) => {
@@ -237,7 +237,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     })
 
     if (response.status === 401) {
-      logout()
+      await logout()
       if (!window.location.pathname.includes('/login')) {
          window.location.href = '/login'
       }

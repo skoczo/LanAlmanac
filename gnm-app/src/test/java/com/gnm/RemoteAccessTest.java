@@ -58,16 +58,6 @@ class RemoteAccessTest extends AbstractE2ETest {
 
     @BeforeEach
     void setup() {
-        if (!vaultEngine.isInitialized()) {
-            given().contentType("application/json").when().post("/api/vault/init").then().statusCode(200);
-        }
-        if (!vaultEngine.isUnsealed()) {
-            given().contentType("application/json").when().post("/api/vault/unseal").then().statusCode(200);
-        }
-    }
-
-    @BeforeEach
-    void clearDatabase() {
         fingerprintEngine.flushAndClear();
         io.quarkus.narayana.jta.QuarkusTransaction.requiringNew().run(() -> {
             com.gnm.model.Credential.deleteAll();
@@ -75,6 +65,12 @@ class RemoteAccessTest extends AbstractE2ETest {
             com.gnm.model.NetworkIdentity.deleteAll();
             com.gnm.model.PhysicalDevice.deleteAll();
         });
+        if (!vaultEngine.isInitialized()) {
+            given().contentType("application/json").when().post("/api/vault/init").then().statusCode(200);
+        }
+        if (!vaultEngine.isUnsealed()) {
+            given().contentType("application/json").when().post("/api/vault/unseal").then().statusCode(200);
+        }
     }
 
     @Test

@@ -107,7 +107,7 @@ export const OsProfilesSettingsTab: React.FC = () => {
   }, [apiClient, dryRunDeviceId])
 
   useEffect(() => {
-    loadData()
+    void loadData()
   }, [loadData])
 
   const handleClone = async (profile: OsProfileFull) => {

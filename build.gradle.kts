@@ -46,6 +46,20 @@ val resolvedSonarOrg: String = System.getenv("SONAR_ORGANIZATION")
     }
     ?: "skoczo-github"
 
+val resolvedGitBranch: String = System.getenv("GITHUB_HEAD_REF")
+    ?: System.getenv("GITHUB_REF_NAME")
+    ?: (project.findProperty("sonar.branch.name") as? String)
+    ?: run {
+        try {
+            val p = ProcessBuilder("git", "branch", "--show-current").start()
+            val branch = p.inputStream.bufferedReader().readText().trim()
+            if (p.waitFor() == 0 && branch.isNotBlank()) branch else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+    ?: ""
+
 sonar {
     properties {
         property("sonar.host.url", System.getenv("SONAR_HOST_URL") ?: "https://sonarcloud.io")
@@ -53,11 +67,24 @@ sonar {
         property("sonar.projectKey", System.getenv("SONAR_PROJECT_KEY") ?: "skoczo_LanAlmanac")
         property("sonar.projectName", "GreatNetworkManager (LanAlmanac)")
         property("sonar.token", resolvedSonarToken)
+        if (resolvedGitBranch.isNotBlank() && resolvedGitBranch != "master" && resolvedGitBranch != "main") {
+            property("sonar.branch.name", resolvedGitBranch)
+        }
         property("sonar.sources", "frontend/src")
         property("sonar.coverage.jacoco.xmlReportPaths", "${rootProject.projectDir}/gnm-app/build/jacoco-report/jacoco.xml,${rootProject.projectDir}/gnm-app/build/reports/jacoco/test/jacocoTestReport.xml")
         property("sonar.javascript.lcov.reportPaths", "${rootProject.projectDir}/frontend/coverage/lcov.info")
         property("sonar.scm.disabled", "true")
         property("sonar.exclusions", "**/node_modules/**,**/build/**,**/dist/**,**/test-results/**")
+        property("sonar.coverage.exclusions", "frontend/**,**/model/**,**/dto/**")
+    }
+}
+
+project(":gnm-app") {
+    sonar {
+        properties {
+            property("sonar.coverage.jacoco.xmlReportPaths", "${project.layout.buildDirectory.asFile.get()}/jacoco-report/jacoco.xml")
+            property("sonar.coverage.exclusions", "**/model/**,**/dto/**")
+        }
     }
 }
 

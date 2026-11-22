@@ -78,7 +78,7 @@ import { useNavigate } from '@tanstack/react-router'
 const LoginRedirect = () => {
   const navigate = useNavigate()
   useEffect(() => {
-    navigate({ to: '/', replace: true })
+    void navigate({ to: '/', replace: true })
   }, [navigate])
   return null
 }

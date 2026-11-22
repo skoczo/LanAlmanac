@@ -62,7 +62,7 @@ public class IcmpSweeper {
             }
             for (CompletableFuture<java.util.Set<String>> f : subnetFutures) {
                 try {
-                    allLiveIps.addAll(f.get(SWEEP_TIMEOUT_SECONDS + 5, TimeUnit.SECONDS));
+                    allLiveIps.addAll(f.get((long) SWEEP_TIMEOUT_SECONDS + 5L, TimeUnit.SECONDS));
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     LOG.debug("Subnet ICMP sweep task interrupted", e);
@@ -155,13 +155,22 @@ public class IcmpSweeper {
         }
     }
 
+    private static final String PING_CMD = java.nio.file.Files.isExecutable(java.nio.file.Path.of("/bin/ping"))
+            ? "/bin/ping"
+            : (java.nio.file.Files.isExecutable(java.nio.file.Path.of("/usr/bin/ping")) ? "/usr/bin/ping" : "ping");
+
+    private static final String ARPING_CMD = java.nio.file.Files.isExecutable(java.nio.file.Path.of("/usr/bin/arping"))
+            ? "/usr/bin/arping"
+            : (java.nio.file.Files.isExecutable(java.nio.file.Path.of("/usr/sbin/arping")) ? "/usr/sbin/arping" : "arping");
+
+    @SuppressWarnings("java:S4036")
     public boolean checkTargetReachable(String ip) {
         // 1. Try system ping (-W 1 is the minimum on Linux; waitFor enforces our tighter timeout)
         Process p = null;
         try {
             processPermits.acquire();
             try {
-                p = new ProcessBuilder("ping", "-n", "-c", "1", "-W", "1", ip)
+                p = new ProcessBuilder(PING_CMD, "-n", "-c", "1", "-W", "1", ip)
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .redirectError(ProcessBuilder.Redirect.DISCARD)
                     .start();
@@ -200,7 +209,7 @@ public class IcmpSweeper {
         try {
             processPermits.acquire();
             try {
-                arp = new ProcessBuilder("arping", "-c", "1", "-w", "1", "-I", getNetworkInterface(), ip)
+                arp = new ProcessBuilder(ARPING_CMD, "-c", "1", "-w", "1", "-I", getNetworkInterface(), ip)
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .redirectError(ProcessBuilder.Redirect.DISCARD)
                     .start();

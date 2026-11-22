@@ -90,7 +90,7 @@ export const PatchJobLogModal: React.FC<Props> = ({ jobId, onClose, onJobUpdated
             } else if (payload.type === 'phase' && payload.phase) {
               setPhase(payload.phase)
             } else if (payload.type === 'result') {
-              refreshJobDetail()
+              void refreshJobDetail()
               evtSource?.close()
             }
           } catch {
@@ -100,14 +100,14 @@ export const PatchJobLogModal: React.FC<Props> = ({ jobId, onClose, onJobUpdated
 
         evtSource.onerror = () => {
           evtSource?.close()
-          refreshJobDetail()
+          void refreshJobDetail()
         }
       } catch (err) {
         setErrorMsg(err instanceof Error ? err.message : 'Failed to connect live log stream')
       }
     }
 
-    startStream()
+    void startStream()
 
     return () => {
       cancelled = true

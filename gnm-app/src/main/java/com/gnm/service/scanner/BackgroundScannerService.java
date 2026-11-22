@@ -59,8 +59,8 @@ public class BackgroundScannerService {
     }
 
     public void enqueueDevice(UUID deviceId) {
-        if (!scanQueue.contains(deviceId) && !activeScans.containsKey(deviceId)) {
-            scanQueue.offer(deviceId);
+        if (!scanQueue.contains(deviceId) && !activeScans.containsKey(deviceId) && !scanQueue.offer(deviceId)) {
+            LOG.warnf("Failed to enqueue device %s for scan, queue might be full", deviceId);
         }
     }
 

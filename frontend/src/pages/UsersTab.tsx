@@ -39,7 +39,7 @@ export const UsersTab: React.FC = () => {
   }, [apiClient])
 
   useEffect(() => {
-    fetchUsers()
+    void fetchUsers()
   }, [fetchUsers])
 
   const handleAddUser = async (e: React.FormEvent) => {
@@ -52,7 +52,7 @@ export const UsersTab: React.FC = () => {
       })
       setShowAddModal(false)
       setNewUser({ username: '', password: '', displayName: '', role: 'gnm-viewer' })
-      fetchUsers()
+      await fetchUsers()
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : String(err))
     } finally {
@@ -64,7 +64,7 @@ export const UsersTab: React.FC = () => {
     if (!confirm('Are you sure you want to delete this user?')) return
     try {
       await apiClient(`/api/users/${id}`, { method: 'DELETE' })
-      fetchUsers()
+      await fetchUsers()
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : String(err))
     }
@@ -79,7 +79,7 @@ export const UsersTab: React.FC = () => {
         body: JSON.stringify({ newPassword: newPass })
       })
       alert('Password reset successfully. The user will be forced to change it on next login.')
-      fetchUsers()
+      await fetchUsers()
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : String(err))
     }
@@ -91,7 +91,7 @@ export const UsersTab: React.FC = () => {
         method: 'PUT',
         body: JSON.stringify({ role })
       })
-      fetchUsers()
+      await fetchUsers()
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : String(err))
     }
@@ -103,7 +103,7 @@ export const UsersTab: React.FC = () => {
         method: 'PUT',
         body: JSON.stringify({ enabled })
       })
-      fetchUsers()
+      await fetchUsers()
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : String(err))
     }

@@ -46,7 +46,7 @@ export const DeviceVulnerabilitiesTab: React.FC<Props> = ({ deviceId }) => {
   }, [apiClient, deviceId, statusFilter, severityFilter, fixAvailableOnly])
 
   useEffect(() => {
-    loadVulns()
+    void loadVulns()
   }, [loadVulns])
 
   const handleRefreshAssessment = async () => {

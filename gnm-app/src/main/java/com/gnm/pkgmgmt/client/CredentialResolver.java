@@ -122,24 +122,24 @@ public class CredentialResolver {
             return;
         }
         if (device.identities != null) {
-            device.identities.size();
+            org.hibernate.Hibernate.initialize(device.identities);
         }
         if (device.services != null) {
-            device.services.size();
+            org.hibernate.Hibernate.initialize(device.services);
             for (NetworkService s : device.services) {
                 if (s != null && s.credential != null) {
-                    s.credential.id.toString();
+                    org.hibernate.Hibernate.initialize(s.credential);
                     if (s.credential.categories != null) {
-                        s.credential.categories.size();
+                        org.hibernate.Hibernate.initialize(s.credential.categories);
                     }
                 }
             }
         }
         if (device.credentials != null) {
-            device.credentials.size();
+            org.hibernate.Hibernate.initialize(device.credentials);
             for (Credential c : device.credentials) {
                 if (c != null && c.categories != null) {
-                    c.categories.size();
+                    org.hibernate.Hibernate.initialize(c.categories);
                 }
             }
         }

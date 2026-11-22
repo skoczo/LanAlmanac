@@ -106,12 +106,12 @@ export const VulnerabilitiesPage: React.FC = () => {
   }, [apiClient])
 
   useEffect(() => {
-    loadFleetVulns()
+    void loadFleetVulns()
   }, [loadFleetVulns])
 
   useEffect(() => {
     if (activeTab === 'database') {
-      loadSyncData()
+      void loadSyncData()
     }
   }, [activeTab, loadSyncData])
 
@@ -122,7 +122,7 @@ export const VulnerabilitiesPage: React.FC = () => {
     if (!hasActiveSync) return
 
     const interval = setInterval(() => {
-      loadSyncData()
+      void loadSyncData()
     }, 3000)
     return () => clearInterval(interval)
   }, [activeTab, hasActiveSync, loadSyncData])

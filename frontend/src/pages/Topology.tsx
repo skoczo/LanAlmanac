@@ -135,7 +135,7 @@ export const Topology: React.FC = () => {
 
   const onNodeDoubleClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
-      navigate({ to: '/devices/$id', params: { id: node.data.deviceId } })
+      void navigate({ to: '/devices/$id', params: { id: node.data.deviceId } })
     },
     [navigate]
   )

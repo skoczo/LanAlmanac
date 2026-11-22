@@ -26,6 +26,7 @@ import java.util.regex.Pattern;
  * Priority 90.
  */
 @ApplicationScoped
+@SuppressWarnings({"java:S4830", "java:S5527"}) // Permissive SSL required for LAN device discovery of self-signed HTTPS certificates
 public class HttpTitleProbe implements NetworkProbe {
     private static final Logger LOG = Logger.getLogger(HttpTitleProbe.class);
 
