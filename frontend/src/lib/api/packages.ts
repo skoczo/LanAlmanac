@@ -140,4 +140,30 @@ export interface DevicePackageScheduleDto {
   nextPreviewRuns: string[]
 }
 
+export interface VulnerabilitySyncStatusItem {
+  ecosystem: string
+  lastSyncedAt: string | null
+  status: 'IDLE' | 'SYNCING' | 'SUCCESS' | 'FAILED' | string
+  advisoryCount: number
+  errorMessage: string | null
+}
+
+export interface VulnerabilitySyncSettings {
+  autoSyncEnabled: boolean
+  cronExpression: string
+  configuredEcosystems: string[]
+  autoDetectEcosystems: boolean
+  lastRunAt: string | null
+  nextRunAt: string | null
+  detectedEcosystems: string[]
+}
+
+export interface VulnerabilitySyncSettingsUpdate {
+  autoSyncEnabled?: boolean
+  cronExpression?: string
+  configuredEcosystems?: string[]
+  autoDetectEcosystems?: boolean
+}
+
+
 

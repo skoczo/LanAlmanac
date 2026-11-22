@@ -286,5 +286,23 @@ public final class PackageManagementDtos {
                     previewRuns != null ? previewRuns : List.of());
         }
     }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record VulnerabilitySyncSettingsDto(
+            boolean autoSyncEnabled,
+            String cronExpression,
+            List<String> configuredEcosystems,
+            boolean autoDetectEcosystems,
+            Instant lastRunAt,
+            Instant nextRunAt,
+            List<String> detectedEcosystems) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record VulnerabilitySyncSettingsUpdateRequest(
+            Boolean autoSyncEnabled,
+            String cronExpression,
+            List<String> configuredEcosystems,
+            Boolean autoDetectEcosystems) {}
 }
+
 
