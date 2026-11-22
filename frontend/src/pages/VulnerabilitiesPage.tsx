@@ -611,7 +611,20 @@ export const VulnerabilitiesPage: React.FC = () => {
                             )}
                           </td>
                           <td className="py-3 px-3 font-mono text-text-primary">
-                            {feed.advisoryCount ? `${feed.advisoryCount.toLocaleString()} advisories` : '-'}
+                            {feed.status === 'SYNCING' ? (
+                              <span className="inline-flex items-center gap-1.5 text-accent-warning">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                {feed.advisoryCount > 0 ? (
+                                  <span>{feed.advisoryCount.toLocaleString()} indexed...</span>
+                                ) : (
+                                  <span className="text-text-muted">Downloading feed...</span>
+                                )}
+                              </span>
+                            ) : feed.advisoryCount ? (
+                              `${feed.advisoryCount.toLocaleString()} advisories`
+                            ) : (
+                              '-'
+                            )}
                           </td>
                           <td className="py-3 px-3 text-text-secondary">
                             {feed.lastSyncedAt ? new Date(feed.lastSyncedAt).toLocaleString() : 'Never'}
