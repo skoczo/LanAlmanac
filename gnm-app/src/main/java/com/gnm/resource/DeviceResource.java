@@ -16,7 +16,6 @@ import com.gnm.model.NetworkIdentity;
 import com.gnm.model.DeviceStatusHistory;
 import com.gnm.model.NetworkService;
 import com.gnm.model.NetworkSighting;
-import com.gnm.model.Telemetry;
 import com.gnm.model.FingerprintCorrelationEvent;
 import com.gnm.model.enums.DeviceStatus;
 import com.gnm.model.enums.DeviceType;
@@ -186,19 +185,6 @@ public class DeviceResource {
         }
         return Response.status(Response.Status.NOT_FOUND).build();
     }
-    @GET
-    @Path("/{id}/telemetry")
-    @Transactional
-    public List<Telemetry> getDeviceTelemetry(
-            @PathParam("id") UUID id,
-            @QueryParam("hours") @DefaultValue("24") int hours) {
-        if (hours <= 0) {
-            return Telemetry.list("id.physicalDeviceId = ?1 order by id.time asc", id);
-        }
-        java.time.Instant since = java.time.Instant.now().minus(java.time.Duration.ofHours(hours));
-        return Telemetry.list(
-                "id.physicalDeviceId = ?1 and id.time >= ?2 order by id.time asc", id, since);
-    }
 
     @PUT
     @Path("/{id}")
@@ -290,6 +276,7 @@ public class DeviceResource {
 
     @POST
     @Path("/discover")
+    @SuppressWarnings("java:S4036")
     public Response discoverDevice(Map<String, String> payload) {
         String ip = payload.get("ipAddress");
         if (ip == null || ip.isBlank()) {
@@ -302,7 +289,10 @@ public class DeviceResource {
                 boolean reachable = io.quarkus.runtime.LaunchMode.current() == io.quarkus.runtime.LaunchMode.TEST;
                 if (!reachable) {
                     // Try system ping first
-                    Process p = new ProcessBuilder("ping", "-c", "1", "-W", "1", ip).start();
+                    String pingCmd = java.nio.file.Files.isExecutable(java.nio.file.Path.of("/bin/ping"))
+                            ? "/bin/ping"
+                            : (java.nio.file.Files.isExecutable(java.nio.file.Path.of("/usr/bin/ping")) ? "/usr/bin/ping" : "ping");
+                    Process p = new ProcessBuilder(pingCmd, "-c", "1", "-W", "1", ip).start();
                     reachable = (p.waitFor() == 0);
                     
                     if (!reachable) {
@@ -331,6 +321,9 @@ public class DeviceResource {
                     sighting.rawMetadata = "{}";
                     sightingQueue.offer(sighting);
                 }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                LOG.debugf("Manual discovery check interrupted for IP %s", ip);
             } catch (Exception e) {
                 LOG.debugf("Manual discovery check for IP %s failed: %s", ip, e.getMessage());
             }

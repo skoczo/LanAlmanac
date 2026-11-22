@@ -52,7 +52,6 @@ Update this file whenever you move or add an important file.
 | `resource/CredentialResource.java` | none | Stage 2/3 |
 | `resource/ScannerResource.java` | none | Stage 2 |
 | `resource/DiscoveryResource.java` | none | Stage 2 |
-| `resource/TelemetryResource.java` | none | Unbounded query (18) — Stage 9.3 |
 | `resource/UpdateResource.java` | `@RolesAllowed({"gnm-admin", "gnm-operator"})` | SSE with `AuthTicket`, resolves upgrade command from `device.osProfile` |
 | `resource/VersionResource.java` | none | Public version metadata |
 

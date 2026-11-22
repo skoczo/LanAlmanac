@@ -29,7 +29,6 @@ import { Terminal } from '../components/Terminal'
 import { DevicePackagesTab } from '../components/packages/DevicePackagesTab'
 import { DeviceVulnerabilitiesTab } from '../components/packages/DeviceVulnerabilitiesTab'
 import { useNavigate } from '@tanstack/react-router'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface Identity {
   id: string
@@ -150,14 +149,6 @@ interface Device {
   updatesLastCheckedAt?: string
 }
 
-interface TelemetryPoint {
-  id: {
-    time: string
-    metricName: string
-  }
-  value: number
-}
-
 type TabType =
   | 'overview'
   | 'packages'
@@ -168,7 +159,6 @@ type TabType =
   | 'status_history'
   | 'services'
   | 'credentials'
-  | 'monitor'
   | 'connections'
   | 'settings'
 
@@ -177,7 +167,6 @@ export const DeviceDetail: React.FC = () => {
   const { apiClient } = useAuth()
   
   const [device, setDevice] = useState<Device | null>(null)
-  const [telemetry, setTelemetry] = useState<TelemetryPoint[]>([])
   const [correlationHistory, setCorrelationHistory] = useState<CorrelationEvent[]>([])
   const [statusHistory, setStatusHistory] = useState<StatusHistoryEvent[]>([])
   const [links, setLinks] = useState<NetworkLink[]>([])
@@ -186,7 +175,7 @@ export const DeviceDetail: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const param = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tab') : null
     if (param === 'updates') return 'packages'
-    const validTabs: TabType[] = ['overview', 'packages', 'vulnerabilities', 'identities', 'fingerprint', 'correlation', 'status_history', 'services', 'credentials', 'monitor', 'connections', 'settings']
+    const validTabs: TabType[] = ['overview', 'packages', 'vulnerabilities', 'identities', 'fingerprint', 'correlation', 'status_history', 'services', 'credentials', 'connections', 'settings']
     if (param && validTabs.includes(param as TabType)) {
       return param as TabType
     }
@@ -241,14 +230,12 @@ export const DeviceDetail: React.FC = () => {
 
     Promise.all([
       apiClient<Device>(`/api/devices/${deviceId}`),
-      apiClient<TelemetryPoint[]>(`/api/devices/${deviceId}/telemetry?hours=24`),
       apiClient<CorrelationEvent[]>(`/api/devices/${deviceId}/correlation-history`).catch(() => []),
       apiClient<StatusHistoryEvent[]>(`/api/devices/${deviceId}/status-history`).catch(() => []),
       apiClient<NetworkLink[]>(`/api/devices/${deviceId}/links`).catch(() => [])
     ])
-      .then(([deviceData, telemetryData, correlationData, statusData, linksData]) => {
+      .then(([deviceData, correlationData, statusData, linksData]) => {
         setDevice(deviceData)
-        setTelemetry(telemetryData)
         setCorrelationHistory(correlationData)
         setStatusHistory(statusData)
         setLinks(linksData)
@@ -273,12 +260,12 @@ export const DeviceDetail: React.FC = () => {
   }, [device, isManaged, activeTab])
 
   const handleDeleteDevice = async () => {
-    if (!window.confirm('Are you sure you want to permanently delete this device? This will remove all associated telemetry, credentials, and fingerprints.')) {
+    if (!window.confirm('Are you sure you want to permanently delete this device? This will remove all associated credentials and fingerprints.')) {
       return
     }
     try {
       await apiClient(`/api/devices/${deviceId}`, { method: 'DELETE' })
-      navigate({ to: '/devices' })
+      void navigate({ to: '/devices' })
     } catch (err: unknown) {
       alert('Failed to delete device: ' + (err instanceof Error ? err.message : 'Unknown error'))
     }
@@ -464,43 +451,6 @@ export const DeviceDetail: React.FC = () => {
     )
   }
 
-  // Filter telemetry by type
-  const filterMetrics = (name: string) => {
-    return telemetry
-      .filter((t) => t.id.metricName === name)
-      .map((t) => t.value)
-  }
-
-  const cpuData = filterMetrics('cpu_percent')
-  const memData = filterMetrics('mem_percent')
-  const pingData = filterMetrics('ping_ms')
-
-  const latestCpu = cpuData[cpuData.length - 1] || 0
-  const latestMem = memData[memData.length - 1] || 0
-  const latestPing = pingData[pingData.length - 1] || 0
-
-  const getSparklineSvg = (data: number[], color: string) => {
-    if (data.length === 0) return null
-    const max = Math.max(...data, 1)
-    const min = Math.min(...data, 0)
-    const range = max - min
-    const width = 120
-    const height = 30
-    const points = data
-      .map((val, index) => {
-        const x = (index / (data.length - 1)) * width
-        const y = height - ((val - min) / range) * height
-        return `${x},${y}`
-      })
-      .join(' ')
-
-    return (
-      <svg className="w-24 h-6 overflow-visible" viewBox={`0 0 ${width} ${height}`}>
-        <polyline fill="none" stroke={color} strokeWidth="1.5" points={points} />
-      </svg>
-    )
-  }
-
 
   const currentIdentity = device.identities?.find((id) => id.current)
   const latestFingerprint = device.fingerprints?.[0]
@@ -605,7 +555,6 @@ export const DeviceDetail: React.FC = () => {
               { id: 'fingerprint', label: 'Fingerprint' },
               { id: 'correlation', label: 'Correlation' },
               { id: 'status_history', label: 'Status History' },
-              { id: 'monitor', label: 'Monitor' },
               { id: 'connections', label: 'Connections' },
               { id: 'settings', label: 'Settings' }
             ]
@@ -616,7 +565,6 @@ export const DeviceDetail: React.FC = () => {
               { id: 'services', label: 'Services' },
               { id: 'correlation', label: 'Correlation' },
               { id: 'status_history', label: 'Status History' },
-              { id: 'monitor', label: 'Monitor' },
               { id: 'connections', label: 'Connections' },
               { id: 'settings', label: 'Settings' }
             ]
@@ -650,7 +598,7 @@ export const DeviceDetail: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-text-primary text-sm">Monitored Network Device</span>
                       <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-bg-surface-raised border border-border-subtle text-text-secondary">
-                        Presence & Telemetry Only
+                        Presence Only
                       </span>
                     </div>
                     <p className="text-xs text-text-secondary mt-0.5">
@@ -692,7 +640,7 @@ export const DeviceDetail: React.FC = () => {
               </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Specs card */}
             <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 shadow-lg relative">
               <div className="flex justify-between items-center mb-5">
@@ -839,51 +787,6 @@ export const DeviceDetail: React.FC = () => {
                   <span className="font-mono text-text-primary">
                     {new Date(device.lastSeen).toLocaleTimeString()}
                   </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Metrics Sparklines */}
-            <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-5 shadow-lg flex flex-col justify-between">
-              <h3 className="font-bold text-sm tracking-tight">Quick Telemetry</h3>
-              <div className="space-y-4 text-xs">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Cpu className="w-4 h-4 text-accent-primary" />
-                    <span className="text-text-secondary">CPU Util</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {getSparklineSvg(cpuData, '#3b82f6')}
-                    <span className="font-mono font-bold text-text-primary w-8 text-right">
-                      {Math.round(latestCpu)}%
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <HardDrive className="w-4 h-4 text-accent-success" />
-                    <span className="text-text-secondary">RAM Util</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {getSparklineSvg(memData, '#22c55e')}
-                    <span className="font-mono font-bold text-text-primary w-8 text-right">
-                      {Math.round(latestMem)}%
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-accent-info" />
-                    <span className="text-text-secondary">Ping Delay</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {getSparklineSvg(pingData, '#06b6d4')}
-                    <span className="font-mono font-bold text-text-primary w-8 text-right">
-                      {Math.round(latestPing)}ms
-                    </span>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1615,62 +1518,6 @@ export const DeviceDetail: React.FC = () => {
           </div>
         )}
 
-        {/* MONITOR TAB */}
-        {activeTab === 'monitor' && (
-          <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg">
-            <div>
-              <h3 className="font-bold text-sm tracking-tight">System Telemetry</h3>
-              <p className="text-xs text-text-secondary">Real-time metrics polled via SNMP & SSH</p>
-            </div>
-            
-            {telemetry.length === 0 ? (
-              <div className="p-8 text-center border border-dashed border-border-subtle rounded-xl text-text-secondary text-xs">
-                No telemetry data available yet. Waiting for next polling cycle.
-              </div>
-            ) : (
-              <div className="space-y-8">
-                <div className="h-64">
-                  <h4 className="text-xs font-bold text-text-primary mb-4">CPU Load (1m Average)</h4>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={telemetry.filter(t => t.id.metricName === 'cpu_load_1m')}>
-                      <defs>
-                        <linearGradient id="colorCpu" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                      <XAxis dataKey="id.time" tickFormatter={(timeStr: string) => new Date(timeStr).toLocaleTimeString()} stroke="#64748b" fontSize={10} />
-                      <YAxis stroke="#64748b" fontSize={10} />
-                      <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem' }} />
-                      <Area type="monotone" dataKey="value" stroke="#3b82f6" fillOpacity={1} fill="url(#colorCpu)" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="h-64">
-                  <h4 className="text-xs font-bold text-text-primary mb-4">Memory Usage (%)</h4>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={telemetry.filter(t => t.id.metricName === 'ram_usage_percent')}>
-                      <defs>
-                        <linearGradient id="colorRam" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                      <XAxis dataKey="id.time" tickFormatter={(timeStr: string) => new Date(timeStr).toLocaleTimeString()} stroke="#64748b" fontSize={10} />
-                      <YAxis stroke="#64748b" fontSize={10} domain={[0, 100]} />
-                      <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem' }} />
-                      <Area type="monotone" dataKey="value" stroke="#10b981" fillOpacity={1} fill="url(#colorRam)" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* CONNECTIONS TAB */}
         {activeTab === 'connections' && (
           <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-6 shadow-lg">
@@ -1853,7 +1700,7 @@ export const DeviceDetail: React.FC = () => {
                 </div>
                 <div className="p-4 rounded-xl border border-border-subtle bg-bg-surface-raised">
                   <h4 className="text-xs font-bold text-text-primary">Monitored Device</h4>
-                  <p className="text-[10px] text-text-secondary mt-1 mb-3">This device is monitored for presence and network telemetry only. Promote this device to a Managed Node to configure credentials, scan packages, and install updates.</p>
+                  <p className="text-[10px] text-text-secondary mt-1 mb-3">This device is monitored for network presence only. Promote this device to a Managed Node to configure credentials, scan packages, and install updates.</p>
                   <button 
                     type="button"
                     onClick={() => handleUpdateManagementState('MANAGED')}

@@ -235,7 +235,7 @@ Additionally: default `deny` rule — every new resource without an annotation m
 
 - [ ] **9.1** Split `join fetch` in [`getAllDevices()`](../gnm-app/src/main/java/com/gnm/resource/DeviceResource.java:50) into separate queries or `@BatchSize` — **S**
 - [ ] **9.2** Pagination on `GET /api/devices` (`?page=&size=`, max 200) — **M**
-- [ ] **9.3** Telemetry: require time range + point limit, forbid unbounded history — [`TelemetryResource.java`](../gnm-app/src/main/java/com/gnm/resource/TelemetryResource.java:18) — **S**
+- [x] **9.3** Telemetry: decommissioned — removed `TelemetryEngine`, `TelemetryResource`, and CPU/RAM metrics per architectural simplification — **S**
 - [ ] **9.4** Flyway migration adding indexes on `credential(physical_device_id)`, `network_identity(mac_address)`, `threat_event(resolved, detected_at)`, `network_service(physical_device_id)` — **S**
 - [ ] **9.5** `ThreatResource.getThreats()` — remove database mutation from `GET` — **S**
 - [ ] **9.6** [`FingerprintEngine.java`](../gnm-app/src/main/java/com/gnm/fingerprint/FingerprintEngine.java:81) — replace `ThreadPoolExecutor`, `newScheduledThreadPool`, and `new Thread` with virtual threads (Invariant #2) — **M**

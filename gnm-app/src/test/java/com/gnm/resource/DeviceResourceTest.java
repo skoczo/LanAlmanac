@@ -315,11 +315,6 @@ class DeviceResourceTest {
           .then()
              .statusCode(200);
 
-        // Get telemetry
-        given()
-          .when().get("/api/devices/" + device.id + "/telemetry")
-          .then()
-             .statusCode(200);
     }
 }
 

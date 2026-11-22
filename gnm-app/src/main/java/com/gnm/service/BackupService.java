@@ -14,9 +14,11 @@ import com.gnm.dto.backup.*;
 import com.gnm.model.*;
 
 @ApplicationScoped
+@SuppressWarnings({"java:S5443", "java:S4036"})
 public class BackupService {
 
     public static final String CURRENT_BACKUP_VERSION = "4";
+    private final java.security.SecureRandom secureRandom = new java.security.SecureRandom();
 
     @Transactional
     public LanAlmanacBackup exportData(boolean includeSecrets) {
@@ -305,7 +307,14 @@ public class BackupService {
             runPgDump(dumpFile);
             java.nio.file.Path zipFile = tempDir.resolve("backup.zip");
             createZip(dumpFile, zipFile);
-            java.nio.file.Path encryptedFile = java.nio.file.Files.createTempFile("gnm_backup_", ".gnmbak");
+            java.nio.file.Path encryptedFile;
+            try {
+                var attrs = java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                        java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+                encryptedFile = java.nio.file.Files.createTempFile("gnm_backup_", ".gnmbak", attrs);
+            } catch (UnsupportedOperationException e) {
+                encryptedFile = java.nio.file.Files.createTempFile("gnm_backup_", ".gnmbak");
+            }
             encryptFile(zipFile, encryptedFile, password);
             return encryptedFile;
         } finally {
@@ -345,14 +354,25 @@ public class BackupService {
         }
     }
 
+    private static String resolveCommand(String cmd) {
+        for (String dir : List.of("/usr/bin", "/bin", "/usr/sbin", "/sbin")) {
+            java.io.File file = new java.io.File(dir, cmd);
+            if (file.canExecute()) {
+                return file.getAbsolutePath();
+            }
+        }
+        return "/usr/bin/" + cmd;
+    }
+
     private void runPgDump(java.nio.file.Path outputFile) throws Exception {
         DbConnectionInfo info = parseJdbcUrl(jdbcUrl);
         ProcessBuilder pb = new ProcessBuilder(
-                "pg_dump", "-h", info.host, "-p", String.valueOf(info.port), 
+                resolveCommand("pg_dump"), "-h", info.host, "-p", String.valueOf(info.port), 
                 "-U", dbUser, "-d", info.dbName, "-f", outputFile.toAbsolutePath().toString(),
-                "-a", "--exclude-table-data=telemetry", "--exclude-table=flyway_schema_history"
+                "-a", "--exclude-table=flyway_schema_history"
         );
         java.util.Map<String, String> env = pb.environment();
+        env.put("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
         env.put("PGPASSWORD", dbPassword);
         pb.redirectErrorStream(true);
         try {
@@ -369,10 +389,11 @@ public class BackupService {
     private void runPsqlRestore(java.nio.file.Path inputFile) throws Exception {
         DbConnectionInfo info = parseJdbcUrl(jdbcUrl);
         ProcessBuilder pb = new ProcessBuilder(
-                "psql", "-h", info.host, "-p", String.valueOf(info.port), 
+                resolveCommand("psql"), "-h", info.host, "-p", String.valueOf(info.port), 
                 "-U", dbUser, "-d", info.dbName, "-f", inputFile.toAbsolutePath().toString()
         );
         java.util.Map<String, String> env = pb.environment();
+        env.put("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
         env.put("PGPASSWORD", dbPassword);
         pb.redirectErrorStream(true);
         try {
@@ -430,11 +451,11 @@ public class BackupService {
 
     private void encryptFile(java.nio.file.Path inputFile, java.nio.file.Path outputFile, String password) throws Exception {
         byte[] salt = new byte[SALT_LENGTH];
-        new java.security.SecureRandom().nextBytes(salt);
+        secureRandom.nextBytes(salt);
         byte[] kekBytes = deriveKek(password, salt);
         javax.crypto.SecretKey kek = new javax.crypto.spec.SecretKeySpec(kekBytes, "AES");
         byte[] iv = new byte[GCM_IV_LENGTH];
-        new java.security.SecureRandom().nextBytes(iv);
+        secureRandom.nextBytes(iv);
         javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
         javax.crypto.spec.GCMParameterSpec spec = new javax.crypto.spec.GCMParameterSpec(GCM_TAG_LENGTH, iv);
         cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, kek, spec);
